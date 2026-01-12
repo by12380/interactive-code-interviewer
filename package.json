@@ -1,6 +1,9 @@
 {
   "name": "interactive-code-interviewer",
   "private": true,
+  "engines": {
+    "node": "20.19.1"
+  },
   "workspaces": [
     "apps/*",
     "packages/*"
