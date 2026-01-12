@@ -1,0 +1,14 @@
+{
+  "name": "interactive-code-interviewer",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run -w apps/web dev",
+    "dev:api": "npm run -w apps/api dev",
+    "build": "npm run -w apps/web build",
+    "start:api": "npm run -w apps/api start"
+  }
+}
