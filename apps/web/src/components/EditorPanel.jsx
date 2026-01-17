@@ -5,8 +5,10 @@ function EditorPanel({
   canUndo,
   canRedo,
   isEditorDisabled,
+  isRunning,
   onUndo,
   onRedo,
+  onRun,
   onEditorMount,
   onCodeChange,
   editorOptions,
@@ -17,6 +19,16 @@ function EditorPanel({
       <div className="panel__header panel__header--editor">
         <span>Editor</span>
         <div className="panel__actions">
+          <button
+            type="button"
+            className="panel__action-button panel__action-button--run"
+            onClick={onRun}
+            disabled={isEditorDisabled || isRunning}
+            aria-label="Run code"
+            title="Run (⌘/Ctrl+Enter)"
+          >
+            {isRunning ? "Running..." : "▶ Run"}
+          </button>
           <button
             type="button"
             className="panel__action-button"

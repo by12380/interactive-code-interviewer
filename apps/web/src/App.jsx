@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sendChat } from "./api.js";
 import Header from "./components/Header.jsx";
 import EditorPanel from "./components/EditorPanel.jsx";
+import ConsolePanel from "./components/ConsolePanel.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
 import SessionMetrics from "./components/SessionMetrics.jsx";
 import ScoreReport from "./components/ScoreReport.jsx";
@@ -132,6 +133,8 @@ export default function App() {
   const [isReportVisible, setIsReportVisible] = useState(false);
   const [isDetailsVisible, setIsDetailsVisible] = useState(false);
   const [isTutorialVisible, setIsTutorialVisible] = useState(false);
+  const [consoleLogs, setConsoleLogs] = useState([]);
+  const [isRunning, setIsRunning] = useState(false);
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -447,6 +450,80 @@ export default function App() {
     setIsTutorialVisible(false);
   }, []);
 
+  const handleClearConsole = useCallback(() => {
+    setConsoleLogs([]);
+  }, []);
+
+  const handleRunCode = useCallback(() => {
+    if (isRunning || isEditorDisabled) return;
+
+    setIsRunning(true);
+    setConsoleLogs([]);
+
+    // Small delay to show the running state
+    setTimeout(() => {
+      const logs = [];
+
+      // Create custom console methods to capture output
+      const captureConsole = {
+        log: (...args) => {
+          logs.push({ type: "log", value: args.length === 1 ? args[0] : args });
+        },
+        error: (...args) => {
+          logs.push({ type: "error", value: args.length === 1 ? args[0] : args });
+        },
+        warn: (...args) => {
+          logs.push({ type: "warn", value: args.length === 1 ? args[0] : args });
+        },
+        info: (...args) => {
+          logs.push({ type: "info", value: args.length === 1 ? args[0] : args });
+        },
+        clear: () => {
+          logs.length = 0;
+        }
+      };
+
+      try {
+        // Create a function that runs the code with our custom console
+        const runCode = new Function(
+          "console",
+          `"use strict";
+          ${code}
+          `
+        );
+
+        // Execute the code
+        const result = runCode(captureConsole);
+
+        // If there's a return value, show it
+        if (result !== undefined) {
+          logs.push({ type: "result", value: result });
+        }
+      } catch (error) {
+        logs.push({
+          type: "error",
+          value: `${error.name}: ${error.message}`
+        });
+      }
+
+      setConsoleLogs(logs);
+      setIsRunning(false);
+    }, 100);
+  }, [code, isRunning, isEditorDisabled]);
+
+  // Add keyboard shortcut for running code
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        handleRunCode();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleRunCode]);
+
   const timeScore = useMemo(
     () => getTimeScore(elapsedSeconds, TOTAL_SECONDS),
     [elapsedSeconds]
@@ -537,17 +614,26 @@ export default function App() {
       />
 
       <main className="app__main">
-        <EditorPanel
-          canUndo={canUndo}
-          canRedo={canRedo}
-          isEditorDisabled={isEditorDisabled}
-          onUndo={handleUndo}
-          onRedo={handleRedo}
-          onEditorMount={handleEditorMount}
-          onCodeChange={handleEditorChange}
-          editorOptions={editorOptions}
-          defaultCode={DEFAULT_CODE}
-        />
+        <div className="app__editor-section">
+          <EditorPanel
+            canUndo={canUndo}
+            canRedo={canRedo}
+            isEditorDisabled={isEditorDisabled}
+            isRunning={isRunning}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            onRun={handleRunCode}
+            onEditorMount={handleEditorMount}
+            onCodeChange={handleEditorChange}
+            editorOptions={editorOptions}
+            defaultCode={DEFAULT_CODE}
+          />
+          <ConsolePanel
+            logs={consoleLogs}
+            onClear={handleClearConsole}
+            isRunning={isRunning}
+          />
+        </div>
         <div className="app__sidebar">
           <ChatPanel
             messages={messages}
