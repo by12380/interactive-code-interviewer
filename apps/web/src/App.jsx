@@ -17,6 +17,8 @@ export default function App() {
   const [difficulty, setDifficulty] = useState("Medium");
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [tutorialStepIndex, setTutorialStepIndex] = useState(0);
+  const [consoleEntries, setConsoleEntries] = useState([]);
+  const [isRunning, setIsRunning] = useState(false);
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -31,10 +33,172 @@ export default function App() {
   const lastCodeSentRef = useRef("");
   const llmMessagesRef = useRef([]);
   const startAtRef = useRef(Date.now());
+  const runnerIframeRef = useRef(null);
+  const runIdRef = useRef(0);
 
   const TOTAL_SECONDS = 30 * 60;
   const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
   const isTimeUp = elapsedSeconds >= TOTAL_SECONDS;
+
+  const runnerSrcDoc = useMemo(
+    () => `<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>JS Runner</title>
+  </head>
+  <body>
+    <script>
+      (function () {
+        var MARKER = "__ICIRunner__";
+        var currentRunId = 0;
+
+        function safeStringify(value) {
+          try {
+            var seen = new WeakSet();
+            return JSON.stringify(
+              value,
+              function (key, val) {
+                if (typeof val === "function") return "[Function]";
+                if (typeof val === "symbol") return String(val);
+                if (val && typeof val === "object") {
+                  if (seen.has(val)) return "[Circular]";
+                  seen.add(val);
+                }
+                return val;
+              },
+              2
+            );
+          } catch (e) {
+            try {
+              return String(value);
+            } catch (e2) {
+              return "[Unserializable]";
+            }
+          }
+        }
+
+        function formatArg(arg) {
+          if (typeof arg === "string") return arg;
+          if (arg instanceof Error) return arg.stack || arg.message || String(arg);
+          if (arg === undefined) return "undefined";
+          if (arg === null) return "null";
+          return safeStringify(arg);
+        }
+
+        function postToParent(payload) {
+          try {
+            window.parent.postMessage(Object.assign({ [MARKER]: true }, payload), "*");
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        function emitConsole(level, args) {
+          postToParent({
+            type: "CONSOLE",
+            level: level,
+            runId: currentRunId,
+            text: Array.prototype.map.call(args, formatArg).join(" ")
+          });
+        }
+
+        var originalConsole = window.console || {};
+        ["log", "info", "warn", "error", "debug"].forEach(function (level) {
+          var original = originalConsole[level] ? originalConsole[level].bind(originalConsole) : null;
+          window.console[level] = function () {
+            emitConsole(level, arguments);
+            try {
+              if (original) original.apply(null, arguments);
+            } catch (e) {
+              // ignore
+            }
+          };
+        });
+
+        window.onerror = function (message, source, lineno, colno, error) {
+          postToParent({
+            type: "CONSOLE",
+            level: "error",
+            runId: currentRunId,
+            text: (error && (error.stack || error.message)) ? String(error.stack || error.message) : String(message)
+          });
+        };
+
+        window.onunhandledrejection = function (event) {
+          var reason = event && event.reason;
+          postToParent({
+            type: "CONSOLE",
+            level: "error",
+            runId: currentRunId,
+            text: (reason && reason.stack) ? String(reason.stack) : formatArg(reason)
+          });
+        };
+
+        window.addEventListener("message", async function (event) {
+          var data = event && event.data;
+          if (!data || data[MARKER] !== true) return;
+
+          if (data.type === "RUN") {
+            currentRunId = data.runId || 0;
+            postToParent({ type: "STATUS", status: "START", runId: currentRunId });
+            try {
+              var AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+              var fn = new AsyncFunction('"use strict";\\n' + String(data.code || ""));
+              await fn();
+            } catch (err) {
+              emitConsole("error", [err]);
+            } finally {
+              postToParent({ type: "STATUS", status: "DONE", runId: currentRunId });
+            }
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>`,
+    []
+  );
+
+  useEffect(() => {
+    const handleMessage = (event) => {
+      const iframeWindow = runnerIframeRef.current?.contentWindow;
+      if (!iframeWindow || event.source !== iframeWindow) {
+        return;
+      }
+
+      const data = event.data;
+      if (!data || data.__ICIRunner__ !== true) {
+        return;
+      }
+
+      if (data.type === "CONSOLE") {
+        setConsoleEntries((prev) => [
+          ...prev,
+          {
+            id: `${data.runId}-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            ts: Date.now(),
+            runId: data.runId,
+            level: data.level || "log",
+            text: String(data.text ?? "")
+          }
+        ]);
+        return;
+      }
+
+      if (data.type === "STATUS") {
+        if (data.status === "START") {
+          setIsRunning(true);
+        }
+        if (data.status === "DONE") {
+          setIsRunning(false);
+        }
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
 
   const tutorialSteps = useMemo(
     () => [
@@ -193,6 +357,43 @@ export default function App() {
     return () => clearTimeout(timeout);
   }, [code]);
 
+  const handleRunCode = () => {
+    const iframeWindow = runnerIframeRef.current?.contentWindow;
+    if (!iframeWindow) {
+      setConsoleEntries((prev) => [
+        ...prev,
+        {
+          id: `system-${Date.now()}`,
+          ts: Date.now(),
+          runId: 0,
+          level: "error",
+          text: "Runner not ready yet. Please try again in a moment."
+        }
+      ]);
+      return;
+    }
+
+    const nextRunId = runIdRef.current + 1;
+    runIdRef.current = nextRunId;
+    setConsoleEntries((prev) => [
+      ...prev,
+      {
+        id: `system-${nextRunId}-${Date.now()}`,
+        ts: Date.now(),
+        runId: nextRunId,
+        level: "system",
+        text: `▶ Run #${nextRunId}`
+      }
+    ]);
+
+    iframeWindow.postMessage(
+      { __ICIRunner__: true, type: "RUN", runId: nextRunId, code },
+      "*"
+    );
+  };
+
+  const handleClearConsole = () => setConsoleEntries([]);
+
   const handleSend = async () => {
     const trimmed = input.trim();
     if (!trimmed || isSending) {
@@ -304,16 +505,74 @@ export default function App() {
       </header>
 
       <main className="app__main">
-        <section className="panel panel--editor" data-tutorial="editor">
-          <div className="panel__header">Editor</div>
-          <Editor
-            height="100%"
-            defaultLanguage="javascript"
-            value={code}
-            onChange={(value) => setCode(value ?? "")}
-            options={editorOptions}
-          />
-        </section>
+        <div className="app__left">
+          <section className="panel panel--editor" data-tutorial="editor">
+            <div className="panel__header">Editor</div>
+            <Editor
+              height="100%"
+              defaultLanguage="javascript"
+              value={code}
+              onChange={(value) => setCode(value ?? "")}
+              options={editorOptions}
+            />
+          </section>
+
+          <section className="panel panel--console">
+            <div className="panel__header panel__header--console">
+              <span>Console</span>
+              <div className="console__toolbar">
+                <button
+                  type="button"
+                  className="console__btn console__btn--run"
+                  onClick={handleRunCode}
+                  disabled={isLocked || isRunning}
+                  aria-label="Run code"
+                >
+                  {isRunning ? "Running..." : "Run"}
+                </button>
+                <button
+                  type="button"
+                  className="console__btn"
+                  onClick={handleClearConsole}
+                  disabled={consoleEntries.length === 0}
+                  aria-label="Clear console"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            <div className="console">
+              <div className="console__output" role="log" aria-label="Console output">
+                {consoleEntries.length === 0 ? (
+                  <div className="console__empty">
+                    Run your code to see output from <code>console.log</code> and errors.
+                  </div>
+                ) : (
+                  consoleEntries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className={`console__line console__line--${entry.level}`}
+                    >
+                      <span className="console__prefix">
+                        #{entry.runId}
+                      </span>
+                      <span className="console__text">{entry.text}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <iframe
+                ref={runnerIframeRef}
+                title="JavaScript runner"
+                sandbox="allow-scripts"
+                srcDoc={runnerSrcDoc}
+                className="console__runner"
+              />
+            </div>
+          </section>
+        </div>
 
         <section className="panel panel--chat" data-tutorial="coach">
           <div className="panel__header">Interview Coach</div>

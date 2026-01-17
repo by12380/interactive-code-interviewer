@@ -369,9 +369,16 @@ textarea {
 .app__main {
   flex: 1;
   display: grid;
-  grid-template-columns: 1.3fr 1fr;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
   gap: 20px;
   padding: 20px 24px 28px;
+}
+
+.app__left {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
 }
 
 .panel {
@@ -395,6 +402,130 @@ textarea {
 
 .panel--editor {
   min-height: 540px;
+}
+
+.panel--console {
+  min-height: 200px;
+}
+
+.panel__header--console {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.console__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.console__btn {
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 700;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  background: rgba(248, 250, 252, 0.9);
+  color: #0f172a;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.console__btn:hover {
+  transform: translateY(-1px);
+  background: rgba(241, 245, 249, 0.95);
+  box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+}
+
+.console__btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.console__btn--run {
+  border: none;
+  background: linear-gradient(135deg, var(--success) 0%, #15803d 100%);
+  color: #ffffff;
+  box-shadow: 0 10px 18px rgba(22, 163, 74, 0.22);
+}
+
+.console__btn--run:hover {
+  background: linear-gradient(135deg, #22c55e 0%, #15803d 100%);
+  box-shadow: 0 12px 20px rgba(22, 163, 74, 0.28);
+}
+
+.console {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.console__output {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 14px;
+  background: #0b1220;
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow: auto;
+}
+
+.console__output::-webkit-scrollbar {
+  width: 10px;
+}
+
+.console__output::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 999px;
+}
+
+.console__empty {
+  color: rgba(226, 232, 240, 0.8);
+}
+
+.console__line {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.console__prefix {
+  color: rgba(148, 163, 184, 0.85);
+  min-width: 52px;
+  flex: 0 0 auto;
+}
+
+.console__text {
+  flex: 1;
+}
+
+.console__line--error .console__text {
+  color: #fecaca;
+}
+
+.console__line--warn .console__text {
+  color: #fde68a;
+}
+
+.console__line--info .console__text {
+  color: #bae6fd;
+}
+
+.console__line--system .console__text {
+  color: #c7d2fe;
+}
+
+.console__runner {
+  display: none;
 }
 
 .panel--editor .monaco-editor,
