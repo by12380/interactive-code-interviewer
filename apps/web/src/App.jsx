@@ -3,13 +3,217 @@ import Editor from "@monaco-editor/react";
 import { sendChat } from "./api.js";
 import TutorialOverlay from "./TutorialOverlay.jsx";
 
-const DEFAULT_CODE = `function twoSum(nums, target) {
-  // Your solution here
+const PROBLEMS = [
+  {
+    id: "two-sum",
+    title: "Two Sum",
+    difficulty: "Easy",
+    functionName: "twoSum",
+    signature: "twoSum(nums, target)",
+    description: `Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.
+
+You may assume that each input has exactly one solution, and you may not use the same element twice.
+
+Return the answer in any order.`,
+    examples: [
+      {
+        input: { nums: [2, 7, 11, 15], target: 9 },
+        output: [0, 1],
+        explanation: "Because nums[0] + nums[1] == 9, we return [0, 1]."
+      },
+      {
+        input: { nums: [3, 2, 4], target: 6 },
+        output: [1, 2]
+      }
+    ],
+    tests: [
+      { name: "Example #1", args: [[2, 7, 11, 15], 9], expected: [0, 1] },
+      { name: "Example #2", args: [[3, 2, 4], 6], expected: [1, 2] },
+      { name: "Negatives", args: [[-3, 4, 3, 90], 0], expected: [0, 2] }
+    ],
+    hints: [
+      "Brute force is O(n^2): check all pairs.",
+      "Use a hash map from value → index as you scan once.",
+      "For each x, look for (target - x) in the map before inserting x."
+    ],
+    solution: `function twoSum(nums, target) {
+  const seen = new Map(); // value -> index
+  for (let i = 0; i < nums.length; i++) {
+    const need = target - nums[i];
+    if (seen.has(need)) return [seen.get(need), i];
+    seen.set(nums[i], i);
+  }
+  return [];
+}`
+  },
+  {
+    id: "valid-anagram",
+    title: "Valid Anagram",
+    difficulty: "Easy",
+    functionName: "isAnagram",
+    signature: "isAnagram(s, t)",
+    description: `Given two strings s and t, return true if t is an anagram of s, and false otherwise.
+
+An anagram is a word or phrase formed by rearranging the letters of a different word or phrase, typically using all the original letters exactly once.`,
+    examples: [
+      { input: { s: "anagram", t: "nagaram" }, output: true },
+      { input: { s: "rat", t: "car" }, output: false }
+    ],
+    tests: [
+      { name: "True case", args: ["anagram", "nagaram"], expected: true },
+      { name: "False case", args: ["rat", "car"], expected: false },
+      { name: "Unicode-ish", args: ["aá", "áa"], expected: true }
+    ],
+    hints: [
+      "If lengths differ, it can't be an anagram.",
+      "Count character frequencies for s, decrement for t.",
+      "All counts must end at zero."
+    ],
+    solution: `function isAnagram(s, t) {
+  if (s.length !== t.length) return false;
+  const counts = new Map();
+  for (const ch of s) counts.set(ch, (counts.get(ch) || 0) + 1);
+  for (const ch of t) {
+    const next = (counts.get(ch) || 0) - 1;
+    if (next < 0) return false;
+    counts.set(ch, next);
+  }
+  return true;
+}`
+  },
+  {
+    id: "longest-substring",
+    title: "Longest Substring Without Repeating Characters",
+    difficulty: "Medium",
+    functionName: "lengthOfLongestSubstring",
+    signature: "lengthOfLongestSubstring(s)",
+    description: `Given a string s, find the length of the longest substring without repeating characters.`,
+    examples: [
+      { input: { s: "abcabcbb" }, output: 3, explanation: 'The answer is "abc", with the length of 3.' },
+      { input: { s: "bbbbb" }, output: 1 },
+      { input: { s: "pwwkew" }, output: 3, explanation: 'The answer is "wke", with the length of 3.' }
+    ],
+    tests: [
+      { name: "Example #1", args: ["abcabcbb"], expected: 3 },
+      { name: "All same", args: ["bbbbb"], expected: 1 },
+      { name: "Mixed", args: ["pwwkew"], expected: 3 },
+      { name: "Empty", args: [""], expected: 0 }
+    ],
+    hints: [
+      "Use a sliding window with two pointers.",
+      "Track the last seen index of each character.",
+      "When you see a repeat, move the left pointer to lastSeen + 1."
+    ],
+    solution: `function lengthOfLongestSubstring(s) {
+  let left = 0;
+  let best = 0;
+  const lastSeen = new Map(); // char -> index
+  for (let right = 0; right < s.length; right++) {
+    const ch = s[right];
+    if (lastSeen.has(ch)) {
+      left = Math.max(left, lastSeen.get(ch) + 1);
+    }
+    lastSeen.set(ch, right);
+    best = Math.max(best, right - left + 1);
+  }
+  return best;
+}`
+  }
+];
+
+const DEFAULT_PROBLEM_ID = PROBLEMS[0]?.id ?? "two-sum";
+const buildStarterCode = (problem) =>
+  `function ${problem.functionName}${problem.signature.replace(problem.functionName, "")} {\n  // Your solution here\n}\n`;
+
+function safeStringify(value) {
+  try {
+    const seen = new WeakSet();
+    return JSON.stringify(
+      value,
+      (key, val) => {
+        if (typeof val === "function") return "[Function]";
+        if (typeof val === "symbol") return String(val);
+        if (val && typeof val === "object") {
+          if (seen.has(val)) return "[Circular]";
+          seen.add(val);
+        }
+        return val;
+      },
+      2
+    );
+  } catch (e) {
+    try {
+      return String(value);
+    } catch (e2) {
+      return "[Unserializable]";
+    }
+  }
 }
-`;
+
+function prettyValue(value) {
+  if (typeof value === "string") return value;
+  return safeStringify(value);
+}
 
 export default function App() {
-  const [code, setCode] = useState(DEFAULT_CODE);
+  const [activeProblemId, setActiveProblemId] = useState(() => {
+    try {
+      const saved = localStorage.getItem("ici.activeProblemId");
+      return saved || DEFAULT_PROBLEM_ID;
+    } catch {
+      return DEFAULT_PROBLEM_ID;
+    }
+  });
+  const [codeByProblemId, setCodeByProblemId] = useState(() => {
+    try {
+      const raw = localStorage.getItem("ici.codeByProblemId");
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  });
+  const [solvedByProblemId, setSolvedByProblemId] = useState(() => {
+    try {
+      const raw = localStorage.getItem("ici.solvedByProblemId");
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  });
+  const [testRunByProblemId, setTestRunByProblemId] = useState(() => {
+    try {
+      const raw = localStorage.getItem("ici.testRunByProblemId");
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  });
+
+  const activeProblem = useMemo(() => {
+    const found = PROBLEMS.find((p) => p.id === activeProblemId);
+    return found || PROBLEMS[0];
+  }, [activeProblemId]);
+
+  const code = useMemo(() => {
+    const stored = codeByProblemId?.[activeProblem?.id];
+    if (typeof stored === "string") return stored;
+    if (activeProblem) return buildStarterCode(activeProblem);
+    return "";
+  }, [activeProblem, codeByProblemId]);
+  const setCode = (nextCode) => {
+    setCodeByProblemId((prev) => {
+      const next = { ...(prev || {}), [activeProblem.id]: nextCode };
+      return next;
+    });
+  };
+
+  const [problemTab, setProblemTab] = useState("Description");
+  const [revealedHintCount, setRevealedHintCount] = useState(() => ({}));
+  const [isSolutionVisible, setIsSolutionVisible] = useState(false);
+
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -194,6 +398,24 @@ export default function App() {
           setIsRunning(false);
         }
       }
+
+      if (data.type === "TEST_RESULTS") {
+        const payload = data.payload || {};
+        const problemId = String(payload.problemId || "");
+        if (!problemId) return;
+
+        setTestRunByProblemId((prev) => {
+          const next = { ...(prev || {}), [problemId]: payload };
+          return next;
+        });
+
+        if (payload?.summary?.passed === payload?.summary?.total && payload?.summary?.total > 0) {
+          setSolvedByProblemId((prev) => {
+            const next = { ...(prev || {}), [problemId]: true };
+            return next;
+          });
+        }
+      }
     };
 
     window.addEventListener("message", handleMessage);
@@ -268,6 +490,43 @@ export default function App() {
     role: "user",
     content: `[code update]\n${nextCode || "// No code provided"}`
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ici.activeProblemId", activeProblemId);
+    } catch {
+      // ignore
+    }
+  }, [activeProblemId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ici.codeByProblemId", JSON.stringify(codeByProblemId || {}));
+    } catch {
+      // ignore
+    }
+  }, [codeByProblemId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ici.solvedByProblemId", JSON.stringify(solvedByProblemId || {}));
+    } catch {
+      // ignore
+    }
+  }, [solvedByProblemId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ici.testRunByProblemId", JSON.stringify(testRunByProblemId || {}));
+    } catch {
+      // ignore
+    }
+  }, [testRunByProblemId]);
+
+  useEffect(() => {
+    setProblemTab("Description");
+    setIsSolutionVisible(false);
+  }, [activeProblemId]);
 
   useEffect(() => {
     if (isLocked) {
@@ -394,6 +653,159 @@ export default function App() {
 
   const handleClearConsole = () => setConsoleEntries([]);
 
+  const buildTestHarness = (problem, runId) => {
+    const tests = Array.isArray(problem?.tests) ? problem.tests : [];
+    const payload = safeStringify(
+      tests.map((t) => ({
+        name: String(t.name || ""),
+        args: Array.isArray(t.args) ? t.args : [],
+        expected: t.expected
+      }))
+    );
+
+    return `
+// --- test harness (generated) ---
+function __ici_deepEqual(a, b) {
+  if (Object.is(a, b)) return true;
+  if (Number.isNaN(a) && Number.isNaN(b)) return true;
+  if (a === null || b === null) return a === b;
+  const ta = typeof a;
+  const tb = typeof b;
+  if (ta !== tb) return false;
+  if (ta !== "object") return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (!__ici_deepEqual(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) return false;
+  aKeys.sort();
+  bKeys.sort();
+  for (let i = 0; i < aKeys.length; i++) {
+    if (aKeys[i] !== bKeys[i]) return false;
+  }
+  for (const k of aKeys) {
+    if (!__ici_deepEqual(a[k], b[k])) return false;
+  }
+  return true;
+}
+
+(function __ici_runTests() {
+  const __ici_problemId = ${JSON.stringify(problem.id)};
+  const __ici_functionName = ${JSON.stringify(problem.functionName)};
+  const __ici_tests = ${payload};
+
+  const fn = (typeof globalThis !== "undefined" ? globalThis[__ici_functionName] : undefined);
+  const results = [];
+  let passed = 0;
+
+  if (typeof fn !== "function") {
+    console.error(\`Expected a function named "\${__ici_functionName}" to be defined.\`);
+    const out = {
+      problemId: __ici_problemId,
+      functionName: __ici_functionName,
+      summary: { passed: 0, total: __ici_tests.length },
+      results: __ici_tests.map((t, i) => ({
+        index: i,
+        name: t.name || \`Test #\${i + 1}\`,
+        pass: false,
+        error: \`Missing function "\${__ici_functionName}"\`,
+        args: t.args,
+        expected: t.expected,
+        actual: undefined
+      }))
+    };
+    window.parent.postMessage({ __ICIRunner__: true, type: "TEST_RESULTS", runId: ${runId}, payload: out }, "*");
+    return;
+  }
+
+  for (let i = 0; i < __ici_tests.length; i++) {
+    const t = __ici_tests[i];
+    try {
+      const actual = fn.apply(null, Array.isArray(t.args) ? t.args : []);
+      const ok = __ici_deepEqual(actual, t.expected);
+      if (ok) passed++;
+      results.push({
+        index: i,
+        name: t.name || \`Test #\${i + 1}\`,
+        pass: ok,
+        args: t.args,
+        expected: t.expected,
+        actual
+      });
+      console.log(\`\${ok ? "PASS" : "FAIL"}: \${t.name || \`Test #\${i + 1}\`}\`);
+      if (!ok) {
+        console.log("  expected:", t.expected);
+        console.log("  received:", actual);
+      }
+    } catch (err) {
+      results.push({
+        index: i,
+        name: t.name || \`Test #\${i + 1}\`,
+        pass: false,
+        error: (err && (err.stack || err.message)) ? String(err.stack || err.message) : String(err),
+        args: t.args,
+        expected: t.expected,
+        actual: undefined
+      });
+      console.log(\`FAIL: \${t.name || \`Test #\${i + 1}\`}\`);
+      console.log("  error:", err);
+    }
+  }
+
+  const out = {
+    problemId: __ici_problemId,
+    functionName: __ici_functionName,
+    summary: { passed, total: __ici_tests.length },
+    results
+  };
+  window.parent.postMessage({ __ICIRunner__: true, type: "TEST_RESULTS", runId: ${runId}, payload: out }, "*");
+})();
+// --- end test harness ---
+`;
+  };
+
+  const handleRunTests = () => {
+    const iframeWindow = runnerIframeRef.current?.contentWindow;
+    if (!iframeWindow) {
+      setConsoleEntries((prev) => [
+        ...prev,
+        {
+          id: `system-${Date.now()}`,
+          ts: Date.now(),
+          runId: 0,
+          level: "error",
+          text: "Runner not ready yet. Please try again in a moment."
+        }
+      ]);
+      return;
+    }
+
+    const nextRunId = runIdRef.current + 1;
+    runIdRef.current = nextRunId;
+    setConsoleEntries((prev) => [
+      ...prev,
+      {
+        id: `system-${nextRunId}-${Date.now()}`,
+        ts: Date.now(),
+        runId: nextRunId,
+        level: "system",
+        text: `Tests: ${activeProblem.title}`
+      }
+    ]);
+
+    const testCode = `${code}\n\n${buildTestHarness(activeProblem, nextRunId)}`;
+    iframeWindow.postMessage(
+      { __ICIRunner__: true, type: "RUN", runId: nextRunId, code: testCode },
+      "*"
+    );
+  };
+
   const handleSend = async () => {
     const trimmed = input.trim();
     if (!trimmed || isSending) {
@@ -434,6 +846,13 @@ export default function App() {
       setIsSending(false);
     }
   };
+
+  const activeSolved = Boolean(solvedByProblemId?.[activeProblem?.id]);
+  const activeTestRun = testRunByProblemId?.[activeProblem?.id] || null;
+  const revealedCount = Math.min(
+    Number(revealedHintCount?.[activeProblem?.id] || 0),
+    activeProblem?.hints?.length || 0
+  );
 
   return (
     <div className="app">
@@ -532,6 +951,15 @@ export default function App() {
                 </button>
                 <button
                   type="button"
+                  className="console__btn console__btn--tests"
+                  onClick={handleRunTests}
+                  disabled={isLocked || isRunning}
+                  aria-label="Run tests"
+                >
+                  Run tests
+                </button>
+                <button
+                  type="button"
                   className="console__btn"
                   onClick={handleClearConsole}
                   disabled={consoleEntries.length === 0}
@@ -574,44 +1002,287 @@ export default function App() {
           </section>
         </div>
 
-        <section className="panel panel--chat" data-tutorial="coach">
-          <div className="panel__header">Interview Coach</div>
-          <div className="chat">
-            <div className="chat__messages">
-              {messages.map((message, index) => (
-                <div
-                  key={`${message.role}-${index}`}
-                  className={`chat__message chat__message--${message.role}`}
+        <div className="app__right">
+          <section className="panel panel--problem">
+            <div className="panel__header panel__header--problem">
+              <div className="problem__title">
+                <span>Problem</span>
+                {activeSolved ? (
+                  <span className="problem__badge problem__badge--solved">Solved</span>
+                ) : (
+                  <span className="problem__badge">{activeProblem?.difficulty || "—"}</span>
+                )}
+              </div>
+              <div className="problem__controls">
+                <select
+                  className="problem__select"
+                  value={activeProblemId}
+                  onChange={(e) => setActiveProblemId(e.target.value)}
+                  disabled={isLocked}
+                  aria-label="Select coding problem"
                 >
-                  <div className="chat__role">{message.role}</div>
-                  <div className="chat__content">{message.content}</div>
-                </div>
-              ))}
+                  {PROBLEMS.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="chat__input">
-              <textarea
-                placeholder="Ask for guidance or explain your approach..."
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                disabled={isLocked}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    handleSend();
-                  }
-                }}
-                rows={3}
-              />
-              <button
-                type="button"
-                onClick={handleSend}
-                disabled={isSending || isLocked}
-              >
-                {isSending ? "Sending..." : "Send"}
-              </button>
+
+            <div className="problem">
+              <div className="problem__meta">
+                <div className="problem__name">{activeProblem.title}</div>
+                <div className="problem__signature">{activeProblem.signature}</div>
+              </div>
+
+              <div className="problem__tabs" role="tablist" aria-label="Problem sections">
+                {["Description", "Examples", "Test cases", "Hints", "Solution"].map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    className={`problem__tab ${problemTab === tab ? "is-active" : ""}`}
+                    onClick={() => setProblemTab(tab)}
+                    disabled={tab === "Solution" && !activeSolved}
+                    aria-label={`Open ${tab}`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+
+              <div className="problem__content">
+                {problemTab === "Description" && (
+                  <div className="problem__section">
+                    <div className="problem__block">
+                      <div className="problem__block-title">Description</div>
+                      <div className="problem__text">{activeProblem.description}</div>
+                    </div>
+                  </div>
+                )}
+
+                {problemTab === "Examples" && (
+                  <div className="problem__section">
+                    <div className="problem__block">
+                      <div className="problem__block-title">Examples</div>
+                      <div className="problem__examples">
+                        {(activeProblem.examples || []).map((ex, idx) => (
+                          <div key={idx} className="problem__example">
+                            <div className="problem__example-title">Example {idx + 1}</div>
+                            <div className="problem__kv">
+                              <div className="problem__k">Input</div>
+                              <pre className="problem__v">{prettyValue(ex.input)}</pre>
+                            </div>
+                            <div className="problem__kv">
+                              <div className="problem__k">Output</div>
+                              <pre className="problem__v">{prettyValue(ex.output)}</pre>
+                            </div>
+                            {ex.explanation && (
+                              <div className="problem__kv">
+                                <div className="problem__k">Explanation</div>
+                                <div className="problem__text">{ex.explanation}</div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {problemTab === "Test cases" && (
+                  <div className="problem__section">
+                    <div className="problem__block">
+                      <div className="problem__block-title">Test cases</div>
+                      <div className="problem__tests-header">
+                        <div className="problem__tests-summary">
+                          {activeTestRun?.summary ? (
+                            <span>
+                              Last run: {activeTestRun.summary.passed}/{activeTestRun.summary.total} passed
+                            </span>
+                          ) : (
+                            <span>No test run yet</span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          className="problem__run-tests"
+                          onClick={handleRunTests}
+                          disabled={isLocked || isRunning}
+                        >
+                          Run tests
+                        </button>
+                      </div>
+                      <div className="problem__tests">
+                        {(activeProblem.tests || []).map((t, idx) => {
+                          const r = activeTestRun?.results?.find((x) => x.index === idx);
+                          const status = r ? (r.pass ? "pass" : "fail") : "unknown";
+                          return (
+                            <div key={idx} className={`problem__test problem__test--${status}`}>
+                              <div className="problem__test-top">
+                                <div className="problem__test-name">
+                                  {r ? (r.pass ? "PASS" : "FAIL") : "—"} {t.name || `Test #${idx + 1}`}
+                                </div>
+                                <div className="problem__test-status">
+                                  {r ? (r.pass ? "Passed" : "Failed") : "Not run"}
+                                </div>
+                              </div>
+                              <div className="problem__test-body">
+                                <div className="problem__kv">
+                                  <div className="problem__k">Args</div>
+                                  <pre className="problem__v">{prettyValue(t.args)}</pre>
+                                </div>
+                                <div className="problem__kv">
+                                  <div className="problem__k">Expected</div>
+                                  <pre className="problem__v">{prettyValue(t.expected)}</pre>
+                                </div>
+                                {r && !r.pass && (
+                                  <>
+                                    {"actual" in r && (
+                                      <div className="problem__kv">
+                                        <div className="problem__k">Actual</div>
+                                        <pre className="problem__v">{prettyValue(r.actual)}</pre>
+                                      </div>
+                                    )}
+                                    {r.error && (
+                                      <div className="problem__kv">
+                                        <div className="problem__k">Error</div>
+                                        <pre className="problem__v">{String(r.error)}</pre>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {problemTab === "Hints" && (
+                  <div className="problem__section">
+                    <div className="problem__block">
+                      <div className="problem__block-title">Hints</div>
+                      <div className="problem__hints">
+                        {activeProblem.hints.slice(0, revealedCount).map((h, idx) => (
+                          <div key={idx} className="problem__hint">
+                            <div className="problem__hint-n">Hint {idx + 1}</div>
+                            <div className="problem__text">{h}</div>
+                          </div>
+                        ))}
+                        {revealedCount === 0 && (
+                          <div className="problem__text problem__text--muted">
+                            No hints revealed yet.
+                          </div>
+                        )}
+                      </div>
+                      <div className="problem__hint-actions">
+                        <button
+                          type="button"
+                          className="problem__hint-btn"
+                          onClick={() =>
+                            setRevealedHintCount((prev) => ({
+                              ...(prev || {}),
+                              [activeProblem.id]: Math.min(
+                                (prev?.[activeProblem.id] || 0) + 1,
+                                activeProblem.hints.length
+                              )
+                            }))
+                          }
+                          disabled={revealedCount >= activeProblem.hints.length}
+                        >
+                          Reveal next hint ({revealedCount}/{activeProblem.hints.length})
+                        </button>
+                        <button
+                          type="button"
+                          className="problem__hint-btn problem__hint-btn--ghost"
+                          onClick={() =>
+                            setRevealedHintCount((prev) => ({
+                              ...(prev || {}),
+                              [activeProblem.id]: 0
+                            }))
+                          }
+                          disabled={revealedCount === 0}
+                        >
+                          Reset hints
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {problemTab === "Solution" && (
+                  <div className="problem__section">
+                    {!activeSolved ? (
+                      <div className="problem__text problem__text--muted">
+                        Pass all tests to unlock the solution.
+                      </div>
+                    ) : (
+                      <div className="problem__block">
+                        <div className="problem__block-title">Solution</div>
+                        <div className="problem__solution-actions">
+                          <button
+                            type="button"
+                            className="problem__hint-btn"
+                            onClick={() => setIsSolutionVisible((v) => !v)}
+                          >
+                            {isSolutionVisible ? "Hide solution" : "Reveal solution"}
+                          </button>
+                        </div>
+                        {isSolutionVisible && (
+                          <pre className="problem__solution">
+{activeProblem.solution}
+                          </pre>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+
+          <section className="panel panel--chat" data-tutorial="coach">
+            <div className="panel__header">Interview Coach</div>
+            <div className="chat">
+              <div className="chat__messages">
+                {messages.map((message, index) => (
+                  <div
+                    key={`${message.role}-${index}`}
+                    className={`chat__message chat__message--${message.role}`}
+                  >
+                    <div className="chat__role">{message.role}</div>
+                    <div className="chat__content">{message.content}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="chat__input">
+                <textarea
+                  placeholder="Ask for guidance or explain your approach..."
+                  value={input}
+                  onChange={(event) => setInput(event.target.value)}
+                  disabled={isLocked}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  rows={3}
+                />
+                <button
+                  type="button"
+                  onClick={handleSend}
+                  disabled={isSending || isLocked}
+                >
+                  {isSending ? "Sending..." : "Send"}
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
       </main>
     </div>
   );
