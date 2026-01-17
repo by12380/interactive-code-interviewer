@@ -12,7 +12,7 @@ function EditorPanel({
   onEditorMount,
   onCodeChange,
   editorOptions,
-  defaultCode
+  code
 }) {
   return (
     <section className="panel panel--editor">
@@ -54,7 +54,7 @@ function EditorPanel({
       <Editor
         height="100%"
         defaultLanguage="javascript"
-        defaultValue={defaultCode}
+        value={code}
         onChange={onCodeChange}
         onMount={onEditorMount}
         options={editorOptions}

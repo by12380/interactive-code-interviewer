@@ -7,11 +7,9 @@ import ChatPanel from "./components/ChatPanel.jsx";
 import SessionMetrics from "./components/SessionMetrics.jsx";
 import ScoreReport from "./components/ScoreReport.jsx";
 import Tutorial from "./components/Tutorial.jsx";
-
-const DEFAULT_CODE = `function twoSum(nums, target) {
-  // Your solution here
-}
-`;
+import ProblemPanel from "./components/ProblemPanel.jsx";
+import ProblemSelector from "./components/ProblemSelector.jsx";
+import { PROBLEMS, getProblemById } from "./data/problems.js";
 
 const getTimeScore = (elapsedSeconds, limitSeconds) => {
   if (elapsedSeconds <= 10 * 60) {
@@ -52,20 +50,15 @@ const getHintsScore = (hintsUsed) => {
   return 40;
 };
 
-const getTestsScore = (passed) => {
-  if (passed === 0) {
-    return 0;
-  }
-  if (passed >= 5) {
-    return 100;
-  }
-  if (passed === 4) {
-    return 80;
-  }
-  if (passed === 3) {
-    return 60;
-  }
-  return 40;
+const getTestsScore = (passed, total) => {
+  if (total === 0) return 0;
+  const percentage = passed / total;
+  if (percentage === 1) return 100;
+  if (percentage >= 0.8) return 80;
+  if (percentage >= 0.6) return 60;
+  if (percentage >= 0.4) return 40;
+  if (passed > 0) return 20;
+  return 0;
 };
 
 const getGrade = (score) => {
@@ -93,26 +86,97 @@ const estimateEfficiency = (code) => {
   return "O(n^3)";
 };
 
-const evaluateTests = (code) => {
-  const hasFunction = /function\s+twoSum|\bconst\s+twoSum\b|\bfunction\b/.test(
-    code
-  );
+// Run test cases against user's code
+const runTestCases = (code, testCases, problem) => {
+  if (!testCases || testCases.length === 0) {
+    return { passed: 0, total: 0, results: [], note: "No test cases available." };
+  }
+
+  const results = [];
+  let passed = 0;
+
+  // Extract function name from starter code
+  const functionMatch = problem.starterCode.match(/function\s+(\w+)/);
+  const functionName = functionMatch ? functionMatch[1] : null;
+
+  if (!functionName) {
+    return { passed: 0, total: testCases.length, results: [], note: "Could not identify function name." };
+  }
+
+  // Check if function is defined
+  const hasFunctionDef = new RegExp(`function\\s+${functionName}|const\\s+${functionName}|let\\s+${functionName}`).test(code);
   const hasReturn = /\breturn\b/.test(code);
-  const usesMap = /\bMap\b/.test(code) || /\bObject\b/.test(code);
-  if (!hasFunction || !hasReturn) {
-    return { passed: 1, note: "Missing a return or function definition." };
+
+  if (!hasFunctionDef || !hasReturn) {
+    return { 
+      passed: 0, 
+      total: testCases.length, 
+      results: [],
+      note: "Missing function definition or return statement." 
+    };
   }
-  if (usesMap) {
-    return { passed: 5, note: "All sample tests passed." };
+
+  for (let i = 0; i < testCases.length; i++) {
+    const testCase = testCases[i];
+    try {
+      // Create function call string with inputs
+      const inputArgs = Object.values(testCase.input)
+        .map(v => JSON.stringify(v))
+        .join(", ");
+      
+      const testCode = `
+        ${code}
+        return ${functionName}(${inputArgs});
+      `;
+
+      const runTest = new Function(testCode);
+      const result = runTest();
+      
+      // Compare result with expected
+      const isCorrect = JSON.stringify(result) === JSON.stringify(testCase.expected) ||
+        (Array.isArray(result) && Array.isArray(testCase.expected) && 
+         result.sort().toString() === testCase.expected.sort().toString());
+      
+      if (isCorrect) {
+        passed++;
+      }
+      
+      results.push({
+        input: testCase.input,
+        expected: testCase.expected,
+        actual: result,
+        passed: isCorrect
+      });
+    } catch (error) {
+      results.push({
+        input: testCase.input,
+        expected: testCase.expected,
+        actual: `Error: ${error.message}`,
+        passed: false
+      });
+    }
   }
-  if (/\bfor\b/.test(code)) {
-    return { passed: 3, note: "Core cases passed; edge cases still failing." };
+
+  let note = "";
+  if (passed === testCases.length) {
+    note = "All test cases passed!";
+  } else if (passed === 0) {
+    note = "No test cases passing. Check your logic.";
+  } else if (passed >= testCases.length * 0.8) {
+    note = "Almost there! Check edge cases.";
+  } else {
+    note = "Some tests failing. Review your approach.";
   }
-  return { passed: 2, note: "Logic incomplete; verify inputs and outputs." };
+
+  return { passed, total: testCases.length, results, note };
 };
 
 export default function App() {
-  const [code, setCode] = useState(DEFAULT_CODE);
+  // Problem management state
+  const [currentProblemId, setCurrentProblemId] = useState(PROBLEMS[0].id);
+  const currentProblem = useMemo(() => getProblemById(currentProblemId), [currentProblemId]);
+  
+  const [code, setCode] = useState(currentProblem?.starterCode || "");
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -121,8 +185,11 @@ export default function App() {
   const [difficulty, setDifficulty] = useState("Medium");
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [hintsRevealed, setHintsRevealed] = useState(0);
   const [hintsUsed, setHintsUsed] = useState(0);
   const [testsPassed, setTestsPassed] = useState(0);
+  const [testsTotal, setTestsTotal] = useState(0);
+  const [testResults, setTestResults] = useState([]);
   const [efficiency, setEfficiency] = useState("Not evaluated");
   const [efficiencyNote, setEfficiencyNote] = useState(
     "Run analysis to estimate runtime."
@@ -135,6 +202,7 @@ export default function App() {
   const [isTutorialVisible, setIsTutorialVisible] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [showSolution, setShowSolution] = useState(false);
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -156,10 +224,11 @@ export default function App() {
   const undoRedoListenerRef = useRef(null);
   const reportRef = useRef(null);
 
-  const TOTAL_SECONDS = 30 * 60;
+  const TOTAL_SECONDS = currentProblem?.timeLimit || 30 * 60;
   const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
   const isTimeUp = elapsedSeconds >= TOTAL_SECONDS;
   const isEditorDisabled = isLocked || isPaused;
+  const isCompleted = isLocked;
 
   const editorOptions = useMemo(
     () => ({
@@ -437,10 +506,57 @@ export default function App() {
   }, [code]);
 
   const handleRunTests = useCallback(() => {
-    const result = evaluateTests(code);
+    if (!currentProblem) return;
+    const result = runTestCases(code, currentProblem.testCases, currentProblem);
     setTestsPassed(result.passed);
+    setTestsTotal(result.total);
+    setTestResults(result.results);
     setTestsNote(result.note);
-  }, [code]);
+  }, [code, currentProblem]);
+
+  const handleSelectProblem = useCallback((problemId) => {
+    const problem = getProblemById(problemId);
+    if (!problem || isLocked) return;
+    
+    setCurrentProblemId(problemId);
+    setCode(problem.starterCode);
+    setHintsRevealed(0);
+    setHintsUsed(0);
+    setTestsPassed(0);
+    setTestsTotal(0);
+    setTestResults([]);
+    setEfficiency("Not evaluated");
+    setEfficiencyNote("Run analysis to estimate runtime.");
+    setTestsNote("Run tests to evaluate correctness.");
+    setShowSolution(false);
+    setConsoleLogs([]);
+    setMessages([
+      {
+        role: "assistant",
+        content: `Now working on: **${problem.title}**. I can help you think through this problem. Ask me questions or share your approach!`
+      }
+    ]);
+    
+    // Reset timer
+    setElapsedSeconds(0);
+    startAtRef.current = Date.now();
+    pausedDurationRef.current = 0;
+    
+    // Reset LLM context
+    llmMessagesRef.current = [];
+    lastCodeSentRef.current = "";
+    lastProactiveCodeRef.current = "";
+  }, [isLocked]);
+
+  const handleRevealHint = useCallback((hintNumber) => {
+    if (!currentProblem || hintNumber > currentProblem.hints.length) return;
+    setHintsRevealed(hintNumber);
+    setHintsUsed((prev) => prev + 1);
+  }, [currentProblem]);
+
+  const handleShowSolution = useCallback(() => {
+    setShowSolution(true);
+  }, []);
 
   const handleStartTutorial = useCallback(() => {
     setIsTutorialVisible(true);
@@ -533,7 +649,7 @@ export default function App() {
     [efficiency]
   );
   const hintsScore = useMemo(() => getHintsScore(hintsUsed), [hintsUsed]);
-  const testsScore = useMemo(() => getTestsScore(testsPassed), [testsPassed]);
+  const testsScore = useMemo(() => getTestsScore(testsPassed, testsTotal || currentProblem?.testCases?.length || 5), [testsPassed, testsTotal, currentProblem]);
   const totalScore = useMemo(() => {
     const weighted =
       timeScore * 0.25 +
@@ -572,18 +688,16 @@ export default function App() {
         "Add comments to clarify the reasoning behind the chosen approach."
       ],
       comparison: {
-        userTime: "15:23",
+        userTime: `${Math.floor(elapsedSeconds / 60)}:${String(elapsedSeconds % 60).padStart(2, "0")}`,
         avgTime: "18:45",
         topTime: "12:30"
       },
       history: [
-        { problem: "Two Sum", score: 89 },
-        { problem: "Valid Parentheses", score: 75 },
-        { problem: "Merge Intervals", score: 92 }
+        { problem: currentProblem?.title || "Current Problem", score: totalScore }
       ],
-      average: 85
+      average: totalScore
     }),
-    []
+    [elapsedSeconds, currentProblem, totalScore]
   );
 
   const aiFeedback = useMemo(() => {
@@ -611,9 +725,27 @@ export default function App() {
         onPauseToggle={handlePauseToggle}
         onStop={handleStop}
         onStartTutorial={handleStartTutorial}
+        problemSelector={
+          <ProblemSelector
+            problems={PROBLEMS}
+            currentProblemId={currentProblemId}
+            onSelectProblem={handleSelectProblem}
+            isLocked={isLocked}
+          />
+        }
       />
 
       <main className="app__main">
+        <div className="app__problem-section">
+          <ProblemPanel
+            problem={currentProblem}
+            hintsRevealed={hintsRevealed}
+            onRevealHint={handleRevealHint}
+            showSolution={showSolution}
+            onShowSolution={handleShowSolution}
+            isCompleted={isCompleted}
+          />
+        </div>
         <div className="app__editor-section">
           <EditorPanel
             canUndo={canUndo}
@@ -626,7 +758,7 @@ export default function App() {
             onEditorMount={handleEditorMount}
             onCodeChange={handleEditorChange}
             editorOptions={editorOptions}
-            defaultCode={DEFAULT_CODE}
+            code={code}
           />
           <ConsolePanel
             logs={consoleLogs}
@@ -648,6 +780,8 @@ export default function App() {
           <SessionMetrics
             hintsUsed={hintsUsed}
             testsPassed={testsPassed}
+            testsTotal={testsTotal}
+            testResults={testResults}
             efficiency={efficiency}
             efficiencyNote={efficiencyNote}
             testsNote={testsNote}

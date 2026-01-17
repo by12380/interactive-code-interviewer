@@ -15,15 +15,17 @@ function Header({
   onDifficultyChange,
   onPauseToggle,
   onStop,
-  onStartTutorial
+  onStartTutorial,
+  problemSelector
 }) {
   return (
     <header className="app__header">
       <div className="app__header-text">
         <h1>Live AI Coding Interviewer</h1>
-        <p>Prototype UI with editor + chat. Proactive guidance is next.</p>
+        <p>Practice coding problems with AI guidance.</p>
       </div>
       <div className="app__header-actions">
+        {problemSelector}
         <button
           type="button"
           className="tutorial-trigger"
