@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { sendChat } from "./api.js";
+import TutorialOverlay from "./TutorialOverlay.jsx";
 
 const DEFAULT_CODE = `function twoSum(nums, target) {
   // Your solution here
@@ -14,6 +15,8 @@ export default function App() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
   const [difficulty, setDifficulty] = useState("Medium");
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
+  const [tutorialStepIndex, setTutorialStepIndex] = useState(0);
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -32,6 +35,53 @@ export default function App() {
   const TOTAL_SECONDS = 30 * 60;
   const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
   const isTimeUp = elapsedSeconds >= TOTAL_SECONDS;
+
+  const tutorialSteps = useMemo(
+    () => [
+      {
+        targetSelector: '[data-tutorial="difficulty"]',
+        title: "Difficulty",
+        body:
+          "Use this to set the interview difficulty. You can lock it once the interview starts so requirements stay consistent.",
+        highlightPadding: 10,
+        highlightRadius: 16
+      },
+      {
+        targetSelector: '[data-tutorial="timer"]',
+        title: "Timer + Stop",
+        body:
+          "This tracks how much time is left. When you hit Stop (or time runs out), the interview can be locked to simulate a real session.",
+        highlightPadding: 10,
+        highlightRadius: 16
+      },
+      {
+        targetSelector: '[data-tutorial="editor"]',
+        title: "Code editor",
+        body:
+          "This is where you solve the problem. Your code can be shared with the AI coach for feedback while you type.",
+        highlightPadding: 10,
+        highlightRadius: 18
+      },
+      {
+        targetSelector: '[data-tutorial="coach"]',
+        title: "AI Interview Coach",
+        body:
+          "Ask questions, explain your approach, or request hints. The coach can also send proactive feedback based on your latest code changes.",
+        highlightPadding: 10,
+        highlightRadius: 18
+      }
+    ],
+    []
+  );
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shouldAutoStart = params.get("tutorial") === "1";
+    if (shouldAutoStart) {
+      setIsTutorialOpen(true);
+      setTutorialStepIndex(0);
+    }
+  }, []);
 
   const editorOptions = useMemo(
     () => ({
@@ -186,13 +236,23 @@ export default function App() {
 
   return (
     <div className="app">
+      <TutorialOverlay
+        isOpen={isTutorialOpen}
+        steps={tutorialSteps}
+        stepIndex={tutorialStepIndex}
+        onStepChange={setTutorialStepIndex}
+        onClose={() => {
+          setIsTutorialOpen(false);
+          setTutorialStepIndex(0);
+        }}
+      />
       <header className="app__header">
         <div className="app__header-text">
           <h1>Live AI Coding Interviewer</h1>
           <p>Prototype UI with editor + chat. Proactive guidance is next.</p>
         </div>
         <div className="app__header-actions">
-          <div className="difficulty-card">
+          <div className="difficulty-card" data-tutorial="difficulty">
             <span className="difficulty-card__label">Difficulty</span>
             <select
               className="difficulty-card__select"
@@ -206,7 +266,7 @@ export default function App() {
               <option value="Hard">Hard</option>
             </select>
           </div>
-          <div className="time-card">
+          <div className="time-card" data-tutorial="timer">
             <div className="time-tracker">
               <span className="time-tracker__label">Time left</span>
               <span className="time-tracker__value">
@@ -229,11 +289,22 @@ export default function App() {
               Stop
             </button>
           </div>
+          <button
+            type="button"
+            className="tutorial-trigger"
+            onClick={() => {
+              setIsTutorialOpen(true);
+              setTutorialStepIndex(0);
+            }}
+            aria-label="Start tutorial"
+          >
+            Tutorial
+          </button>
         </div>
       </header>
 
       <main className="app__main">
-        <section className="panel panel--editor">
+        <section className="panel panel--editor" data-tutorial="editor">
           <div className="panel__header">Editor</div>
           <Editor
             height="100%"
@@ -244,7 +315,7 @@ export default function App() {
           />
         </section>
 
-        <section className="panel panel--chat">
+        <section className="panel panel--chat" data-tutorial="coach">
           <div className="panel__header">Interview Coach</div>
           <div className="chat">
             <div className="chat__messages">
