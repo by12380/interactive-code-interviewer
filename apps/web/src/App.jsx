@@ -9,7 +9,16 @@ import ScoreReport from "./components/ScoreReport.jsx";
 import Tutorial from "./components/Tutorial.jsx";
 import ProblemPanel from "./components/ProblemPanel.jsx";
 import ProblemSelector from "./components/ProblemSelector.jsx";
+import AuthModal from "./components/AuthModal.jsx";
+import UserProfile from "./components/UserProfile.jsx";
+import Leaderboard from "./components/Leaderboard.jsx";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
+import { 
+  getCurrentUser, 
+  logout as logoutUser, 
+  saveInterviewResult,
+  getPersonalBest 
+} from "./services/userService.js";
 
 const getTimeScore = (elapsedSeconds, limitSeconds) => {
   if (elapsedSeconds <= 10 * 60) {
@@ -172,6 +181,13 @@ const runTestCases = (code, testCases, problem) => {
 };
 
 export default function App() {
+  // User authentication state
+  const [user, setUser] = useState(() => getCurrentUser());
+  const [isAuthModalVisible, setIsAuthModalVisible] = useState(false);
+  const [isProfileVisible, setIsProfileVisible] = useState(false);
+  const [isLeaderboardVisible, setIsLeaderboardVisible] = useState(false);
+  const [personalBest, setPersonalBest] = useState(null);
+  
   // Problem management state
   const [currentProblemId, setCurrentProblemId] = useState(PROBLEMS[0].id);
   const currentProblem = useMemo(() => getProblemById(currentProblemId), [currentProblemId]);
@@ -277,6 +293,14 @@ export default function App() {
       reportRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   }, [isReportVisible]);
+
+  // Load personal best on mount and when user changes
+  useEffect(() => {
+    if (user) {
+      const best = getPersonalBest(currentProblemId);
+      setPersonalBest(best);
+    }
+  }, [user, currentProblemId]);
 
   const handlePauseToggle = useCallback(() => {
     if (isPaused) {
@@ -477,7 +501,44 @@ export default function App() {
     setIsPaused(false);
     setIsLocked(true);
     setIsReportVisible(true);
-  }, []);
+    
+    // Save interview result if user is logged in
+    if (user && currentProblem) {
+      // Calculate scores for saving
+      const timeScoreVal = getTimeScore(elapsedSeconds, currentProblem.timeLimit || 30 * 60);
+      const efficiencyScoreVal = getEfficiencyScore(efficiency);
+      const hintsScoreVal = getHintsScore(hintsUsed);
+      const testsScoreVal = getTestsScore(testsPassed, testsTotal || currentProblem.testCases?.length || 5);
+      const totalScoreVal = Math.round(
+        timeScoreVal * 0.25 +
+        efficiencyScoreVal * 0.35 +
+        hintsScoreVal * 0.15 +
+        testsScoreVal * 0.25
+      );
+      const gradeVal = getGrade(totalScoreVal);
+      
+      const result = saveInterviewResult({
+        problemId: currentProblem.id,
+        problemTitle: currentProblem.title,
+        difficulty: currentProblem.difficulty,
+        score: totalScoreVal,
+        grade: gradeVal,
+        timeSpent: elapsedSeconds,
+        testsPassed,
+        testsTotal: testsTotal || currentProblem.testCases?.length || 0,
+        hintsUsed,
+        efficiency,
+        code,
+      });
+      
+      if (result.success) {
+        setUser(result.user);
+        // Update personal best
+        const best = getPersonalBest(currentProblem.id);
+        setPersonalBest(best);
+      }
+    }
+  }, [user, currentProblem, elapsedSeconds, efficiency, hintsUsed, testsPassed, testsTotal, code]);
 
   const handleInputChange = useCallback((event) => {
     setInput(event.target.value);
@@ -546,7 +607,13 @@ export default function App() {
     llmMessagesRef.current = [];
     lastCodeSentRef.current = "";
     lastProactiveCodeRef.current = "";
-  }, [isLocked]);
+    
+    // Update personal best for the new problem
+    if (user) {
+      const best = getPersonalBest(problemId);
+      setPersonalBest(best);
+    }
+  }, [isLocked, user]);
 
   const handleRevealHint = useCallback((hintNumber) => {
     if (!currentProblem || hintNumber > currentProblem.hints.length) return;
@@ -564,6 +631,46 @@ export default function App() {
 
   const handleCloseTutorial = useCallback(() => {
     setIsTutorialVisible(false);
+  }, []);
+
+  // Auth handlers
+  const handleOpenAuth = useCallback(() => {
+    setIsAuthModalVisible(true);
+  }, []);
+
+  const handleCloseAuth = useCallback(() => {
+    setIsAuthModalVisible(false);
+  }, []);
+
+  const handleAuthSuccess = useCallback((loggedInUser) => {
+    setUser(loggedInUser);
+    // Update personal best for current problem
+    const best = getPersonalBest(currentProblemId);
+    setPersonalBest(best);
+  }, [currentProblemId]);
+
+  const handleOpenProfile = useCallback(() => {
+    setIsProfileVisible(true);
+  }, []);
+
+  const handleCloseProfile = useCallback(() => {
+    setIsProfileVisible(false);
+  }, []);
+
+  const handleLogout = useCallback(() => {
+    logoutUser();
+    setUser(null);
+    setPersonalBest(null);
+    setIsProfileVisible(false);
+  }, []);
+
+  // Leaderboard handlers
+  const handleOpenLeaderboard = useCallback(() => {
+    setIsLeaderboardVisible(true);
+  }, []);
+
+  const handleCloseLeaderboard = useCallback(() => {
+    setIsLeaderboardVisible(false);
   }, []);
 
   const handleClearConsole = useCallback(() => {
@@ -725,6 +832,10 @@ export default function App() {
         onPauseToggle={handlePauseToggle}
         onStop={handleStop}
         onStartTutorial={handleStartTutorial}
+        onOpenLeaderboard={handleOpenLeaderboard}
+        user={user}
+        onOpenAuth={handleOpenAuth}
+        onOpenProfile={handleOpenProfile}
         problemSelector={
           <ProblemSelector
             problems={PROBLEMS}
@@ -852,6 +963,33 @@ export default function App() {
       </div>
 
       <Tutorial isVisible={isTutorialVisible} onClose={handleCloseTutorial} />
+      
+      {/* Auth Modal */}
+      {isAuthModalVisible && (
+        <AuthModal
+          onClose={handleCloseAuth}
+          onAuthSuccess={handleAuthSuccess}
+        />
+      )}
+      
+      {/* User Profile Modal */}
+      {isProfileVisible && user && (
+        <UserProfile
+          user={user}
+          onClose={handleCloseProfile}
+          problems={PROBLEMS}
+          onLogout={handleLogout}
+        />
+      )}
+      
+      {/* Leaderboard Modal */}
+      {isLeaderboardVisible && (
+        <Leaderboard
+          onClose={handleCloseLeaderboard}
+          problems={PROBLEMS}
+          currentUser={user}
+        />
+      )}
     </div>
   );
 }

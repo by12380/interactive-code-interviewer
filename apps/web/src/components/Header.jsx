@@ -16,7 +16,11 @@ function Header({
   onPauseToggle,
   onStop,
   onStartTutorial,
-  problemSelector
+  onOpenLeaderboard,
+  problemSelector,
+  user,
+  onOpenAuth,
+  onOpenProfile
 }) {
   return (
     <header className="app__header">
@@ -33,6 +37,15 @@ function Header({
           aria-label="Start tutorial"
         >
           How it works?
+        </button>
+        <button
+          type="button"
+          className="leaderboard-trigger"
+          onClick={onOpenLeaderboard}
+          aria-label="View leaderboard"
+        >
+          <span className="leaderboard-trigger__icon">🏆</span>
+          Leaderboard
         </button>
         <div className="difficulty-card">
           <span className="difficulty-card__label">Difficulty</span>
@@ -77,6 +90,32 @@ function Header({
             </span>
             Stop
           </button>
+        </div>
+        
+        {/* User Authentication Section */}
+        <div className="user-section">
+          {user ? (
+            <button
+              type="button"
+              className="user-section__profile-btn"
+              onClick={onOpenProfile}
+              aria-label="Open profile"
+            >
+              <span className="user-section__avatar">
+                {user.username?.charAt(0).toUpperCase() || "U"}
+              </span>
+              <span className="user-section__name">{user.username}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="user-section__login-btn"
+              onClick={onOpenAuth}
+              aria-label="Sign in"
+            >
+              Sign In
+            </button>
+          )}
         </div>
       </div>
     </header>
