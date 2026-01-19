@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { sendChat } from "./api.js";
 import TutorialOverlay from "./TutorialOverlay.jsx";
+import { getCurrentUserId, getUserById, loadUsers, logIn, logOut, signUp } from "./auth.js";
+import { loadUserState, saveUserJson } from "./userData.js";
+import { randomId } from "./storage.js";
 
 const PROBLEMS = [
   {
@@ -155,7 +158,392 @@ function prettyValue(value) {
   return safeStringify(value);
 }
 
+function formatClock(seconds) {
+  const s = Math.max(0, Math.floor(Number(seconds) || 0));
+  const mm = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
+function Modal({ isOpen, title, children, onClose }) {
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose?.();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+  return (
+    <div className="ici-modal" role="dialog" aria-modal="true">
+      <div className="ici-modal__backdrop" onClick={() => onClose?.()} />
+      <div className="ici-modal__panel">
+        <div className="ici-modal__header">
+          <div className="ici-modal__title">{title}</div>
+          <button
+            type="button"
+            className="ici-modal__close"
+            onClick={() => onClose?.()}
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="ici-modal__body">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function AuthModal({ isOpen, onClose, onAuthed }) {
+  const [mode, setMode] = useState("login"); // login | signup
+  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [isWorking, setIsWorking] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setError("");
+    setIsWorking(false);
+  }, [isOpen]);
+
+  const submit = async () => {
+    setError("");
+    setIsWorking(true);
+    try {
+      const res =
+        mode === "signup"
+          ? await signUp({ email, username, password })
+          : await logIn({ email, password });
+      if (!res?.ok || !res?.user) {
+        setError(res?.error || "Unable to authenticate.");
+        return;
+      }
+      onAuthed?.(res.user);
+      onClose?.();
+    } catch (e) {
+      setError(e?.message || "Unable to authenticate.");
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      title={mode === "signup" ? "Create account" : "Log in"}
+      onClose={onClose}
+    >
+      <div className="auth">
+        <div className="auth__tabs" role="tablist" aria-label="Authentication">
+          <button
+            type="button"
+            className={`auth__tab ${mode === "login" ? "is-active" : ""}`}
+            onClick={() => setMode("login")}
+          >
+            Log in
+          </button>
+          <button
+            type="button"
+            className={`auth__tab ${mode === "signup" ? "is-active" : ""}`}
+            onClick={() => setMode("signup")}
+          >
+            Sign up
+          </button>
+        </div>
+
+        {error && <div className="auth__error">{error}</div>}
+
+        <label className="auth__field">
+          <span>Email</span>
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            autoComplete="email"
+          />
+        </label>
+
+        {mode === "signup" && (
+          <label className="auth__field">
+            <span>Display name</span>
+            <input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="e.g. Austin"
+              autoComplete="nickname"
+            />
+          </label>
+        )}
+
+        <label className="auth__field">
+          <span>Password</span>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="••••••••"
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submit();
+              }
+            }}
+          />
+        </label>
+
+        <div className="auth__actions">
+          <button
+            type="button"
+            className="auth__primary"
+            onClick={submit}
+            disabled={isWorking}
+          >
+            {isWorking ? "Working..." : mode === "signup" ? "Create account" : "Log in"}
+          </button>
+          <button type="button" className="auth__ghost" onClick={onClose} disabled={isWorking}>
+            Cancel
+          </button>
+        </div>
+
+        <div className="auth__note">
+          This is a prototype: accounts are stored in <code>localStorage</code> on this device only.
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function ProfileModal({
+  isOpen,
+  onClose,
+  user,
+  storageUserId,
+  problems,
+  solvedByProblemId,
+  attemptStartedAtByProblemId,
+  bestTimeSecondsByProblemId,
+  history,
+  onLogOut
+}) {
+  const attemptedSet = useMemo(() => {
+    const out = new Set();
+    for (const k of Object.keys(attemptStartedAtByProblemId || {})) out.add(k);
+    for (const k of Object.keys(solvedByProblemId || {})) out.add(k);
+    return out;
+  }, [attemptStartedAtByProblemId, solvedByProblemId]);
+
+  const attemptedCount = attemptedSet.size;
+  const completedCount = Object.values(solvedByProblemId || {}).filter(Boolean).length;
+  const rate = attemptedCount > 0 ? Math.round((completedCount / attemptedCount) * 100) : 0;
+
+  return (
+    <Modal isOpen={isOpen} title="Profile" onClose={onClose}>
+      <div className="profile">
+        <div className="profile__top">
+          <div>
+            <div className="profile__name">{user ? user.username : "Guest"}</div>
+            <div className="profile__sub">
+              {user?.email ? user.email : `Local-only progress (${storageUserId})`}
+            </div>
+          </div>
+          <div className="profile__actions">
+            {user ? (
+              <button type="button" className="profile__btn profile__btn--danger" onClick={onLogOut}>
+                Log out
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="profile__stats">
+          <div className="profile__stat">
+            <div className="profile__stat-k">Attempted</div>
+            <div className="profile__stat-v">{attemptedCount}</div>
+          </div>
+          <div className="profile__stat">
+            <div className="profile__stat-k">Completed</div>
+            <div className="profile__stat-v">{completedCount}</div>
+          </div>
+          <div className="profile__stat">
+            <div className="profile__stat-k">Completion</div>
+            <div className="profile__stat-v">{rate}%</div>
+          </div>
+        </div>
+
+        <div className="profile__section">
+          <div className="profile__section-title">Problems</div>
+          <div className="profile__problems">
+            {problems.map((p) => {
+              const attempted = attemptedSet.has(p.id);
+              const solved = Boolean(solvedByProblemId?.[p.id]);
+              const best = bestTimeSecondsByProblemId?.[p.id];
+              return (
+                <div key={p.id} className="profile__problem">
+                  <div className="profile__problem-left">
+                    <div className="profile__problem-title">{p.title}</div>
+                    <div className="profile__problem-meta">
+                      {attempted ? "Attempted" : "Not attempted"} · {solved ? "Completed" : "Not completed"}
+                    </div>
+                  </div>
+                  <div className="profile__problem-right">
+                    <div className={`profile__pill ${solved ? "profile__pill--ok" : ""}`}>
+                      {solved ? "Solved" : "—"}
+                    </div>
+                    <div className="profile__best">
+                      Best: {typeof best === "number" ? formatClock(best) : "—"}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="profile__section">
+          <div className="profile__section-title">Interview history</div>
+          {history.length === 0 ? (
+            <div className="profile__empty">No sessions yet.</div>
+          ) : (
+            <div className="profile__history">
+              {history.slice(0, 25).map((h) => (
+                <div key={h.id} className="profile__history-row">
+                  <div className="profile__history-main">
+                    <div className="profile__history-title">{h.problemTitle || h.problemId}</div>
+                    <div className="profile__history-meta">
+                      {h.outcome || "session"} · {typeof h.durationSeconds === "number" ? formatClock(h.durationSeconds) : "—"} ·{" "}
+                      {h.testsTotal ? `${h.testsPassed}/${h.testsTotal} tests` : "no tests"}
+                    </div>
+                  </div>
+                  <div className="profile__history-side">
+                    <div className="profile__pill">{h.difficulty || "—"}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {history.length > 25 && (
+            <div className="profile__note">Showing latest 25 entries.</div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function LeaderboardModal({ isOpen, onClose, problems, initialProblemId }) {
+  const [selectedProblemId, setSelectedProblemId] = useState(
+    initialProblemId || problems?.[0]?.id || ""
+  );
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectedProblemId(initialProblemId || problems?.[0]?.id || "");
+  }, [isOpen, initialProblemId, problems]);
+
+  const rows = useMemo(() => {
+    const problemId = String(selectedProblemId || "");
+    if (!problemId) return [];
+
+    const users = loadUsers();
+    const competitors = [];
+
+    // Registered users
+    for (const u of users) {
+      if (!u?.id) continue;
+      const state = loadUserState(String(u.id));
+      const t = state?.bestTimeSecondsByProblemId?.[problemId];
+      if (typeof t !== "number") continue;
+      competitors.push({
+        key: `user:${u.id}`,
+        name: u.username || u.email || String(u.id),
+        bestSeconds: t
+      });
+    }
+
+    // Guest (device-local)
+    const guestState = loadUserState("guest");
+    const guestT = guestState?.bestTimeSecondsByProblemId?.[problemId];
+    if (typeof guestT === "number") {
+      competitors.push({
+        key: "guest",
+        name: "Guest",
+        bestSeconds: guestT
+      });
+    }
+
+    competitors.sort((a, b) => a.bestSeconds - b.bestSeconds);
+    return competitors.map((c, idx) => ({ ...c, rank: idx + 1 })).slice(0, 20);
+  }, [selectedProblemId, isOpen]);
+
+  const selectedProblem = problems.find((p) => p.id === selectedProblemId) || null;
+
+  return (
+    <Modal isOpen={isOpen} title="Leaderboards" onClose={onClose}>
+      <div className="leaderboard">
+        <div className="leaderboard__top">
+          <div className="leaderboard__picker">
+            <div className="leaderboard__label">Problem</div>
+            <select
+              className="leaderboard__select"
+              value={selectedProblemId}
+              onChange={(e) => setSelectedProblemId(e.target.value)}
+              aria-label="Select problem leaderboard"
+            >
+              {problems.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="leaderboard__note">
+            Device-only: compares users stored in <code>localStorage</code> on this browser.
+          </div>
+        </div>
+
+        <div className="leaderboard__table">
+          <div className="leaderboard__head">
+            <div>#</div>
+            <div>User</div>
+            <div>Best time</div>
+          </div>
+
+          {rows.length === 0 ? (
+            <div className="leaderboard__empty">
+              No times yet for {selectedProblem?.title || "this problem"}. Solve it to appear here.
+            </div>
+          ) : (
+            rows.map((r) => (
+              <div key={r.key} className="leaderboard__row">
+                <div className="leaderboard__rank">{r.rank}</div>
+                <div className="leaderboard__user">{r.name}</div>
+                <div className="leaderboard__time">{formatClock(r.bestSeconds)}</div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 export default function App() {
+  const [currentUserId, setCurrentUserIdState] = useState(() => getCurrentUserId());
+  const [currentUser, setCurrentUser] = useState(() => getUserById(getCurrentUserId()));
+  const storageUserId = currentUserId || "guest";
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
+
   const [activeProblemId, setActiveProblemId] = useState(() => {
     try {
       const saved = localStorage.getItem("ici.activeProblemId");
@@ -165,32 +553,76 @@ export default function App() {
     }
   });
   const [codeByProblemId, setCodeByProblemId] = useState(() => {
-    try {
-      const raw = localStorage.getItem("ici.codeByProblemId");
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch {
-      return {};
-    }
+    return loadUserState(storageUserId).codeByProblemId;
   });
   const [solvedByProblemId, setSolvedByProblemId] = useState(() => {
-    try {
-      const raw = localStorage.getItem("ici.solvedByProblemId");
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch {
-      return {};
-    }
+    return loadUserState(storageUserId).solvedByProblemId;
   });
   const [testRunByProblemId, setTestRunByProblemId] = useState(() => {
-    try {
-      const raw = localStorage.getItem("ici.testRunByProblemId");
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch {
-      return {};
-    }
+    return loadUserState(storageUserId).testRunByProblemId;
   });
+  const [attemptStartedAtByProblemId, setAttemptStartedAtByProblemId] = useState(() => {
+    return loadUserState(storageUserId).attemptStartedAtByProblemId;
+  });
+  const [bestTimeSecondsByProblemId, setBestTimeSecondsByProblemId] = useState(() => {
+    return loadUserState(storageUserId).bestTimeSecondsByProblemId;
+  });
+  const [history, setHistory] = useState(() => {
+    return loadUserState(storageUserId).history;
+  });
+
+  useEffect(() => {
+    setCurrentUser(currentUserId ? getUserById(currentUserId) : null);
+  }, [currentUserId]);
+
+  useEffect(() => {
+    const next = loadUserState(storageUserId);
+    setCodeByProblemId(next.codeByProblemId);
+    setSolvedByProblemId(next.solvedByProblemId);
+    setTestRunByProblemId(next.testRunByProblemId);
+    setAttemptStartedAtByProblemId(next.attemptStartedAtByProblemId);
+    setBestTimeSecondsByProblemId(next.bestTimeSecondsByProblemId);
+    setHistory(next.history);
+  }, [storageUserId]);
+
+  useEffect(() => {
+    // Backwards compat: migrate old non-user-scoped keys into the guest profile once.
+    if (storageUserId !== "guest") return;
+
+    const guest = loadUserState("guest");
+    const isGuestEmpty =
+      Object.keys(guest.codeByProblemId || {}).length === 0 &&
+      Object.keys(guest.solvedByProblemId || {}).length === 0 &&
+      Object.keys(guest.testRunByProblemId || {}).length === 0;
+    if (!isGuestEmpty) return;
+
+    const readLegacy = (key) => {
+      try {
+        const raw = localStorage.getItem(key);
+        const parsed = raw ? JSON.parse(raw) : null;
+        return parsed && typeof parsed === "object" ? parsed : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const legacyCode = readLegacy("ici.codeByProblemId");
+    const legacySolved = readLegacy("ici.solvedByProblemId");
+    const legacyTestRun = readLegacy("ici.testRunByProblemId");
+
+    if (legacyCode) {
+      setCodeByProblemId(legacyCode);
+      saveUserJson("guest", "codeByProblemId", legacyCode);
+    }
+    if (legacySolved) {
+      setSolvedByProblemId(legacySolved);
+      saveUserJson("guest", "solvedByProblemId", legacySolved);
+    }
+    if (legacyTestRun) {
+      setTestRunByProblemId(legacyTestRun);
+      saveUserJson("guest", "testRunByProblemId", legacyTestRun);
+    }
+  }, [storageUserId]);
 
   const activeProblem = useMemo(() => {
     const found = PROBLEMS.find((p) => p.id === activeProblemId);
@@ -239,6 +671,45 @@ export default function App() {
   const startAtRef = useRef(Date.now());
   const runnerIframeRef = useRef(null);
   const runIdRef = useRef(0);
+  const storageUserIdRef = useRef(storageUserId);
+  const solvedByProblemIdRef = useRef(solvedByProblemId);
+  const attemptStartedAtByProblemIdRef = useRef(attemptStartedAtByProblemId);
+  const bestTimeSecondsByProblemIdRef = useRef(bestTimeSecondsByProblemId);
+  const testRunByProblemIdRef = useRef(testRunByProblemId);
+  const codeByProblemIdRef = useRef(codeByProblemId);
+  const historyRef = useRef(history);
+  const difficultyRef = useRef(difficulty);
+  const stopOnceRef = useRef(false);
+
+  useEffect(() => {
+    storageUserIdRef.current = storageUserId;
+  }, [storageUserId]);
+  useEffect(() => {
+    solvedByProblemIdRef.current = solvedByProblemId;
+  }, [solvedByProblemId]);
+  useEffect(() => {
+    attemptStartedAtByProblemIdRef.current = attemptStartedAtByProblemId;
+  }, [attemptStartedAtByProblemId]);
+  useEffect(() => {
+    bestTimeSecondsByProblemIdRef.current = bestTimeSecondsByProblemId;
+  }, [bestTimeSecondsByProblemId]);
+  useEffect(() => {
+    testRunByProblemIdRef.current = testRunByProblemId;
+  }, [testRunByProblemId]);
+  useEffect(() => {
+    codeByProblemIdRef.current = codeByProblemId;
+  }, [codeByProblemId]);
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
+  useEffect(() => {
+    difficultyRef.current = difficulty;
+  }, [difficulty]);
+  useEffect(() => {
+    if (!isLocked) {
+      stopOnceRef.current = false;
+    }
+  }, [isLocked]);
 
   const TOTAL_SECONDS = 30 * 60;
   const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
@@ -409,11 +880,56 @@ export default function App() {
           return next;
         });
 
-        if (payload?.summary?.passed === payload?.summary?.total && payload?.summary?.total > 0) {
+        const passed = Number(payload?.summary?.passed || 0);
+        const total = Number(payload?.summary?.total || 0);
+        const isPassing = total > 0 && passed === total;
+
+        if (isPassing) {
+          const wasSolved = Boolean(solvedByProblemIdRef.current?.[problemId]);
+
           setSolvedByProblemId((prev) => {
             const next = { ...(prev || {}), [problemId]: true };
             return next;
           });
+
+          if (!wasSolved) {
+            const endedAt = Date.now();
+            const startedAtRaw = attemptStartedAtByProblemIdRef.current?.[problemId];
+            const startedAt =
+              typeof startedAtRaw === "number" && Number.isFinite(startedAtRaw)
+                ? startedAtRaw
+                : endedAt;
+            const durationSeconds = Math.max(0, Math.floor((endedAt - startedAt) / 1000));
+
+            setAttemptStartedAtByProblemId((prev) => {
+              if (prev?.[problemId]) return prev;
+              return { ...(prev || {}), [problemId]: startedAt };
+            });
+
+            setBestTimeSecondsByProblemId((prev) => {
+              const currentBest = prev?.[problemId];
+              const nextBest =
+                typeof currentBest === "number" ? Math.min(currentBest, durationSeconds) : durationSeconds;
+              return { ...(prev || {}), [problemId]: nextBest };
+            });
+
+            const problem = PROBLEMS.find((p) => p.id === problemId);
+            const entry = {
+              id: randomId("session"),
+              createdAt: endedAt,
+              startedAt,
+              endedAt,
+              durationSeconds,
+              outcome: "solved",
+              problemId,
+              problemTitle: problem?.title || problemId,
+              difficulty: difficultyRef.current,
+              testsPassed: passed,
+              testsTotal: total,
+              codeSnapshot: String(codeByProblemIdRef.current?.[problemId] || "")
+            };
+            setHistory((prev) => [entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 200));
+          }
         }
       }
     };
@@ -486,6 +1002,58 @@ export default function App() {
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   };
 
+  const stopInterview = (outcome = "stopped") => {
+    if (stopOnceRef.current) return;
+    stopOnceRef.current = true;
+
+    const endedAt = Date.now();
+    const problemId = String(activeProblem?.id || "");
+    const problemTitle = String(activeProblem?.title || problemId);
+    if (!problemId) {
+      setIsLocked(true);
+      return;
+    }
+
+    const startedAtRaw = attemptStartedAtByProblemIdRef.current?.[problemId];
+    const startedAt =
+      typeof startedAtRaw === "number" && Number.isFinite(startedAtRaw)
+        ? startedAtRaw
+        : endedAt;
+    const durationSeconds = Math.max(0, Math.floor((endedAt - startedAt) / 1000));
+
+    const summary = testRunByProblemIdRef.current?.[problemId]?.summary || null;
+    const testsPassed = Number(summary?.passed || 0);
+    const testsTotal = Number(summary?.total || 0);
+
+    const entry = {
+      id: randomId("session"),
+      createdAt: endedAt,
+      startedAt,
+      endedAt,
+      durationSeconds,
+      outcome: String(outcome || "stopped"),
+      problemId,
+      problemTitle,
+      difficulty: difficultyRef.current,
+      testsPassed: testsTotal ? testsPassed : 0,
+      testsTotal: testsTotal || 0,
+      codeSnapshot: String(codeByProblemIdRef.current?.[problemId] || "")
+    };
+
+    setAttemptStartedAtByProblemId((prev) => {
+      if (prev?.[problemId]) return prev;
+      return { ...(prev || {}), [problemId]: startedAt };
+    });
+    setHistory((prev) => [entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 200));
+    setIsLocked(true);
+  };
+
+  useEffect(() => {
+    if (isTimeUp && !isLocked) {
+      stopInterview("timeout");
+    }
+  }, [isTimeUp, isLocked]);
+
   const buildCodeMessage = (nextCode) => ({
     role: "user",
     content: `[code update]\n${nextCode || "// No code provided"}`
@@ -500,33 +1068,43 @@ export default function App() {
   }, [activeProblemId]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("ici.codeByProblemId", JSON.stringify(codeByProblemId || {}));
-    } catch {
-      // ignore
-    }
-  }, [codeByProblemId]);
+    saveUserJson(storageUserId, "codeByProblemId", codeByProblemId || {});
+  }, [storageUserId, codeByProblemId]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("ici.solvedByProblemId", JSON.stringify(solvedByProblemId || {}));
-    } catch {
-      // ignore
-    }
-  }, [solvedByProblemId]);
+    saveUserJson(storageUserId, "solvedByProblemId", solvedByProblemId || {});
+  }, [storageUserId, solvedByProblemId]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem("ici.testRunByProblemId", JSON.stringify(testRunByProblemId || {}));
-    } catch {
-      // ignore
-    }
-  }, [testRunByProblemId]);
+    saveUserJson(storageUserId, "testRunByProblemId", testRunByProblemId || {});
+  }, [storageUserId, testRunByProblemId]);
+
+  useEffect(() => {
+    saveUserJson(storageUserId, "attemptStartedAtByProblemId", attemptStartedAtByProblemId || {});
+  }, [storageUserId, attemptStartedAtByProblemId]);
+
+  useEffect(() => {
+    saveUserJson(storageUserId, "bestTimeSecondsByProblemId", bestTimeSecondsByProblemId || {});
+  }, [storageUserId, bestTimeSecondsByProblemId]);
+
+  useEffect(() => {
+    saveUserJson(storageUserId, "history", history || []);
+  }, [storageUserId, history]);
 
   useEffect(() => {
     setProblemTab("Description");
     setIsSolutionVisible(false);
   }, [activeProblemId]);
+
+  useEffect(() => {
+    if (isLocked) return;
+    if (!activeProblemId) return;
+    setAttemptStartedAtByProblemId((prev) => {
+      const existing = prev?.[activeProblemId];
+      if (existing) return prev;
+      return { ...(prev || {}), [activeProblemId]: Date.now() };
+    });
+  }, [activeProblemId, isLocked]);
 
   useEffect(() => {
     if (isLocked) {
@@ -854,6 +1432,18 @@ function __ici_deepEqual(a, b) {
     activeProblem?.hints?.length || 0
   );
 
+  const handleAuthed = (user) => {
+    setCurrentUserIdState(user?.id || null);
+    setCurrentUser(user || null);
+  };
+
+  const handleLogOut = () => {
+    logOut();
+    setCurrentUserIdState(null);
+    setCurrentUser(null);
+    setIsProfileOpen(false);
+  };
+
   return (
     <div className="app">
       <TutorialOverlay
@@ -865,6 +1455,29 @@ function __ici_deepEqual(a, b) {
           setIsTutorialOpen(false);
           setTutorialStepIndex(0);
         }}
+      />
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onAuthed={handleAuthed}
+      />
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        user={currentUser}
+        storageUserId={storageUserId}
+        problems={PROBLEMS}
+        solvedByProblemId={solvedByProblemId}
+        attemptStartedAtByProblemId={attemptStartedAtByProblemId}
+        bestTimeSecondsByProblemId={bestTimeSecondsByProblemId}
+        history={history}
+        onLogOut={handleLogOut}
+      />
+      <LeaderboardModal
+        isOpen={isLeaderboardOpen}
+        onClose={() => setIsLeaderboardOpen(false)}
+        problems={PROBLEMS}
+        initialProblemId={activeProblemId}
       />
       <header className="app__header">
         <div className="app__header-text">
@@ -899,7 +1512,7 @@ function __ici_deepEqual(a, b) {
             <button
               type="button"
               className="time-tracker__action"
-              onClick={() => setIsLocked(true)}
+              onClick={() => stopInterview("stopped")}
               disabled={isLocked}
               aria-label="Stop interview"
             >
@@ -920,6 +1533,43 @@ function __ici_deepEqual(a, b) {
           >
             Tutorial
           </button>
+          <button
+            type="button"
+            className="tutorial-trigger"
+            onClick={() => setIsLeaderboardOpen(true)}
+            aria-label="Open leaderboards"
+          >
+            Leaderboards
+          </button>
+          <div className="user-actions">
+            <button
+              type="button"
+              className="user-actions__btn user-actions__btn--primary"
+              onClick={() => setIsProfileOpen(true)}
+              aria-label="Open profile"
+            >
+              {currentUser ? currentUser.username : "Guest"} · Profile
+            </button>
+            {currentUser ? (
+              <button
+                type="button"
+                className="user-actions__btn"
+                onClick={handleLogOut}
+                aria-label="Log out"
+              >
+                Log out
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="user-actions__btn"
+                onClick={() => setIsAuthOpen(true)}
+                aria-label="Log in or sign up"
+              >
+                Log in / Sign up
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
