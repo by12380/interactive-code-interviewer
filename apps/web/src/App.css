@@ -800,6 +800,52 @@ textarea {
 
 .panel--editor {
   min-height: 540px;
+  position: relative;
+}
+
+/* In-editor interruption toast */
+.ici-interrupt {
+  position: absolute;
+  z-index: 10;
+  top: 56px;
+  right: 16px;
+  max-width: 420px;
+  background: rgba(18, 18, 20, 0.92);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  padding: 12px 12px 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.ici-interrupt__label {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  opacity: 0.8;
+  margin-bottom: 6px;
+}
+
+.ici-interrupt__text {
+  font-size: 13px;
+  line-height: 1.35;
+  padding-right: 18px;
+}
+
+.ici-interrupt__close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ici-interrupt__close:hover {
+  color: #fff;
 }
 
 .panel--console {

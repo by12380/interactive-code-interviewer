@@ -5,6 +5,7 @@ import TutorialOverlay from "./TutorialOverlay.jsx";
 import { getCurrentUserId, getUserById, loadUsers, logIn, logOut, signUp } from "./auth.js";
 import { loadUserState, saveUserJson } from "./userData.js";
 import { randomId } from "./storage.js";
+import { analyzeCodeForInterruptions } from "./codeAnalysis.js";
 
 const PROBLEMS = [
   {
@@ -655,6 +656,7 @@ export default function App() {
   const [tutorialStepIndex, setTutorialStepIndex] = useState(0);
   const [consoleEntries, setConsoleEntries] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [liveInterruption, setLiveInterruption] = useState(null); // { message, ts }
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -666,11 +668,15 @@ export default function App() {
   const proactiveInFlightRef = useRef(false);
   const lastProactiveCodeRef = useRef("");
   const lastProactiveAtRef = useRef(0);
+  const lastInterruptByIdRef = useRef(new Map()); // id -> last timestamp
+  const lastInterruptTextRef = useRef("");
+  const hasUserExplainedApproachRef = useRef(false);
   const lastCodeSentRef = useRef("");
   const llmMessagesRef = useRef([]);
   const startAtRef = useRef(Date.now());
   const runnerIframeRef = useRef(null);
   const runIdRef = useRef(0);
+  const chatEndRef = useRef(null);
   const storageUserIdRef = useRef(storageUserId);
   const solvedByProblemIdRef = useRef(solvedByProblemId);
   const attemptStartedAtByProblemIdRef = useRef(attemptStartedAtByProblemId);
@@ -705,6 +711,12 @@ export default function App() {
   useEffect(() => {
     difficultyRef.current = difficulty;
   }, [difficulty]);
+
+  useEffect(() => {
+    // Auto-scroll chat to the latest message (especially important for interruptions).
+    // If the user scrolls up manually this is still fairly gentle since it only scrolls to the end node.
+    chatEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [messages.length]);
   useEffect(() => {
     if (!isLocked) {
       stopOnceRef.current = false;
@@ -1128,6 +1140,44 @@ export default function App() {
     return [...messageList, buildCodeMessage(nextCode)];
   };
 
+  // Fast, local interruptions (no API call). Runs frequently with a tight debounce.
+  useEffect(() => {
+    if (isLocked) return;
+    if (!activeProblem) return;
+
+    const debounceMs = 450;
+    const timeout = setTimeout(() => {
+      const suggestions = analyzeCodeForInterruptions({
+        code,
+        problem: activeProblem,
+        hasUserExplainedApproach: hasUserExplainedApproachRef.current
+      });
+      if (!suggestions.length) return;
+
+      const now = Date.now();
+      const COOLDOWN_PER_RULE_MS = 12_000;
+
+      for (const s of suggestions) {
+        const lastTs = lastInterruptByIdRef.current.get(s.id) || 0;
+        if (now - lastTs < COOLDOWN_PER_RULE_MS) continue;
+        if (lastInterruptTextRef.current === s.message) continue;
+
+        lastInterruptByIdRef.current.set(s.id, now);
+        lastInterruptTextRef.current = s.message;
+
+        setMessages((prev) => [...prev, { role: "assistant", content: s.message }]);
+        setLiveInterruption({ message: s.message, ts: now });
+        llmMessagesRef.current = [
+          ...llmMessagesRef.current,
+          { role: "assistant", content: s.message }
+        ];
+        break;
+      }
+    }, debounceMs);
+
+    return () => clearTimeout(timeout);
+  }, [code, activeProblem, isLocked]);
+
   useEffect(() => {
     const debounceMs = 1500;
     const maxWaitMs = 3000;
@@ -1157,7 +1207,15 @@ export default function App() {
 
         const data = await sendChat({
           messages: nextMessages,
-          mode: "proactive"
+          mode: "proactive",
+          context: {
+            problemId: activeProblem?.id,
+            title: activeProblem?.title,
+            signature: activeProblem?.signature,
+            description: activeProblem?.description,
+            hints: activeProblem?.hints,
+            difficulty: difficultyRef.current
+          }
         });
         lastProactiveAtRef.current = Date.now();
 
@@ -1178,6 +1236,8 @@ export default function App() {
           ...prev,
           { role: "assistant", content: data.reply }
         ]);
+        // Also surface in the editor area so it's obvious.
+        setLiveInterruption({ message: data.reply, ts: Date.now() });
       } catch (error) {
         setMessages((prev) => [
           ...prev,
@@ -1192,7 +1252,7 @@ export default function App() {
     }, delay);
 
     return () => clearTimeout(timeout);
-  }, [code]);
+  }, [code, activeProblemId]);
 
   const handleRunCode = () => {
     const iframeWindow = runnerIframeRef.current?.contentWindow;
@@ -1390,6 +1450,12 @@ function __ici_deepEqual(a, b) {
       return;
     }
 
+    // Heuristic: any meaningful user message counts as "approach explained"
+    // so we don't keep interrupting with "explain first".
+    if (trimmed.length >= 20) {
+      hasUserExplainedApproachRef.current = true;
+    }
+
     const nextMessages = [...messages, { role: "user", content: trimmed }];
     setMessages(nextMessages);
     setInput("");
@@ -1577,6 +1643,33 @@ function __ici_deepEqual(a, b) {
         <div className="app__left">
           <section className="panel panel--editor" data-tutorial="editor">
             <div className="panel__header">Editor</div>
+            {liveInterruption?.message ? (
+              <div
+                className="ici-interrupt"
+                role="status"
+                aria-live="polite"
+                onClick={() => {
+                  // Clicking it just clears it for now (simple UX).
+                  setLiveInterruption(null);
+                }}
+                title="Click to dismiss"
+              >
+                <div className="ici-interrupt__label">Interviewer interruption</div>
+                <div className="ici-interrupt__text">{liveInterruption.message}</div>
+                <button
+                  type="button"
+                  className="ici-interrupt__close"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setLiveInterruption(null);
+                  }}
+                  aria-label="Dismiss interruption"
+                >
+                  ×
+                </button>
+              </div>
+            ) : null}
             <Editor
               height="100%"
               defaultLanguage="javascript"
@@ -1907,6 +2000,7 @@ function __ici_deepEqual(a, b) {
                     <div className="chat__content">{message.content}</div>
                   </div>
                 ))}
+                <div ref={chatEndRef} />
               </div>
               <div className="chat__input">
                 <textarea

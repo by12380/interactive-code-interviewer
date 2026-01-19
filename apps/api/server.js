@@ -20,21 +20,47 @@ app.post("/api/chat", async (req, res) => {
     return res.status(500).send("Missing OPENAI_API_KEY on the server.");
   }
 
-  const { messages, mode = "chat" } = req.body || {};
+  const { messages, mode = "chat", context } = req.body || {};
 
   if (!Array.isArray(messages)) {
     return res.status(400).send("messages must be an array.");
   }
 
+  const ctx = context && typeof context === "object" ? context : null;
+  const ctxText = ctx
+    ? [
+        "Interview context:",
+        ctx.problemId ? `- problemId: ${String(ctx.problemId)}` : null,
+        ctx.title ? `- title: ${String(ctx.title)}` : null,
+        ctx.signature ? `- signature: ${String(ctx.signature)}` : null,
+        ctx.difficulty ? `- difficulty: ${String(ctx.difficulty)}` : null,
+        ctx.description ? `- description: ${String(ctx.description)}` : null,
+        Array.isArray(ctx.hints) && ctx.hints.length
+          ? `- hints: ${ctx.hints.map((h) => String(h)).join(" | ")}`
+          : null
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+
   const systemPrompt =
     mode === "proactive"
-      ? "You are a live interview coach observing code updates. " +
-        "If the user appears to be working toward a double for-loop solution " +
-        "for Two Sum, give a brief nudge toward a more efficient approach. " +
-        "If no feedback is needed, respond with an empty string."
-      : "You are a coding interview coach. Focus on guiding the candidate. " +
-        "Be concise, point out likely mistakes, and ask clarifying questions. " +
-        "Do not solve the problem end-to-end unless asked.";
+      ? [
+          "You are a live coding interviewer watching the candidate type in real time.",
+          "Your job is to INTERRUPT proactively when you see a mistake, a risky approach, or an inefficient pattern.",
+          "Rules:",
+          "- If an interruption is warranted, output exactly ONE short message (1–2 sentences) that starts with 'Wait,'.",
+          "- Prefer questions + gentle nudges (e.g. ask to explain approach, point out brute force, suggest better DS).",
+          "- Do NOT give a full solution or final code.",
+          "- If no interruption is needed, output an empty string.",
+          ctxText ? `\n${ctxText}\n` : ""
+        ].join("\n")
+      : [
+          "You are a coding interview coach. Focus on guiding the candidate.",
+          "Be concise, point out likely mistakes, and ask clarifying questions.",
+          "Do not solve the problem end-to-end unless asked.",
+          ctxText ? `\n${ctxText}\n` : ""
+        ].join("\n");
 
   const payload = {
     model: "gpt-4o-mini",
