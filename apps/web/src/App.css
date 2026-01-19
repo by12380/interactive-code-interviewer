@@ -426,6 +426,140 @@ textarea {
   border-color: #86efac;
 }
 
+/* ===== Interviewer Interruption Messages ===== */
+.chat__message--interruption {
+  background: linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%);
+  border-color: #fcd34d;
+  border-left: 4px solid #f59e0b;
+  animation: interruptionSlideIn 0.4s ease-out;
+}
+
+@keyframes interruptionSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.chat__message--interruption .chat__content {
+  color: #78350f;
+}
+
+/* Chat role labels */
+.chat__interviewer-label,
+.chat__user-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chat__interviewer-icon,
+.chat__user-icon,
+.chat__interrupt-icon {
+  font-size: 14px;
+}
+
+.chat__message--interruption .chat__interviewer-label {
+  color: #b45309;
+  font-weight: 700;
+}
+
+/* Panel header with icon */
+.panel__header-icon {
+  margin-right: 6px;
+}
+
+/* ===== Interviewer Hint Widget (inline in editor) ===== */
+.interviewer-hint-widget {
+  background: #ffffff;
+  border: 1px solid #fcd34d;
+  border-radius: 10px;
+  box-shadow: 
+    0 8px 24px rgba(15, 23, 42, 0.15),
+    0 0 0 1px rgba(245, 158, 11, 0.2);
+  max-width: 400px;
+  min-width: 280px;
+  font-family: "Inter", system-ui, sans-serif;
+  z-index: 1000;
+  animation: hintSlideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  overflow: hidden;
+}
+
+@keyframes hintSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.interviewer-hint-widget__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fef9c3 100%);
+  border-bottom: 1px solid #fcd34d;
+}
+
+.interviewer-hint-widget__icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.interviewer-hint-widget__title {
+  flex: 1;
+  font-weight: 700;
+  font-size: 12px;
+  color: #92400e;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.interviewer-hint-widget__close {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(146, 64, 14, 0.1);
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #92400e;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.interviewer-hint-widget__close:hover {
+  background: rgba(146, 64, 14, 0.2);
+  color: #78350f;
+}
+
+.interviewer-hint-widget__content {
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #1e293b;
+}
+
+.interviewer-hint-widget__footer {
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  font-size: 10px;
+  color: #94a3b8;
+  text-align: center;
+  font-style: italic;
+}
+
 .chat__role {
   font-size: 12px;
   text-transform: capitalize;
@@ -874,6 +1008,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  position: relative; /* For toast positioning */
 }
 
 .app__editor-section .panel--editor {

@@ -19,6 +19,10 @@ import {
   saveInterviewResult,
   getPersonalBest 
 } from "./services/userService.js";
+import { 
+  analyzeCode, 
+  createAnalyzerState 
+} from "./services/codeAnalyzer.js";
 
 const getTimeScore = (elapsedSeconds, limitSeconds) => {
   if (elapsedSeconds <= 10 * 60) {
@@ -223,7 +227,7 @@ export default function App() {
     {
       role: "assistant",
       content:
-        "I can review your approach as you code. Ask questions or paste ideas here."
+        "Hi! I'm your interviewer today. Before you start coding, can you walk me through your approach to this problem?"
     }
   ]);
   const lastProactiveHintRef = useRef("");
@@ -239,6 +243,14 @@ export default function App() {
   const monacoRef = useRef(null);
   const undoRedoListenerRef = useRef(null);
   const reportRef = useRef(null);
+  
+  // Code analyzer state for real-time interruptions
+  const analyzerStateRef = useRef(createAnalyzerState());
+  const interruptInFlightRef = useRef(false);
+  const lastAnalyzedCodeRef = useRef("");
+  
+  // Inline editor hint state (shows above cursor like IDE suggestions)
+  const [editorHint, setEditorHint] = useState(null);
 
   const TOTAL_SECONDS = currentProblem?.timeLimit || 30 * 60;
   const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
@@ -370,16 +382,98 @@ export default function App() {
     };
   }, []);
 
+  // Real-time code analysis for proactive AI interruptions
   useEffect(() => {
-    const debounceMs = 1500;
-    const maxWaitMs = 3000;
+    // Don't analyze if locked, paused, or code hasn't changed meaningfully
+    if (isLocked || isPaused || !currentProblem) {
+      return;
+    }
+
+    // Analyze after user stops typing for 1.5 seconds
+    const analysisDelay = 1500;
+
+    const analysisTimeout = setTimeout(async () => {
+      // Skip if code hasn't changed or interrupt is already in flight
+      if (code === lastAnalyzedCodeRef.current || interruptInFlightRef.current) {
+        return;
+      }
+
+      lastAnalyzedCodeRef.current = code;
+
+      // Check if user has explained their approach (sent any message in chat)
+      const hasUserExplained = messages.some(m => m.role === "user");
+
+      // Run local code analysis to detect patterns
+      const analysisResult = analyzeCode(
+        code,
+        currentProblem.id,
+        currentProblem.starterCode,
+        analyzerStateRef.current,
+        hasUserExplained
+      );
+
+      // If we detected an issue, send to AI for a natural interruption
+      if (analysisResult) {
+        interruptInFlightRef.current = true;
+
+        try {
+          const nextMessages = appendCodeUpdateIfNeeded(
+            code,
+            llmMessagesRef.current
+          );
+          llmMessagesRef.current = nextMessages;
+
+          const data = await sendChat({
+            messages: nextMessages,
+            mode: "interrupt",
+            interruptContext: {
+              detectedIssue: analysisResult.message,
+              severity: analysisResult.severity,
+              problemId: currentProblem.id,
+              problemTitle: currentProblem.title
+            }
+          });
+
+          if (data?.reply) {
+            // Show hint as inline widget in editor (like IDE suggestions)
+            setEditorHint(data.reply);
+            
+            // Also add to chat history for reference
+            const interruptMessage = {
+              role: "assistant",
+              content: data.reply,
+              isInterruption: true
+            };
+            
+            llmMessagesRef.current = [
+              ...llmMessagesRef.current,
+              interruptMessage
+            ];
+            setMessages((prev) => [...prev, interruptMessage]);
+          }
+        } catch (error) {
+          // Silently fail for interruptions - don't spam error messages
+          console.error("Interrupt failed:", error);
+        } finally {
+          interruptInFlightRef.current = false;
+        }
+      }
+    }, analysisDelay);
+
+    return () => clearTimeout(analysisTimeout);
+  }, [code, currentProblem, isLocked, isPaused, appendCodeUpdateIfNeeded, messages]);
+
+  // Background proactive hints (less aggressive, runs less frequently)
+  useEffect(() => {
+    const debounceMs = 5000;
+    const maxWaitMs = 15000;
     const now = Date.now();
     const timeSinceLast = now - lastProactiveAtRef.current;
     const shouldForce = timeSinceLast >= maxWaitMs;
     const delay = shouldForce ? 0 : debounceMs;
 
     const timeout = setTimeout(async () => {
-      if (proactiveInFlightRef.current) {
+      if (proactiveInFlightRef.current || interruptInFlightRef.current) {
         return;
       }
 
@@ -434,7 +528,7 @@ export default function App() {
     }, delay);
 
     return () => clearTimeout(timeout);
-  }, [code]);
+  }, [code, appendCodeUpdateIfNeeded]);
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
@@ -483,6 +577,14 @@ export default function App() {
 
   const handleEditorChange = useCallback((value) => {
     setCode(value ?? "");
+    // Dismiss editor hint when user types (handled in EditorPanel too, but this is backup)
+    if (editorHint) {
+      setEditorHint(null);
+    }
+  }, [editorHint]);
+
+  const handleDismissEditorHint = useCallback(() => {
+    setEditorHint(null);
   }, []);
 
   const handleUndo = useCallback(() => {
@@ -591,10 +693,11 @@ export default function App() {
     setTestsNote("Run tests to evaluate correctness.");
     setShowSolution(false);
     setConsoleLogs([]);
+    setEditorHint(null); // Clear any editor hint
     setMessages([
       {
         role: "assistant",
-        content: `Now working on: **${problem.title}**. I can help you think through this problem. Ask me questions or share your approach!`
+        content: `Now working on: **${problem.title}**. Before you start coding, can you walk me through how you'd approach this problem?`
       }
     ]);
     
@@ -607,6 +710,10 @@ export default function App() {
     llmMessagesRef.current = [];
     lastCodeSentRef.current = "";
     lastProactiveCodeRef.current = "";
+    
+    // Reset code analyzer state for new problem
+    analyzerStateRef.current = createAnalyzerState();
+    lastAnalyzedCodeRef.current = "";
     
     // Update personal best for the new problem
     if (user) {
@@ -870,6 +977,8 @@ export default function App() {
             onCodeChange={handleEditorChange}
             editorOptions={editorOptions}
             code={code}
+            interviewerHint={editorHint}
+            onDismissHint={handleDismissEditorHint}
           />
           <ConsolePanel
             logs={consoleLogs}
