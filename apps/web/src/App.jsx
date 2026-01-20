@@ -123,11 +123,222 @@ An anagram is a word or phrase formed by rearranging the letters of a different 
   return best;
 }`
   }
+  ,
+  {
+    id: "group-anagrams",
+    title: "Group Anagrams",
+    difficulty: "Medium",
+    functionName: "groupAnagrams",
+    signature: "groupAnagrams(strs)",
+    description: `Given an array of strings strs, group the anagrams together. You can return the answer in any order.`,
+    examples: [
+      { input: { strs: ["eat", "tea", "tan", "ate", "nat", "bat"] }, output: [["bat"], ["nat", "tan"], ["ate", "eat", "tea"]] }
+    ],
+    tests: [
+      {
+        name: "Example",
+        args: [["eat", "tea", "tan", "ate", "nat", "bat"]],
+        expected: [["bat"], ["nat", "tan"], ["ate", "eat", "tea"]]
+      },
+      { name: "Empty", args: [[]], expected: [] },
+      { name: "Single", args: [["abc"]], expected: [["abc"]] }
+    ],
+    hints: [
+      "Anagrams share the same character counts/signature.",
+      "Use a map from signature → list of strings.",
+      "Signature can be sorted string or counts-based key."
+    ],
+    solution: `function groupAnagrams(strs) {
+  const groups = new Map(); // key -> array
+  for (const s of strs) {
+    const key = [...s].sort().join("");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
+  }
+  return Array.from(groups.values());
+}`
+  },
+  {
+    id: "lru-cache",
+    title: "LRU Cache",
+    difficulty: "Hard",
+    functionName: "LRUCache",
+    signature: "LRUCache(capacity)",
+    description: `Design a data structure that follows the constraints of a Least Recently Used (LRU) cache.
+
+Implement the LRUCache class:
+- LRUCache(capacity) initializes the LRU cache with positive size capacity.
+- get(key) returns the value of the key if the key exists, otherwise return -1.
+- put(key, value) updates the value of the key if the key exists. Otherwise, adds the key-value pair to the cache.
+If the number of keys exceeds the capacity, evict the least recently used key.`,
+    examples: [
+      {
+        input: { ops: ["LRUCache", "put", "put", "get", "put", "get", "put", "get", "get", "get"], args: [[2], [1, 1], [2, 2], [1], [3, 3], [2], [4, 4], [1], [3], [4]] },
+        output: [null, null, null, 1, null, -1, null, -1, 3, 4]
+      }
+    ],
+    tests: [
+      {
+        name: "Example sequence",
+        args: [
+          ["LRUCache", "put", "put", "get", "put", "get", "put", "get", "get", "get"],
+          [[2], [1, 1], [2, 2], [1], [3, 3], [2], [4, 4], [1], [3], [4]]
+        ],
+        expected: [null, null, null, 1, null, -1, null, -1, 3, 4]
+      }
+    ],
+    hints: [
+      "You need O(1) get and put.",
+      "Combine a hash map with a doubly-linked list.",
+      "Move keys to the front on access; evict from the back."
+    ],
+    solution: `function LRUCache(capacity) {
+  this.capacity = capacity;
+  this.map = new Map(); // key -> node
+  this.head = { key: null, val: null, prev: null, next: null };
+  this.tail = { key: null, val: null, prev: null, next: null };
+  this.head.next = this.tail;
+  this.tail.prev = this.head;
+}
+
+LRUCache.prototype._remove = function (node) {
+  node.prev.next = node.next;
+  node.next.prev = node.prev;
+};
+
+LRUCache.prototype._addFront = function (node) {
+  node.next = this.head.next;
+  node.prev = this.head;
+  this.head.next.prev = node;
+  this.head.next = node;
+};
+
+LRUCache.prototype.get = function (key) {
+  if (!this.map.has(key)) return -1;
+  const node = this.map.get(key);
+  this._remove(node);
+  this._addFront(node);
+  return node.val;
+};
+
+LRUCache.prototype.put = function (key, value) {
+  if (this.map.has(key)) {
+    const node = this.map.get(key);
+    node.val = value;
+    this._remove(node);
+    this._addFront(node);
+    return;
+  }
+  const node = { key, val: value, prev: null, next: null };
+  this.map.set(key, node);
+  this._addFront(node);
+  if (this.map.size > this.capacity) {
+    const lru = this.tail.prev;
+    this._remove(lru);
+    this.map.delete(lru.key);
+  }
+};`
+  }
 ];
 
 const DEFAULT_PROBLEM_ID = PROBLEMS[0]?.id ?? "two-sum";
 const buildStarterCode = (problem) =>
-  `function ${problem.functionName}${problem.signature.replace(problem.functionName, "")} {\n  // Your solution here\n}\n`;
+  problem?.id === "lru-cache"
+    ? `function LRUCache(capacity) {\n  // Your constructor here\n}\n\nLRUCache.prototype.get = function (key) {\n  // return value or -1\n};\n\nLRUCache.prototype.put = function (key, value) {\n  // store key/value and evict if needed\n};\n`
+    : `function ${problem.functionName}${problem.signature.replace(problem.functionName, "")} {\n  // Your solution here\n}\n`;
+
+const BEHAVIORAL_QUESTIONS = [
+  {
+    id: "behav-weakness",
+    prompt: "Tell me about a time you received critical feedback. What did you do?"
+  },
+  {
+    id: "behav-conflict",
+    prompt: "Tell me about a conflict you had with a teammate and how you resolved it."
+  },
+  {
+    id: "behav-ownership",
+    prompt: "Describe a project you owned end-to-end. What tradeoffs did you make?"
+  },
+  {
+    id: "behav-failure",
+    prompt: "Tell me about a time you shipped a bug. How did you respond, and what did you change?"
+  }
+];
+
+const SYSTEM_DESIGN_QUESTIONS = [
+  {
+    id: "sd-url-shortener",
+    title: "Design a URL shortener",
+    prompt:
+      "Design a URL shortener (like bit.ly). Cover requirements, API, data model, scaling, rate limiting, and analytics."
+  },
+  {
+    id: "sd-notifications",
+    title: "Design a notification system",
+    prompt:
+      "Design a notification system that supports email/SMS/push, retries, templating, and user preferences. Discuss queues and observability."
+  }
+];
+
+function pickRandom(arr, rng = Math.random) {
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  return arr[Math.floor(rng() * arr.length)];
+}
+
+function normalizeDifficulty(d) {
+  const x = String(d || "").toLowerCase();
+  if (x === "easy") return "Easy";
+  if (x === "medium") return "Medium";
+  if (x === "hard") return "Hard";
+  return "Medium";
+}
+
+function nextDifficulty(d) {
+  const cur = normalizeDifficulty(d);
+  if (cur === "Easy") return "Medium";
+  if (cur === "Medium") return "Hard";
+  return "Hard";
+}
+
+function computeInterviewFeedback({ rounds, totalSeconds, interruptionCount }) {
+  const coding = (rounds || []).filter((r) => r.type === "coding");
+  const solvedCount = coding.filter((r) => r.testsTotal > 0 && r.testsPassed === r.testsTotal).length;
+  const codingCount = coding.length || 0;
+
+  const strengths = [];
+  const improvements = [];
+
+  if (codingCount > 0 && solvedCount === codingCount) strengths.push("You got to correct, passing solutions within the time constraints.");
+  if (codingCount > 0 && solvedCount === 0) improvements.push("Work on getting to a minimal correct solution earlier (then iterate).");
+
+  if (typeof interruptionCount === "number" && interruptionCount > 4) {
+    improvements.push("Try to verbalize your approach before coding; you got interrupted frequently for course-correction.");
+  } else if (typeof interruptionCount === "number" && interruptionCount <= 2) {
+    strengths.push("Your approach was generally clear and stayed on track (few interviewer nudges).");
+  }
+
+  if (typeof totalSeconds === "number" && totalSeconds > 0) {
+    strengths.push(`You managed your time across the session (${formatClock(totalSeconds)} total).`);
+  }
+
+  if (strengths.length === 0) strengths.push("Good effort staying engaged and iterating.");
+  if (improvements.length === 0) improvements.push("Add more explicit complexity analysis and edge-case discussion as you code.");
+
+  return [
+    "Summary",
+    `- Coding rounds solved: ${solvedCount}/${codingCount}`,
+    typeof interruptionCount === "number" ? `- Interviewer interruptions: ${interruptionCount}` : null,
+    "",
+    "Strengths",
+    ...strengths.map((s) => `- ${s}`),
+    "",
+    "Areas to improve",
+    ...improvements.map((s) => `- ${s}`)
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 function safeStringify(value) {
   try {
@@ -544,6 +755,7 @@ export default function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
+  const [isInterviewSetupOpen, setIsInterviewSetupOpen] = useState(false);
 
   const [activeProblemId, setActiveProblemId] = useState(() => {
     try {
@@ -652,11 +864,22 @@ export default function App() {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
   const [difficulty, setDifficulty] = useState("Medium");
+  const [mode, setMode] = useState("practice"); // practice | interview
+  const [timeLimitSeconds, setTimeLimitSeconds] = useState(30 * 60);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [tutorialStepIndex, setTutorialStepIndex] = useState(0);
   const [consoleEntries, setConsoleEntries] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
   const [liveInterruption, setLiveInterruption] = useState(null); // { message, ts }
+  const [interviewSession, setInterviewSession] = useState(null);
+  const [behavioralAnswer, setBehavioralAnswer] = useState("");
+  const [systemDesignAnswer, setSystemDesignAnswer] = useState("");
+  const [feedbackText, setFeedbackText] = useState("");
+  const [recordingState, setRecordingState] = useState({
+    status: "idle", // idle | requesting | recording | stopped | error
+    error: null,
+    blobUrl: null
+  });
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -673,10 +896,10 @@ export default function App() {
   const hasUserExplainedApproachRef = useRef(false);
   const lastCodeSentRef = useRef("");
   const llmMessagesRef = useRef([]);
-  const startAtRef = useRef(Date.now());
+  const timerStartAtRef = useRef(Date.now());
   const runnerIframeRef = useRef(null);
   const runIdRef = useRef(0);
-  const chatEndRef = useRef(null);
+  const chatMessagesRef = useRef(null);
   const storageUserIdRef = useRef(storageUserId);
   const solvedByProblemIdRef = useRef(solvedByProblemId);
   const attemptStartedAtByProblemIdRef = useRef(attemptStartedAtByProblemId);
@@ -686,6 +909,11 @@ export default function App() {
   const historyRef = useRef(history);
   const difficultyRef = useRef(difficulty);
   const stopOnceRef = useRef(false);
+  const lastAutoAdvanceRoundIdRef = useRef("");
+  const mediaRecorderRef = useRef(null);
+  const mediaStreamRef = useRef(null);
+  const recordChunksRef = useRef([]);
+  const feedbackRef = useRef("");
 
   useEffect(() => {
     storageUserIdRef.current = storageUserId;
@@ -713,9 +941,13 @@ export default function App() {
   }, [difficulty]);
 
   useEffect(() => {
-    // Auto-scroll chat to the latest message (especially important for interruptions).
-    // If the user scrolls up manually this is still fairly gentle since it only scrolls to the end node.
-    chatEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+    // Auto-scroll ONLY the chat panel (avoid scrolling the whole page while typing code).
+    const el = chatMessagesRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const nearBottom = distanceFromBottom < 120;
+    if (!nearBottom) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages.length]);
   useEffect(() => {
     if (!isLocked) {
@@ -723,9 +955,15 @@ export default function App() {
     }
   }, [isLocked]);
 
-  const TOTAL_SECONDS = 30 * 60;
-  const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
-  const isTimeUp = elapsedSeconds >= TOTAL_SECONDS;
+  const isInterviewMode = mode === "interview";
+  const remainingSeconds = Math.max(timeLimitSeconds - elapsedSeconds, 0);
+  const isTimeUp = elapsedSeconds >= timeLimitSeconds;
+
+  const activeInterviewRound = useMemo(() => {
+    if (!interviewSession) return null;
+    const idx = interviewSession.roundIndex ?? 0;
+    return interviewSession.rounds?.[idx] ?? null;
+  }, [interviewSession]);
 
   const runnerSrcDoc = useMemo(
     () => `<!doctype html>
@@ -1060,11 +1298,298 @@ export default function App() {
     setIsLocked(true);
   };
 
+  const stopRecording = async () => {
+    try {
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.stop();
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const teardownRecording = async () => {
+    try {
+      const stream = mediaStreamRef.current;
+      if (stream) {
+        for (const t of stream.getTracks()) t.stop();
+      }
+    } catch {
+      // ignore
+    } finally {
+      mediaStreamRef.current = null;
+      mediaRecorderRef.current = null;
+    }
+  };
+
+  const startRecording = async () => {
+    setRecordingState((s) => ({ ...s, status: "requesting", error: null }));
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      mediaStreamRef.current = stream;
+      recordChunksRef.current = [];
+
+      const mimeTypeCandidates = [
+        "video/webm;codecs=vp9,opus",
+        "video/webm;codecs=vp8,opus",
+        "video/webm"
+      ];
+      const mimeType = mimeTypeCandidates.find((t) => {
+        try {
+          return globalThis.MediaRecorder?.isTypeSupported?.(t);
+        } catch {
+          return false;
+        }
+      });
+
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mediaRecorderRef.current = recorder;
+      recorder.ondataavailable = (e) => {
+        if (e?.data && e.data.size > 0) recordChunksRef.current.push(e.data);
+      };
+      recorder.onerror = (e) => {
+        setRecordingState({ status: "error", error: String(e?.error?.message || "Recording error"), blobUrl: null });
+      };
+      recorder.onstop = () => {
+        try {
+          const blob = new Blob(recordChunksRef.current, { type: recorder.mimeType || "video/webm" });
+          const nextUrl = URL.createObjectURL(blob);
+          setRecordingState({ status: "stopped", error: null, blobUrl: nextUrl });
+        } catch (e) {
+          setRecordingState({ status: "error", error: e?.message || "Unable to save recording", blobUrl: null });
+        }
+      };
+
+      recorder.start(1000);
+      setRecordingState((s) => ({ ...s, status: "recording", error: null }));
+      return true;
+    } catch (e) {
+      setRecordingState({ status: "error", error: e?.message || "Unable to access camera/microphone", blobUrl: null });
+      await teardownRecording();
+      return false;
+    }
+  };
+
+  const buildInterviewRounds = ({ codingRounds = 2, includeSystemDesign = true } = {}) => {
+    const rounds = [];
+    let d = "Easy";
+    const used = new Set();
+
+    for (let i = 0; i < codingRounds; i++) {
+      const pool = PROBLEMS.filter((p) => normalizeDifficulty(p.difficulty) === d && !used.has(p.id));
+      const fallbackPool = PROBLEMS.filter((p) => normalizeDifficulty(p.difficulty) === d);
+      const picked = pickRandom(pool.length ? pool : fallbackPool);
+      if (picked?.id) used.add(picked.id);
+      rounds.push({
+        id: randomId("round"),
+        type: "coding",
+        difficulty: d,
+        problemId: picked?.id || DEFAULT_PROBLEM_ID,
+        seconds: d === "Easy" ? 12 * 60 : d === "Medium" ? 18 * 60 : 22 * 60
+      });
+      rounds.push({
+        id: randomId("round"),
+        type: "behavioral",
+        questionId: pickRandom(BEHAVIORAL_QUESTIONS)?.id || BEHAVIORAL_QUESTIONS[0].id,
+        seconds: 3 * 60
+      });
+      d = nextDifficulty(d);
+    }
+
+    if (includeSystemDesign) {
+      rounds.push({
+        id: randomId("round"),
+        type: "system_design",
+        questionId: pickRandom(SYSTEM_DESIGN_QUESTIONS)?.id || SYSTEM_DESIGN_QUESTIONS[0].id,
+        seconds: 12 * 60
+      });
+    }
+
+    rounds.push({ id: randomId("round"), type: "feedback", seconds: 3 * 60 });
+    return rounds;
+  };
+
+  const advanceInterviewRound = (reason = "next") => {
+    setInterviewSession((prev) => {
+      if (!prev) return prev;
+      const idx = prev.roundIndex ?? 0;
+      const cur = prev.rounds?.[idx] ?? null;
+      const now = Date.now();
+
+      const nextRounds = Array.isArray(prev.rounds) ? [...prev.rounds] : [];
+      if (cur) {
+        const snapshot = {
+          endedAt: now,
+          durationSeconds: Math.max(0, Math.floor((now - (cur.startedAt || now)) / 1000)),
+          reason,
+          answer:
+            cur.type === "behavioral"
+              ? String(behavioralAnswer || "")
+              : cur.type === "system_design"
+                ? String(systemDesignAnswer || "")
+                : cur.answer
+        };
+        nextRounds[idx] = { ...cur, ...snapshot };
+      }
+
+      const nextIndex = idx + 1;
+      if (nextIndex >= nextRounds.length) {
+        return { ...prev, rounds: nextRounds, roundIndex: nextIndex };
+      }
+
+      const nextRound = { ...nextRounds[nextIndex], startedAt: now };
+      nextRounds[nextIndex] = nextRound;
+
+      // Stage side effects:
+      if (nextRound.type === "coding") {
+        const pId = String(nextRound.problemId || DEFAULT_PROBLEM_ID);
+        setActiveProblemId(pId);
+        setDifficulty(nextRound.difficulty || "Medium");
+        setBehavioralAnswer("");
+        setSystemDesignAnswer("");
+        setIsLocked(false);
+        setTimeLimitSeconds(Number(nextRound.seconds || 15 * 60));
+        timerStartAtRef.current = Date.now();
+        setElapsedSeconds(0);
+        setProblemTab("Description");
+      } else if (nextRound.type === "behavioral") {
+        setIsLocked(true);
+        setTimeLimitSeconds(Number(nextRound.seconds || 3 * 60));
+        timerStartAtRef.current = Date.now();
+        setElapsedSeconds(0);
+      } else if (nextRound.type === "system_design") {
+        setIsLocked(true);
+        setTimeLimitSeconds(Number(nextRound.seconds || 12 * 60));
+        timerStartAtRef.current = Date.now();
+        setElapsedSeconds(0);
+      } else if (nextRound.type === "feedback") {
+        setIsLocked(true);
+        setTimeLimitSeconds(Number(nextRound.seconds || 3 * 60));
+        timerStartAtRef.current = Date.now();
+        setElapsedSeconds(0);
+
+        const interruptionCount = llmMessagesRef.current.filter(
+          (m) => m?.role === "assistant" && String(m?.content || "").startsWith("Wait,")
+        ).length;
+        const totalSeconds = Math.max(0, Math.floor((now - Number(prev.startedAt || now)) / 1000));
+        const enriched = nextRounds.map((r) => {
+          if (r.type !== "coding") return r;
+          const pid = String(r.problemId || "");
+          const summary = testRunByProblemIdRef.current?.[pid]?.summary || null;
+          return {
+            ...r,
+            testsPassed: Number(summary?.passed || 0),
+            testsTotal: Number(summary?.total || 0)
+          };
+        });
+        const computed = computeInterviewFeedback({ rounds: enriched, totalSeconds, interruptionCount });
+        setFeedbackText(computed);
+        feedbackRef.current = computed;
+      }
+
+      return { ...prev, rounds: nextRounds, roundIndex: nextIndex };
+    });
+  };
+
+  const endInterviewSimulation = async (outcome = "completed") => {
+    const endedAt = Date.now();
+    const session = interviewSession;
+    if (!session) {
+      setMode("practice");
+      setIsLocked(false);
+      setTimeLimitSeconds(30 * 60);
+      timerStartAtRef.current = Date.now();
+      setElapsedSeconds(0);
+      return;
+    }
+
+    const rounds = (session.rounds || []).map((r) => ({ ...r }));
+    const codingRounds = rounds.filter((r) => r.type === "coding");
+    const enrichedRounds = rounds.map((r) => {
+      if (r.type !== "coding") return r;
+      const problemId = String(r.problemId || "");
+      const summary = testRunByProblemIdRef.current?.[problemId]?.summary || null;
+      const passed = Number(summary?.passed || 0);
+      const total = Number(summary?.total || 0);
+      return { ...r, testsPassed: passed, testsTotal: total };
+    });
+
+    const interruptionCount = llmMessagesRef.current.filter((m) => m?.role === "assistant" && String(m?.content || "").startsWith("Wait,")).length;
+    const totalSeconds = Math.max(0, Math.floor((endedAt - Number(session.startedAt || endedAt)) / 1000));
+    const computed = computeInterviewFeedback({ rounds: enrichedRounds, totalSeconds, interruptionCount });
+    setFeedbackText(computed);
+    feedbackRef.current = computed;
+
+    const entry = {
+      id: randomId("interview"),
+      createdAt: endedAt,
+      startedAt: session.startedAt,
+      endedAt,
+      durationSeconds: totalSeconds,
+      outcome,
+      problemId: "interview-simulation",
+      problemTitle: "Interview Simulation",
+      difficulty: "Progressive",
+      testsPassed: codingRounds.reduce((acc, r) => {
+        const pid = String(r.problemId || "");
+        const s = testRunByProblemIdRef.current?.[pid]?.summary;
+        return acc + Number(s?.passed || 0);
+      }, 0),
+      testsTotal: codingRounds.reduce((acc, r) => {
+        const pid = String(r.problemId || "");
+        const s = testRunByProblemIdRef.current?.[pid]?.summary;
+        return acc + Number(s?.total || 0);
+      }, 0),
+      interview: {
+        rounds: enrichedRounds,
+        feedback: computed,
+        recordingAvailable: Boolean(recordingState?.blobUrl)
+      }
+    };
+
+    setHistory((prev) => [entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 200));
+
+    await stopRecording();
+    await teardownRecording();
+
+    setInterviewSession(null);
+    setMode("practice");
+    setIsLocked(false);
+    setTimeLimitSeconds(30 * 60);
+    timerStartAtRef.current = Date.now();
+    setElapsedSeconds(0);
+  };
+
   useEffect(() => {
-    if (isTimeUp && !isLocked) {
+    if (!isTimeUp) return;
+
+    if (isInterviewMode) {
+      const rid = String(activeInterviewRound?.id || "");
+      if (rid && lastAutoAdvanceRoundIdRef.current === rid) return;
+      lastAutoAdvanceRoundIdRef.current = rid;
+      if (activeInterviewRound?.type === "feedback") {
+        endInterviewSimulation("timeout");
+      } else {
+        advanceInterviewRound("timeout");
+      }
+      return;
+    }
+
+    if (!isLocked) {
       stopInterview("timeout");
     }
-  }, [isTimeUp, isLocked]);
+  }, [isTimeUp, isLocked, isInterviewMode, activeInterviewRound?.id]);
+
+  useEffect(() => {
+    if (!isInterviewMode) return;
+    if (!interviewSession) return;
+    const total = interviewSession.rounds?.length ?? 0;
+    const idx = interviewSession.roundIndex ?? 0;
+    if (total > 0 && idx >= total) {
+      endInterviewSimulation("completed");
+    }
+  }, [isInterviewMode, interviewSession?.roundIndex, interviewSession?.rounds?.length]);
 
   const buildCodeMessage = (nextCode) => ({
     role: "user",
@@ -1119,17 +1644,17 @@ export default function App() {
   }, [activeProblemId, isLocked]);
 
   useEffect(() => {
-    if (isLocked) {
+    if (!isInterviewMode && isLocked) {
       return;
     }
 
     const interval = setInterval(() => {
-      const elapsed = Math.floor((Date.now() - startAtRef.current) / 1000);
+      const elapsed = Math.floor((Date.now() - timerStartAtRef.current) / 1000);
       setElapsedSeconds(elapsed);
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isLocked]);
+  }, [isLocked, isInterviewMode]);
 
   const appendCodeUpdateIfNeeded = (nextCode, messageList) => {
     if (nextCode === lastCodeSentRef.current) {
@@ -1333,6 +1858,22 @@ function __ici_deepEqual(a, b) {
   return true;
 }
 
+function __ici_canonicalizeGroupAnagrams(value) {
+  if (!Array.isArray(value)) return value;
+  const groups = value
+    .filter((g) => Array.isArray(g))
+    .map((g) => g.map((x) => String(x)).sort());
+  groups.sort((a, b) => a.join("\\u0000").localeCompare(b.join("\\u0000")));
+  return groups;
+}
+
+function __ici_isEqual(problemId, actual, expected) {
+  if (problemId === "group-anagrams") {
+    return __ici_deepEqual(__ici_canonicalizeGroupAnagrams(actual), __ici_canonicalizeGroupAnagrams(expected));
+  }
+  return __ici_deepEqual(actual, expected);
+}
+
 (function __ici_runTests() {
   const __ici_problemId = ${JSON.stringify(problem.id)};
   const __ici_functionName = ${JSON.stringify(problem.functionName)};
@@ -1362,11 +1903,45 @@ function __ici_deepEqual(a, b) {
     return;
   }
 
+  function __ici_runLRUCase(ops, argsList) {
+    if (!Array.isArray(ops) || !Array.isArray(argsList)) {
+      throw new Error("LRU tests must provide [ops, argsList].");
+    }
+    let cache = null;
+    const out = [];
+    for (let i = 0; i < ops.length; i++) {
+      const op = String(ops[i] || "");
+      const args = Array.isArray(argsList[i]) ? argsList[i] : [];
+      if (op === "LRUCache") {
+        cache = new (fn.bind.apply(fn, [null].concat(args)))();
+        out.push(null);
+        continue;
+      }
+      if (!cache) {
+        throw new Error("LRUCache not constructed before operations.");
+      }
+      if (op === "put") {
+        cache.put.apply(cache, args);
+        out.push(null);
+        continue;
+      }
+      if (op === "get") {
+        out.push(cache.get.apply(cache, args));
+        continue;
+      }
+      out.push(null);
+    }
+    return out;
+  }
+
   for (let i = 0; i < __ici_tests.length; i++) {
     const t = __ici_tests[i];
     try {
-      const actual = fn.apply(null, Array.isArray(t.args) ? t.args : []);
-      const ok = __ici_deepEqual(actual, t.expected);
+      const actual =
+        __ici_problemId === "lru-cache"
+          ? __ici_runLRUCase((t.args || [])[0], (t.args || [])[1])
+          : fn.apply(null, Array.isArray(t.args) ? t.args : []);
+      const ok = __ici_isEqual(__ici_problemId, actual, t.expected);
       if (ok) passed++;
       results.push({
         index: i,
@@ -1545,6 +2120,129 @@ function __ici_deepEqual(a, b) {
         problems={PROBLEMS}
         initialProblemId={activeProblemId}
       />
+      <Modal
+        isOpen={isInterviewSetupOpen}
+        title="Interview Simulation"
+        onClose={() => setIsInterviewSetupOpen(false)}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontWeight: 700, color: "#334155" }}>
+            Multi-round mock interview: coding → behavioral → harder coding → system design → feedback.
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="tutorial-trigger"
+              onClick={async () => {
+                const rounds = buildInterviewRounds({ codingRounds: 2, includeSystemDesign: true });
+                const now = Date.now();
+                const first = rounds[0] ? { ...rounds[0], startedAt: now } : null;
+                if (!first) return;
+
+                setMode("interview");
+                setInterviewSession({
+                  id: randomId("interview"),
+                  startedAt: now,
+                  rounds: [first, ...rounds.slice(1)],
+                  roundIndex: 0
+                });
+
+                if (first.type === "coding") {
+                  setActiveProblemId(String(first.problemId || DEFAULT_PROBLEM_ID));
+                  setDifficulty(String(first.difficulty || "Easy"));
+                  setIsLocked(false);
+                } else {
+                  setIsLocked(true);
+                }
+                setTimeLimitSeconds(Number(first.seconds || 15 * 60));
+                timerStartAtRef.current = Date.now();
+                setElapsedSeconds(0);
+                setBehavioralAnswer("");
+                setSystemDesignAnswer("");
+                setFeedbackText("");
+                setLiveInterruption(null);
+                setConsoleEntries([]);
+                setMessages([
+                  {
+                    role: "assistant",
+                    content:
+                      "Welcome to Interview Simulation. As you work, I may interrupt with quick nudges. Explain your approach first."
+                  }
+                ]);
+                llmMessagesRef.current = [];
+                lastCodeSentRef.current = "";
+                lastProactiveCodeRef.current = "";
+                lastProactiveHintRef.current = "";
+                lastInterruptByIdRef.current = new Map();
+                lastInterruptTextRef.current = "";
+                hasUserExplainedApproachRef.current = false;
+
+                setIsInterviewSetupOpen(false);
+              }}
+            >
+              Start (no video)
+            </button>
+            <button
+              type="button"
+              className="tutorial-trigger"
+              onClick={async () => {
+                const ok = await startRecording();
+                if (!ok) return;
+
+                const rounds = buildInterviewRounds({ codingRounds: 2, includeSystemDesign: true });
+                const now = Date.now();
+                const first = rounds[0] ? { ...rounds[0], startedAt: now } : null;
+                if (!first) return;
+
+                setMode("interview");
+                setInterviewSession({
+                  id: randomId("interview"),
+                  startedAt: now,
+                  rounds: [first, ...rounds.slice(1)],
+                  roundIndex: 0
+                });
+
+                setActiveProblemId(String(first.problemId || DEFAULT_PROBLEM_ID));
+                setDifficulty(String(first.difficulty || "Easy"));
+                setIsLocked(false);
+                setTimeLimitSeconds(Number(first.seconds || 15 * 60));
+                timerStartAtRef.current = Date.now();
+                setElapsedSeconds(0);
+                setBehavioralAnswer("");
+                setSystemDesignAnswer("");
+                setFeedbackText("");
+                setIsInterviewSetupOpen(false);
+              }}
+            >
+              Start (record video)
+            </button>
+            {recordingState.status === "recording" ? (
+              <button type="button" className="tutorial-trigger" onClick={stopRecording}>
+                Stop recording
+              </button>
+            ) : null}
+          </div>
+
+          {recordingState.status === "error" && (
+            <div style={{ color: "#7f1d1d", fontWeight: 700 }}>
+              Recording error: {recordingState.error}
+            </div>
+          )}
+          {recordingState.blobUrl && (
+            <a
+              href={recordingState.blobUrl}
+              download={`interview_${new Date().toISOString().slice(0, 19).replaceAll(":", "-")}.webm`}
+              style={{ fontWeight: 800, color: "#312e81" }}
+            >
+              Download latest recording
+            </a>
+          )}
+
+          <div style={{ fontSize: 12, color: "#64748b" }}>
+            Note: recording is not persisted to localStorage; download it after the session.
+          </div>
+        </div>
+      </Modal>
       <header className="app__header">
         <div className="app__header-text">
           <h1>Live AI Coding Interviewer</h1>
@@ -1557,7 +2255,7 @@ function __ici_deepEqual(a, b) {
               className="difficulty-card__select"
               value={difficulty}
               onChange={(event) => setDifficulty(event.target.value)}
-              disabled={isLocked}
+              disabled={isLocked || isInterviewMode}
               aria-label="Select interview difficulty"
             >
               <option value="Easy">Easy</option>
@@ -1578,16 +2276,40 @@ function __ici_deepEqual(a, b) {
             <button
               type="button"
               className="time-tracker__action"
-              onClick={() => stopInterview("stopped")}
-              disabled={isLocked}
+              onClick={() => {
+                if (isInterviewMode) {
+                  advanceInterviewRound("stopped");
+                } else {
+                  stopInterview("stopped");
+                }
+              }}
+              disabled={!isInterviewMode && isLocked}
               aria-label="Stop interview"
             >
               <span className="time-tracker__icon" aria-hidden="true">
                 ■
               </span>
-              Stop
+              {isInterviewMode ? "Next" : "Stop"}
             </button>
           </div>
+          <button
+            type="button"
+            className="tutorial-trigger"
+            onClick={() => setIsInterviewSetupOpen(true)}
+            aria-label="Open interview simulation"
+          >
+            Interview Simulation
+          </button>
+          {isInterviewMode ? (
+            <button
+              type="button"
+              className="tutorial-trigger"
+              onClick={() => endInterviewSimulation("ended")}
+              aria-label="End interview simulation"
+            >
+              End session
+            </button>
+          ) : null}
           <button
             type="button"
             className="tutorial-trigger"
@@ -1761,7 +2483,7 @@ function __ici_deepEqual(a, b) {
                   className="problem__select"
                   value={activeProblemId}
                   onChange={(e) => setActiveProblemId(e.target.value)}
-                  disabled={isLocked}
+                  disabled={isLocked || isInterviewMode}
                   aria-label="Select coding problem"
                 >
                   {PROBLEMS.map((p) => (
@@ -1775,26 +2497,155 @@ function __ici_deepEqual(a, b) {
 
             <div className="problem">
               <div className="problem__meta">
-                <div className="problem__name">{activeProblem.title}</div>
-                <div className="problem__signature">{activeProblem.signature}</div>
+                <div className="problem__name">
+                  {isInterviewMode && activeInterviewRound
+                    ? activeInterviewRound.type === "coding"
+                      ? activeProblem.title
+                      : activeInterviewRound.type === "behavioral"
+                        ? "Behavioral question"
+                        : activeInterviewRound.type === "system_design"
+                          ? "System design"
+                          : "Feedback"
+                    : activeProblem.title}
+                </div>
+                <div className="problem__signature">
+                  {isInterviewMode && activeInterviewRound && activeInterviewRound.type !== "coding"
+                    ? "Interview Simulation"
+                    : activeProblem.signature}
+                </div>
               </div>
 
-              <div className="problem__tabs" role="tablist" aria-label="Problem sections">
-                {["Description", "Examples", "Test cases", "Hints", "Solution"].map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    className={`problem__tab ${problemTab === tab ? "is-active" : ""}`}
-                    onClick={() => setProblemTab(tab)}
-                    disabled={tab === "Solution" && !activeSolved}
-                    aria-label={`Open ${tab}`}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
+              {!(isInterviewMode && activeInterviewRound && activeInterviewRound.type !== "coding") ? (
+                <div className="problem__tabs" role="tablist" aria-label="Problem sections">
+                  {["Description", "Examples", "Test cases", "Hints", "Solution"].map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      className={`problem__tab ${problemTab === tab ? "is-active" : ""}`}
+                      onClick={() => setProblemTab(tab)}
+                      disabled={tab === "Solution" && !activeSolved}
+                      aria-label={`Open ${tab}`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
               <div className="problem__content">
+                {isInterviewMode && activeInterviewRound && activeInterviewRound.type === "behavioral" && (
+                  <div className="problem__section">
+                    <div className="problem__block">
+                      <div className="problem__block-title">Question</div>
+                      <div className="problem__text">
+                        {BEHAVIORAL_QUESTIONS.find((q) => q.id === activeInterviewRound.questionId)?.prompt ||
+                          "Tell me about yourself."}
+                      </div>
+                    </div>
+                    <div className="problem__block">
+                      <div className="problem__block-title">Your answer</div>
+                      <div className="problem__text">
+                        <textarea
+                          value={behavioralAnswer}
+                          onChange={(e) => setBehavioralAnswer(e.target.value)}
+                          placeholder="Write your answer (STAR format works well)."
+                          rows={8}
+                          style={{
+                            width: "100%",
+                            border: "1px solid #cbd5f5",
+                            borderRadius: 12,
+                            padding: 12,
+                            resize: "vertical"
+                          }}
+                        />
+                        <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            className="problem__run-tests"
+                            onClick={() => advanceInterviewRound("answered")}
+                          >
+                            Continue
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {isInterviewMode && activeInterviewRound && activeInterviewRound.type === "system_design" && (
+                  <div className="problem__section">
+                    <div className="problem__block">
+                      <div className="problem__block-title">Prompt</div>
+                      <div className="problem__text">
+                        <div style={{ fontWeight: 900, marginBottom: 8 }}>
+                          {SYSTEM_DESIGN_QUESTIONS.find((q) => q.id === activeInterviewRound.questionId)?.title ||
+                            "System design"}
+                        </div>
+                        {SYSTEM_DESIGN_QUESTIONS.find((q) => q.id === activeInterviewRound.questionId)?.prompt ||
+                          "Design a system."}
+                      </div>
+                    </div>
+                    <div className="problem__block">
+                      <div className="problem__block-title">Your design notes</div>
+                      <div className="problem__text">
+                        <textarea
+                          value={systemDesignAnswer}
+                          onChange={(e) => setSystemDesignAnswer(e.target.value)}
+                          placeholder={`Suggested structure:\n- Requirements / non-goals\n- APIs\n- Data model\n- High-level architecture\n- Scaling + caching\n- Failure modes + retries\n- Tradeoffs`}
+                          rows={12}
+                          style={{
+                            width: "100%",
+                            border: "1px solid #cbd5f5",
+                            borderRadius: 12,
+                            padding: 12,
+                            resize: "vertical"
+                          }}
+                        />
+                        <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            className="problem__run-tests"
+                            onClick={() => advanceInterviewRound("answered")}
+                          >
+                            Continue
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {isInterviewMode && activeInterviewRound && activeInterviewRound.type === "feedback" && (
+                  <div className="problem__section">
+                    <div className="problem__block">
+                      <div className="problem__block-title">Feedback</div>
+                      <div className="problem__text">
+                        <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>
+                          {feedbackText || "Generating summary..."}
+                        </pre>
+                        <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            className="problem__run-tests"
+                            onClick={() => endInterviewSimulation("completed")}
+                          >
+                            Finish session
+                          </button>
+                          {recordingState.blobUrl ? (
+                            <a
+                              href={recordingState.blobUrl}
+                              download={`interview_${new Date().toISOString().slice(0, 19).replaceAll(":", "-")}.webm`}
+                              style={{ fontWeight: 900, color: "#312e81", alignSelf: "center" }}
+                            >
+                              Download recording
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {problemTab === "Description" && (
                   <div className="problem__section">
                     <div className="problem__block">
@@ -1990,7 +2841,7 @@ function __ici_deepEqual(a, b) {
           <section className="panel panel--chat" data-tutorial="coach">
             <div className="panel__header">Interview Coach</div>
             <div className="chat">
-              <div className="chat__messages">
+              <div className="chat__messages" ref={chatMessagesRef}>
                 {messages.map((message, index) => (
                   <div
                     key={`${message.role}-${index}`}
@@ -2000,7 +2851,6 @@ function __ici_deepEqual(a, b) {
                     <div className="chat__content">{message.content}</div>
                   </div>
                 ))}
-                <div ref={chatEndRef} />
               </div>
               <div className="chat__input">
                 <textarea
