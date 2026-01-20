@@ -12,6 +12,8 @@ import ProblemSelector from "./components/ProblemSelector.jsx";
 import AuthModal from "./components/AuthModal.jsx";
 import UserProfile from "./components/UserProfile.jsx";
 import Leaderboard from "./components/Leaderboard.jsx";
+import InterviewLauncher from "./components/InterviewLauncher.jsx";
+import InterviewSimulation from "./components/InterviewSimulation.jsx";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
 import { 
   getCurrentUser, 
@@ -191,6 +193,11 @@ export default function App() {
   const [isProfileVisible, setIsProfileVisible] = useState(false);
   const [isLeaderboardVisible, setIsLeaderboardVisible] = useState(false);
   const [personalBest, setPersonalBest] = useState(null);
+  
+  // Interview simulation state
+  const [isInterviewLauncherVisible, setIsInterviewLauncherVisible] = useState(false);
+  const [isInterviewSimActive, setIsInterviewSimActive] = useState(false);
+  const [interviewSimConfig, setInterviewSimConfig] = useState(null);
   
   // Problem management state
   const [currentProblemId, setCurrentProblemId] = useState(PROBLEMS[0].id);
@@ -780,6 +787,36 @@ export default function App() {
     setIsLeaderboardVisible(false);
   }, []);
 
+  // Interview simulation handlers
+  const handleOpenInterviewLauncher = useCallback(() => {
+    setIsInterviewLauncherVisible(true);
+  }, []);
+
+  const handleCloseInterviewLauncher = useCallback(() => {
+    setIsInterviewLauncherVisible(false);
+  }, []);
+
+  const handleStartInterviewSim = useCallback((config) => {
+    setInterviewSimConfig(config);
+    setIsInterviewLauncherVisible(false);
+    setIsInterviewSimActive(true);
+  }, []);
+
+  const handleExitInterviewSim = useCallback(() => {
+    setIsInterviewSimActive(false);
+    setInterviewSimConfig(null);
+  }, []);
+
+  const handleInterviewSimComplete = useCallback((results) => {
+    // Save results if user is logged in
+    if (user && results) {
+      // Could save to user profile here
+      console.log("Interview simulation completed:", results);
+    }
+    setIsInterviewSimActive(false);
+    setInterviewSimConfig(null);
+  }, [user]);
+
   const handleClearConsole = useCallback(() => {
     setConsoleLogs([]);
   }, []);
@@ -940,6 +977,7 @@ export default function App() {
         onStop={handleStop}
         onStartTutorial={handleStartTutorial}
         onOpenLeaderboard={handleOpenLeaderboard}
+        onStartInterviewSim={handleOpenInterviewLauncher}
         user={user}
         onOpenAuth={handleOpenAuth}
         onOpenProfile={handleOpenProfile}
@@ -1097,6 +1135,27 @@ export default function App() {
           onClose={handleCloseLeaderboard}
           problems={PROBLEMS}
           currentUser={user}
+        />
+      )}
+      
+      {/* Interview Simulation Launcher */}
+      {isInterviewLauncherVisible && (
+        <InterviewLauncher
+          onStart={handleStartInterviewSim}
+          onClose={handleCloseInterviewLauncher}
+          user={user}
+        />
+      )}
+      
+      {/* Interview Simulation Active */}
+      {isInterviewSimActive && interviewSimConfig && (
+        <InterviewSimulation
+          mode={interviewSimConfig.mode}
+          persona={interviewSimConfig.persona}
+          enableVideoRecording={interviewSimConfig.enableVideo}
+          customConfig={interviewSimConfig.customConfig}
+          onComplete={handleInterviewSimComplete}
+          onExit={handleExitInterviewSim}
         />
       )}
     </div>

@@ -17,6 +17,7 @@ function Header({
   onStop,
   onStartTutorial,
   onOpenLeaderboard,
+  onStartInterviewSim,
   problemSelector,
   user,
   onOpenAuth,
@@ -30,6 +31,15 @@ function Header({
       </div>
       <div className="app__header-actions">
         {problemSelector}
+        <button
+          type="button"
+          className="interview-sim-trigger"
+          onClick={onStartInterviewSim}
+          aria-label="Start interview simulation"
+        >
+          <span className="interview-sim-trigger__icon">🎯</span>
+          Mock Interview
+        </button>
         <button
           type="button"
           className="tutorial-trigger"
