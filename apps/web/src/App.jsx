@@ -3,7 +3,7 @@ import Editor from "@monaco-editor/react";
 import { sendChat } from "./api.js";
 import TutorialOverlay from "./TutorialOverlay.jsx";
 import { getCurrentUserId, getUserById, loadUsers, logIn, logOut, signUp } from "./auth.js";
-import { loadUserState, saveUserJson } from "./userData.js";
+import { loadUserJson, loadUserState, saveUserJson } from "./userData.js";
 import { randomId } from "./storage.js";
 import { analyzeCodeForInterruptions } from "./codeAnalysis.js";
 
@@ -375,6 +375,47 @@ function formatClock(seconds) {
   const mm = Math.floor(s / 60);
   const ss = s % 60;
   return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
+const UI_PREFS_KEY = "uiPrefs.v1";
+const UI_PREFS_DEFAULTS = Object.freeze({
+  theme: "system", // system | light | dark
+  accent: "indigo", // indigo | emerald | rose | amber | cyan
+  contrast: "normal", // normal | high
+  keyboardNav: false,
+  tourSeen: false
+});
+
+function normalizeUiPrefs(raw) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const theme = ["system", "light", "dark"].includes(r.theme) ? r.theme : UI_PREFS_DEFAULTS.theme;
+  const accent = ["indigo", "emerald", "rose", "amber", "cyan"].includes(r.accent)
+    ? r.accent
+    : UI_PREFS_DEFAULTS.accent;
+  const contrast = ["normal", "high"].includes(r.contrast) ? r.contrast : UI_PREFS_DEFAULTS.contrast;
+  return {
+    theme,
+    accent,
+    contrast,
+    keyboardNav: Boolean(r.keyboardNav),
+    tourSeen: Boolean(r.tourSeen)
+  };
+}
+
+function getSystemTheme() {
+  try {
+    return window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+}
+
+function getSystemContrast() {
+  try {
+    return window.matchMedia?.("(prefers-contrast: more)")?.matches ? "high" : "normal";
+  } catch {
+    return "normal";
+  }
 }
 
 function Modal({ isOpen, title, children, onClose }) {
@@ -756,6 +797,16 @@ export default function App() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [isInterviewSetupOpen, setIsInterviewSetupOpen] = useState(false);
+  const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
+  const [uiPrefs, setUiPrefs] = useState(() =>
+    normalizeUiPrefs(loadUserJson(storageUserId, UI_PREFS_KEY, UI_PREFS_DEFAULTS))
+  );
+  const [resolvedTheme, setResolvedTheme] = useState(() =>
+    uiPrefs.theme === "system" ? getSystemTheme() : uiPrefs.theme
+  );
+  const [resolvedContrast, setResolvedContrast] = useState(() =>
+    uiPrefs.contrast === "normal" ? getSystemContrast() : uiPrefs.contrast
+  );
 
   const [activeProblemId, setActiveProblemId] = useState(() => {
     try {
@@ -797,6 +848,78 @@ export default function App() {
     setBestTimeSecondsByProblemId(next.bestTimeSecondsByProblemId);
     setHistory(next.history);
   }, [storageUserId]);
+
+  useEffect(() => {
+    setUiPrefs(normalizeUiPrefs(loadUserJson(storageUserId, UI_PREFS_KEY, UI_PREFS_DEFAULTS)));
+  }, [storageUserId]);
+
+  useEffect(() => {
+    saveUserJson(storageUserId, UI_PREFS_KEY, uiPrefs);
+  }, [storageUserId, uiPrefs]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const effectiveTheme = uiPrefs.theme === "system" ? getSystemTheme() : uiPrefs.theme;
+    const effectiveContrast =
+      uiPrefs.contrast === "normal" ? getSystemContrast() : uiPrefs.contrast;
+
+    setResolvedTheme(effectiveTheme);
+    setResolvedContrast(effectiveContrast);
+
+    root.dataset.theme = effectiveTheme;
+    root.dataset.accent = uiPrefs.accent;
+    root.dataset.contrast = effectiveContrast;
+    root.dataset.keyboardNav = uiPrefs.keyboardNav ? "true" : "false";
+    root.dataset.input = root.dataset.input || "mouse";
+
+    const mqlTheme = window.matchMedia?.("(prefers-color-scheme: dark)");
+    const mqlContrast = window.matchMedia?.("(prefers-contrast: more)");
+    const onThemeChange = () => {
+      if (uiPrefs.theme !== "system") return;
+      const next = getSystemTheme();
+      root.dataset.theme = next;
+      setResolvedTheme(next);
+    };
+    const onContrastChange = () => {
+      if (uiPrefs.contrast !== "normal") return;
+      const next = getSystemContrast();
+      root.dataset.contrast = next;
+      setResolvedContrast(next);
+    };
+
+    try {
+      mqlTheme?.addEventListener?.("change", onThemeChange);
+      mqlContrast?.addEventListener?.("change", onContrastChange);
+    } catch {
+      // ignore
+    }
+    return () => {
+      try {
+        mqlTheme?.removeEventListener?.("change", onThemeChange);
+        mqlContrast?.removeEventListener?.("change", onContrastChange);
+      } catch {
+        // ignore
+      }
+    };
+  }, [uiPrefs]);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const onKeyDown = (e) => {
+      if (e.key === "Tab") {
+        root.dataset.input = "keyboard";
+      }
+    };
+    const onMouseDown = () => {
+      root.dataset.input = "mouse";
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("mousedown", onMouseDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("mousedown", onMouseDown, true);
+    };
+  }, []);
 
   useEffect(() => {
     // Backwards compat: migrate old non-user-scoped keys into the guest profile once.
@@ -1232,8 +1355,19 @@ export default function App() {
     if (shouldAutoStart) {
       setIsTutorialOpen(true);
       setTutorialStepIndex(0);
+      setUiPrefs((prev) => ({ ...prev, tourSeen: true }));
     }
   }, []);
+
+  const didAutoStartTourForUserRef = useRef("");
+  useEffect(() => {
+    if (uiPrefs.tourSeen) return;
+    if (didAutoStartTourForUserRef.current === storageUserId) return;
+    didAutoStartTourForUserRef.current = storageUserId;
+    setIsTutorialOpen(true);
+    setTutorialStepIndex(0);
+    setUiPrefs((prev) => ({ ...prev, tourSeen: true }));
+  }, [storageUserId, uiPrefs.tourSeen]);
 
   const editorOptions = useMemo(
     () => ({
@@ -2087,6 +2221,9 @@ function __ici_isEqual(problemId, actual, expected) {
 
   return (
     <div className="app">
+      <a className="skip-link" href="#main-content">
+        Skip to main content
+      </a>
       <TutorialOverlay
         isOpen={isTutorialOpen}
         steps={tutorialSteps}
@@ -2097,6 +2234,99 @@ function __ici_isEqual(problemId, actual, expected) {
           setTutorialStepIndex(0);
         }}
       />
+      <Modal
+        isOpen={isPreferencesOpen}
+        title="Appearance & Accessibility"
+        onClose={() => setIsPreferencesOpen(false)}
+      >
+        <div className="prefs">
+          <div className="prefs__grid">
+            <label className="prefs__field">
+              <span className="prefs__label">Theme</span>
+              <select
+                value={uiPrefs.theme}
+                onChange={(e) =>
+                  setUiPrefs((prev) => ({ ...prev, theme: e.target.value }))
+                }
+                aria-label="Theme"
+              >
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+
+            <label className="prefs__field">
+              <span className="prefs__label">Accent color</span>
+              <select
+                value={uiPrefs.accent}
+                onChange={(e) =>
+                  setUiPrefs((prev) => ({ ...prev, accent: e.target.value }))
+                }
+                aria-label="Accent color"
+              >
+                <option value="indigo">Indigo</option>
+                <option value="emerald">Emerald</option>
+                <option value="rose">Rose</option>
+                <option value="amber">Amber</option>
+                <option value="cyan">Cyan</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="prefs__toggles">
+            <label className="prefs__toggle">
+              <input
+                type="checkbox"
+                checked={uiPrefs.contrast === "high"}
+                onChange={(e) =>
+                  setUiPrefs((prev) => ({
+                    ...prev,
+                    contrast: e.target.checked ? "high" : "normal"
+                  }))
+                }
+              />
+              <span>High contrast</span>
+            </label>
+            <label className="prefs__toggle">
+              <input
+                type="checkbox"
+                checked={uiPrefs.keyboardNav}
+                onChange={(e) =>
+                  setUiPrefs((prev) => ({ ...prev, keyboardNav: e.target.checked }))
+                }
+              />
+              <span>Keyboard navigation mode</span>
+            </label>
+          </div>
+
+          <div className="prefs__actions">
+            <button
+              type="button"
+              className="prefs__btn prefs__btn--ghost"
+              onClick={() => {
+                setIsTutorialOpen(true);
+                setTutorialStepIndex(0);
+                setUiPrefs((prev) => ({ ...prev, tourSeen: true }));
+                setIsPreferencesOpen(false);
+              }}
+            >
+              Restart onboarding tour
+            </button>
+            <button
+              type="button"
+              className="prefs__btn prefs__btn--danger"
+              onClick={() => setUiPrefs(UI_PREFS_DEFAULTS)}
+            >
+              Reset preferences
+            </button>
+          </div>
+
+          <div className="prefs__note">
+            Tip: press <kbd>Tab</kbd> to move focus; <kbd>Esc</kbd> closes dialogs.
+          </div>
+        </div>
+      </Modal>
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
@@ -2329,6 +2559,14 @@ function __ici_isEqual(problemId, actual, expected) {
           >
             Leaderboards
           </button>
+          <button
+            type="button"
+            className="tutorial-trigger"
+            onClick={() => setIsPreferencesOpen(true)}
+            aria-label="Open appearance and accessibility settings"
+          >
+            Preferences
+          </button>
           <div className="user-actions">
             <button
               type="button"
@@ -2361,7 +2599,7 @@ function __ici_isEqual(problemId, actual, expected) {
         </div>
       </header>
 
-      <main className="app__main">
+      <main id="main-content" className="app__main">
         <div className="app__left">
           <section className="panel panel--editor" data-tutorial="editor">
             <div className="panel__header">Editor</div>
@@ -2395,6 +2633,7 @@ function __ici_isEqual(problemId, actual, expected) {
             <Editor
               height="100%"
               defaultLanguage="javascript"
+              theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
               value={code}
               onChange={(value) => setCode(value ?? "")}
               options={editorOptions}

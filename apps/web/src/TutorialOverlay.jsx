@@ -23,6 +23,8 @@ export default function TutorialOverlay({
   const activeStep = steps?.[stepIndex] ?? null;
   const [targetRect, setTargetRect] = useState(null);
   const tooltipRef = useRef(null);
+  const closeBtnRef = useRef(null);
+  const previousFocusRef = useRef(null);
   const [tooltipStyle, setTooltipStyle] = useState(null);
 
   const targetSelector = activeStep?.targetSelector ?? null;
@@ -88,6 +90,49 @@ export default function TutorialOverlay({
       window.removeEventListener("scroll", updateRect, true);
     };
   }, [isOpen, targetSelector, activeStep]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      const prev = previousFocusRef.current;
+      if (prev && typeof prev.focus === "function") {
+        try {
+          prev.focus();
+        } catch {
+          // ignore
+        }
+      }
+      previousFocusRef.current = null;
+      return;
+    }
+
+    try {
+      previousFocusRef.current = document.activeElement;
+    } catch {
+      previousFocusRef.current = null;
+    }
+
+    const t = window.setTimeout(() => {
+      const btn = closeBtnRef.current;
+      if (btn && typeof btn.focus === "function") {
+        try {
+          btn.focus();
+        } catch {
+          // ignore
+        }
+        return;
+      }
+      const tip = tooltipRef.current;
+      if (tip && typeof tip.focus === "function") {
+        try {
+          tip.focus();
+        } catch {
+          // ignore
+        }
+      }
+    }, 0);
+
+    return () => window.clearTimeout(t);
+  }, [isOpen, stepIndex]);
 
   useLayoutEffect(() => {
     if (!isOpen || !activeStep) {
@@ -170,6 +215,9 @@ export default function TutorialOverlay({
     return null;
   }
 
+  const titleId = `tutorial-title-${stepIndex}`;
+  const bodyId = `tutorial-body-${stepIndex}`;
+
   const spotlightStyle = targetRect
     ? {
         top: `${targetRect.top}px`,
@@ -188,16 +236,50 @@ export default function TutorialOverlay({
   };
 
   return (
-    <div className="tutorial" role="dialog" aria-modal="true">
-      <div className="tutorial__backdrop" onClick={() => onClose?.()} />
+    <div
+      className="tutorial"
+      role="dialog"
+      aria-modal="true"
+      aria-label={!activeStep.title ? "Tutorial" : undefined}
+      aria-labelledby={activeStep.title ? titleId : undefined}
+      aria-describedby={activeStep.body ? bodyId : undefined}
+    >
+      <div className="tutorial__backdrop" aria-hidden="true" onClick={() => onClose?.()} />
 
       {spotlightStyle && (
-        <div className="tutorial__spotlight" style={spotlightStyle} />
+        <div className="tutorial__spotlight" style={spotlightStyle} aria-hidden="true" />
       )}
 
-      <div className="tutorial__tooltip" style={tooltip} ref={tooltipRef}>
+      <div
+        className="tutorial__tooltip"
+        style={tooltip}
+        ref={tooltipRef}
+        tabIndex={-1}
+        onKeyDown={(e) => {
+          if (e.key !== "Tab") return;
+          const root = tooltipRef.current;
+          if (!root) return;
+          const focusables = Array.from(
+            root.querySelectorAll(
+              'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+            )
+          ).filter((el) => !el.hasAttribute("disabled") && el.getAttribute("aria-hidden") !== "true");
+          if (focusables.length === 0) return;
+          const first = focusables[0];
+          const last = focusables[focusables.length - 1];
+          const isShift = e.shiftKey;
+          if (!isShift && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+          if (isShift && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        }}
+      >
         <div className="tutorial__meta">
-          <span className="tutorial__step">
+          <span className="tutorial__step" aria-live="polite">
             Step {Math.min(stepIndex + 1, stepMeta.total)} of {stepMeta.total}
           </span>
           <button
@@ -205,13 +287,22 @@ export default function TutorialOverlay({
             className="tutorial__close"
             onClick={() => onClose?.()}
             aria-label="Close tutorial"
+            ref={closeBtnRef}
           >
             ×
           </button>
         </div>
 
-        {activeStep.title && <div className="tutorial__title">{activeStep.title}</div>}
-        {activeStep.body && <div className="tutorial__body">{activeStep.body}</div>}
+        {activeStep.title && (
+          <div className="tutorial__title" id={titleId}>
+            {activeStep.title}
+          </div>
+        )}
+        {activeStep.body && (
+          <div className="tutorial__body" id={bodyId}>
+            {activeStep.body}
+          </div>
+        )}
 
         <div className="tutorial__actions">
           <button

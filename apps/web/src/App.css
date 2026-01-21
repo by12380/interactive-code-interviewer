@@ -3,6 +3,7 @@
   font-family: "Inter", system-ui, sans-serif;
   color: #0f172a;
   background: #f8fafc;
+  --focus-ring: #a5b4fc;
   --bg: #f5f7fb;
   --panel: #ffffff;
   --panel-muted: #f8fafc;
@@ -14,6 +15,57 @@
   --warning: #dc2626;
   --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.08);
   --shadow-md: 0 10px 30px rgba(15, 23, 42, 0.12);
+}
+
+html[data-accent="indigo"] {
+  --primary: #4f46e5;
+  --primary-strong: #4338ca;
+  --focus-ring: #a5b4fc;
+}
+html[data-accent="emerald"] {
+  --primary: #10b981;
+  --primary-strong: #059669;
+  --focus-ring: #6ee7b7;
+}
+html[data-accent="rose"] {
+  --primary: #e11d48;
+  --primary-strong: #be123c;
+  --focus-ring: #fda4af;
+}
+html[data-accent="amber"] {
+  --primary: #f59e0b;
+  --primary-strong: #d97706;
+  --focus-ring: #fcd34d;
+}
+html[data-accent="cyan"] {
+  --primary: #06b6d4;
+  --primary-strong: #0891b2;
+  --focus-ring: #67e8f9;
+}
+
+html[data-contrast="high"] {
+  --border: #0f172a;
+  --text-muted: #0f172a;
+  --focus-ring: #0f172a;
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  color: #e5e7eb;
+  background: #0b1220;
+  --bg: #0b1220;
+  --panel: #0f172a;
+  --panel-muted: #111827;
+  --border: rgba(148, 163, 184, 0.24);
+  --text-muted: #94a3b8;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 18px 52px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme="dark"][data-contrast="high"] {
+  --border: rgba(226, 232, 240, 0.7);
+  --text-muted: #e2e8f0;
+  --focus-ring: #f8fafc;
 }
 
 *,
@@ -32,6 +84,44 @@ button,
 select,
 textarea {
   font: inherit;
+}
+
+button:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+html[data-keyboard-nav="true"] button:focus,
+html[data-keyboard-nav="true"] select:focus,
+html[data-keyboard-nav="true"] textarea:focus,
+html[data-keyboard-nav="true"] input:focus,
+html[data-keyboard-nav="true"] a:focus {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Skip link for keyboard users */
+.skip-link {
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 2px solid var(--border);
+  color: inherit;
+  font-weight: 900;
+  text-decoration: none;
+  transform: translateY(-200%);
+  transition: transform 0.12s ease;
+  z-index: 2000;
+}
+.skip-link:focus {
+  transform: translateY(0);
 }
 
 ::selection {
@@ -56,6 +146,16 @@ textarea {
   top: 0;
   z-index: 10;
   box-shadow: var(--shadow-sm);
+}
+
+html[data-theme="dark"] body {
+  background: radial-gradient(circle at top, rgba(30, 41, 59, 0.7) 0%, #0b1220 42%, #050913 100%);
+}
+html[data-theme="dark"] ::selection {
+  background: rgba(99, 102, 241, 0.35);
+}
+html[data-theme="dark"] .app__header {
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.96) 0%, rgba(17, 24, 39, 0.96) 100%);
 }
 
 .app__header-text {
@@ -91,9 +191,14 @@ textarea {
   background: rgba(255, 255, 255, 0.9);
 }
 
-.tutorial-trigger:focus {
-  outline: 2px solid #a5b4fc;
-  outline-offset: 2px;
+html[data-theme="dark"] .tutorial-trigger {
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.65);
+  color: #e5e7eb;
+  box-shadow: 0 10px 18px rgba(0, 0, 0, 0.35);
+}
+html[data-theme="dark"] .tutorial-trigger:hover {
+  background: rgba(15, 23, 42, 0.85);
 }
 
 .tutorial {
@@ -128,6 +233,12 @@ textarea {
   color: #0f172a;
   max-height: calc(100vh - 24px);
   overflow: auto;
+}
+
+html[data-theme="dark"] .tutorial__tooltip {
+  background: rgba(15, 23, 42, 0.97);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #e5e7eb;
 }
 
 .tutorial__meta {
@@ -272,9 +383,23 @@ textarea {
   box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05);
 }
 
-.difficulty-card__select:focus {
-  outline: 2px solid #a5b4fc;
-  outline-offset: 1px;
+html[data-theme="dark"] .difficulty-card,
+html[data-theme="dark"] .time-card {
+  background: rgba(15, 23, 42, 0.65);
+  border-color: rgba(148, 163, 184, 0.26);
+}
+html[data-theme="dark"] .difficulty-card__label,
+html[data-theme="dark"] .time-tracker__label {
+  color: #cbd5e1;
+}
+html[data-theme="dark"] .difficulty-card__select,
+html[data-theme="dark"] .problem__select,
+html[data-theme="dark"] .leaderboard__select,
+html[data-theme="dark"] .chat__input textarea,
+html[data-theme="dark"] .auth__field input {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #e5e7eb;
 }
 
 .app__header h1 {
@@ -405,6 +530,11 @@ textarea {
   font-weight: 600;
   border-bottom: 1px solid var(--border);
   letter-spacing: 0.01em;
+}
+
+html[data-theme="dark"] .panel__header {
+  background: rgba(17, 24, 39, 0.95);
+  color: #e5e7eb;
 }
 
 .panel--problem {
@@ -543,6 +673,61 @@ textarea {
   overflow: auto;
   padding: 14px 16px 16px;
   background: #ffffff;
+}
+
+html[data-theme="dark"] .problem__meta,
+html[data-theme="dark"] .problem__tabs,
+html[data-theme="dark"] .problem__content,
+html[data-theme="dark"] .problem__tests-header,
+html[data-theme="dark"] .problem__solution-actions,
+html[data-theme="dark"] .problem__hint-actions,
+html[data-theme="dark"] .problem__tests-header,
+html[data-theme="dark"] .problem__tests,
+html[data-theme="dark"] .chat__input,
+html[data-theme="dark"] .ici-modal__header,
+html[data-theme="dark"] .ici-modal__panel {
+  background: rgba(15, 23, 42, 0.92);
+}
+html[data-theme="dark"] .problem__block-title,
+html[data-theme="dark"] .problem__example-title,
+html[data-theme="dark"] .problem__test-top,
+html[data-theme="dark"] .leaderboard__head {
+  background: rgba(17, 24, 39, 0.92);
+  color: #e5e7eb;
+}
+html[data-theme="dark"] .problem__text,
+html[data-theme="dark"] .chat__content,
+html[data-theme="dark"] .leaderboard__user,
+html[data-theme="dark"] .leaderboard__rank,
+html[data-theme="dark"] .panel {
+  color: #e5e7eb;
+}
+html[data-theme="dark"] .problem__text--muted,
+html[data-theme="dark"] .chat__role,
+html[data-theme="dark"] .leaderboard__note,
+html[data-theme="dark"] .app__header p {
+  color: #94a3b8;
+}
+html[data-theme="dark"] .problem__badge,
+html[data-theme="dark"] .problem__tab,
+html[data-theme="dark"] .console__btn,
+html[data-theme="dark"] .problem__hint-btn,
+html[data-theme="dark"] .user-actions__btn,
+html[data-theme="dark"] .auth__tab {
+  background: rgba(15, 23, 42, 0.7);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #e5e7eb;
+}
+html[data-theme="dark"] .chat__message {
+  background: rgba(15, 23, 42, 0.7);
+}
+html[data-theme="dark"] .chat__message--assistant {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.28);
+}
+html[data-theme="dark"] .chat__message--user {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.25);
 }
 
 .problem__content::-webkit-scrollbar {
@@ -990,6 +1175,12 @@ textarea {
   background: #f8fafc;
 }
 
+html[data-theme="dark"] .panel--editor .monaco-editor,
+html[data-theme="dark"] .panel--editor .monaco-editor-background,
+html[data-theme="dark"] .panel--editor .monaco-editor .margin {
+  background: #0b1220;
+}
+
 .panel--editor .monaco-editor {
   border-radius: 0 0 16px 16px;
 }
@@ -1098,12 +1289,6 @@ textarea {
   box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
-.chat__input textarea:focus {
-  outline: 2px solid #a5b4fc;
-  outline-offset: 1px;
-  background: #ffffff;
-}
-
 .chat__input button {
   border: none;
   background: linear-gradient(135deg, var(--primary) 0%, var(--primary-strong) 100%);
@@ -1144,6 +1329,170 @@ textarea {
   .time-tracker {
     align-items: flex-start;
   }
+}
+
+@media (max-width: 640px) {
+  .app__header {
+    padding: 16px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .app__header-actions {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 10px;
+  }
+
+  .difficulty-card,
+  .time-card {
+    width: 100%;
+  }
+
+  .tutorial-trigger,
+  .user-actions__btn {
+    width: 100%;
+  }
+
+  .user-actions {
+    width: 100%;
+  }
+
+  .app__main {
+    padding: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+.prefs {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.prefs__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .prefs__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.prefs__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #334155;
+}
+
+html[data-theme="dark"] .prefs__field {
+  color: #e5e7eb;
+}
+
+.prefs__label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.prefs__field select {
+  border: 1px solid #cbd5f5;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #ffffff;
+  color: inherit;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.prefs__toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prefs__toggle {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+html[data-theme="dark"] .prefs__toggle {
+  color: #e5e7eb;
+}
+
+.prefs__toggle input {
+  width: 18px;
+  height: 18px;
+}
+
+.prefs__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.prefs__btn {
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+  font-weight: 900;
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  background: rgba(248, 250, 252, 0.9);
+  color: inherit;
+}
+
+.prefs__btn--ghost {
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.prefs__btn--danger {
+  border: none;
+  background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);
+  color: #ffffff;
+}
+
+.prefs__note {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+html[data-theme="dark"] .prefs__note {
+  color: #94a3b8;
+}
+
+.prefs__note kbd {
+  font: inherit;
+  font-weight: 900;
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  background: rgba(248, 250, 252, 0.9);
+  border-bottom-width: 2px;
+  border-radius: 8px;
+  padding: 2px 6px;
+  color: #0f172a;
+}
+
+html[data-theme="dark"] .prefs__note kbd {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #e5e7eb;
 }
 
 .user-actions {
