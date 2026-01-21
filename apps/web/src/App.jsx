@@ -14,6 +14,10 @@ import UserProfile from "./components/UserProfile.jsx";
 import Leaderboard from "./components/Leaderboard.jsx";
 import InterviewLauncher from "./components/InterviewLauncher.jsx";
 import InterviewSimulation from "./components/InterviewSimulation.jsx";
+import SettingsPanel from "./components/SettingsPanel.jsx";
+import OnboardingTour from "./components/OnboardingTour.jsx";
+import SkipLinks from "./components/SkipLinks.jsx";
+import { useTheme } from "./contexts/ThemeContext.jsx";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
 import { 
   getCurrentUser, 
@@ -187,6 +191,8 @@ const runTestCases = (code, testCases, problem) => {
 };
 
 export default function App() {
+  const { accessibility } = useTheme();
+  
   // User authentication state
   const [user, setUser] = useState(() => getCurrentUser());
   const [isAuthModalVisible, setIsAuthModalVisible] = useState(false);
@@ -198,6 +204,13 @@ export default function App() {
   const [isInterviewLauncherVisible, setIsInterviewLauncherVisible] = useState(false);
   const [isInterviewSimActive, setIsInterviewSimActive] = useState(false);
   const [interviewSimConfig, setInterviewSimConfig] = useState(null);
+  
+  // Onboarding state
+  const [isOnboardingVisible, setIsOnboardingVisible] = useState(() => {
+    const onboardingComplete = localStorage.getItem("onboardingComplete");
+    const neverShow = localStorage.getItem("onboardingNeverShow");
+    return !onboardingComplete && !neverShow;
+  });
   
   // Problem management state
   const [currentProblemId, setCurrentProblemId] = useState(PROBLEMS[0].id);
@@ -817,6 +830,19 @@ export default function App() {
     setInterviewSimConfig(null);
   }, [user]);
 
+  // Onboarding handlers
+  const handleCloseOnboarding = useCallback(() => {
+    setIsOnboardingVisible(false);
+  }, []);
+
+  const handleNeverShowOnboarding = useCallback(() => {
+    setIsOnboardingVisible(false);
+  }, []);
+
+  const handleStartOnboarding = useCallback(() => {
+    setIsOnboardingVisible(true);
+  }, []);
+
   const handleClearConsole = useCallback(() => {
     setConsoleLogs([]);
   }, []);
@@ -965,7 +991,19 @@ export default function App() {
   }, [efficiencyScore, hintsScore, testsScore]);
 
   return (
-    <div className="app">
+    <div className="app" role="application" aria-label="Live AI Coding Interviewer">
+      {/* Skip links for keyboard navigation */}
+      <SkipLinks />
+      
+      {/* Screen reader announcements */}
+      <div 
+        className="sr-only" 
+        role="status" 
+        aria-live="polite" 
+        aria-atomic="true"
+        id="sr-announcements"
+      />
+      
       <Header
         difficulty={difficulty}
         isLocked={isLocked}
@@ -991,8 +1029,8 @@ export default function App() {
         }
       />
 
-      <main className="app__main">
-        <div className="app__problem-section">
+      <main className="app__main" id="main-content" role="main">
+        <div className="app__problem-section" id="problem-panel">
           <ProblemPanel
             problem={currentProblem}
             hintsRevealed={hintsRevealed}
@@ -1002,7 +1040,7 @@ export default function App() {
             isCompleted={isCompleted}
           />
         </div>
-        <div className="app__editor-section">
+        <div className="app__editor-section" id="editor-panel">
           <EditorPanel
             canUndo={canUndo}
             canRedo={canRedo}
@@ -1024,7 +1062,7 @@ export default function App() {
             isRunning={isRunning}
           />
         </div>
-        <div className="app__sidebar">
+        <div className="app__sidebar" id="chat-panel">
           <ChatPanel
             messages={messages}
             input={input}
@@ -1110,6 +1148,16 @@ export default function App() {
       </div>
 
       <Tutorial isVisible={isTutorialVisible} onClose={handleCloseTutorial} />
+      
+      {/* Settings Panel */}
+      <SettingsPanel />
+      
+      {/* Onboarding Tour */}
+      <OnboardingTour 
+        isVisible={isOnboardingVisible} 
+        onClose={handleCloseOnboarding}
+        onNeverShow={handleNeverShowOnboarding}
+      />
       
       {/* Auth Modal */}
       {isAuthModalVisible && (

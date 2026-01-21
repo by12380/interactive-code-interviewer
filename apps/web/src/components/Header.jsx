@@ -1,4 +1,5 @@
 import { memo } from "react";
+import { useTheme } from "../contexts/ThemeContext.jsx";
 
 const formatTime = (totalSeconds) => {
   const minutes = Math.floor(totalSeconds / 60);
@@ -23,8 +24,10 @@ function Header({
   onOpenAuth,
   onOpenProfile
 }) {
+  const { theme, toggleTheme, openSettings } = useTheme();
+
   return (
-    <header className="app__header">
+    <header className="app__header" role="banner">
       <div className="app__header-text">
         <h1>Live AI Coding Interviewer</h1>
         <p>Practice coding problems with AI guidance.</p>
@@ -37,8 +40,8 @@ function Header({
           onClick={onStartInterviewSim}
           aria-label="Start interview simulation"
         >
-          <span className="interview-sim-trigger__icon">🎯</span>
-          Mock Interview
+          <span className="interview-sim-trigger__icon" aria-hidden="true">🎯</span>
+          <span className="button-text">Mock Interview</span>
         </button>
         <button
           type="button"
@@ -46,7 +49,7 @@ function Header({
           onClick={onStartTutorial}
           aria-label="Start tutorial"
         >
-          How it works?
+          <span className="button-text">How it works?</span>
         </button>
         <button
           type="button"
@@ -54,30 +57,63 @@ function Header({
           onClick={onOpenLeaderboard}
           aria-label="View leaderboard"
         >
-          <span className="leaderboard-trigger__icon">🏆</span>
-          Leaderboard
+          <span className="leaderboard-trigger__icon" aria-hidden="true">🏆</span>
+          <span className="button-text">Leaderboard</span>
         </button>
+        
+        {/* Theme Toggle */}
+        <button
+          type="button"
+          className="theme-toggle"
+          onClick={toggleTheme}
+          aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+          title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+        >
+          <span className="theme-toggle__icon" aria-hidden="true">
+            {theme === "light" ? "🌙" : "☀️"}
+          </span>
+        </button>
+
+        {/* Settings Button */}
+        <button
+          type="button"
+          className="settings-trigger"
+          onClick={openSettings}
+          aria-label="Open settings"
+          title="Settings"
+        >
+          <span className="settings-trigger__icon" aria-hidden="true">⚙️</span>
+        </button>
+
         <div className="difficulty-card">
-          <span className="difficulty-card__label">Difficulty</span>
+          <span className="difficulty-card__label" id="difficulty-label">Difficulty</span>
           <select
             className="difficulty-card__select"
             value={difficulty}
             onChange={(event) => onDifficultyChange(event.target.value)}
             disabled={isLocked || isPaused}
-            aria-label="Select interview difficulty"
+            aria-labelledby="difficulty-label"
           >
             <option value="Easy">Easy</option>
             <option value="Medium">Medium</option>
             <option value="Hard">Hard</option>
           </select>
         </div>
-        <div className="time-card">
+        <div className="time-card" role="timer" aria-label="Interview timer">
           <div className="time-tracker">
-            <span className="time-tracker__label">Time left</span>
-            <span className="time-tracker__value">
+            <span className="time-tracker__label" id="time-label">Time left</span>
+            <span 
+              className="time-tracker__value"
+              aria-labelledby="time-label"
+              aria-live="polite"
+            >
               {isTimeUp ? "00:00" : formatTime(remainingSeconds)}
             </span>
-            {isTimeUp && <span className="time-tracker__status">Time is up</span>}
+            {isTimeUp && (
+              <span className="time-tracker__status" role="alert">
+                Time is up
+              </span>
+            )}
           </div>
           <button
             type="button"
@@ -85,6 +121,7 @@ function Header({
             onClick={onPauseToggle}
             disabled={isLocked || isTimeUp}
             aria-label={isPaused ? "Resume interview" : "Pause interview"}
+            aria-pressed={isPaused}
           >
             {isPaused ? "Resume" : "Pause"}
           </button>
@@ -109,9 +146,9 @@ function Header({
               type="button"
               className="user-section__profile-btn"
               onClick={onOpenProfile}
-              aria-label="Open profile"
+              aria-label={`Open profile for ${user.username}`}
             >
-              <span className="user-section__avatar">
+              <span className="user-section__avatar" aria-hidden="true">
                 {user.username?.charAt(0).toUpperCase() || "U"}
               </span>
               <span className="user-section__name">{user.username}</span>

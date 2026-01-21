@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef } from "react";
 import Editor from "@monaco-editor/react";
+import { useTheme } from "../contexts/ThemeContext.jsx";
 
 function EditorPanel({
   canUndo,
@@ -16,6 +17,7 @@ function EditorPanel({
   interviewerHint,
   onDismissHint
 }) {
+  const { theme } = useTheme();
   const editorContainerRef = useRef(null);
   const widgetRef = useRef(null);
   const editorInstanceRef = useRef(null);
@@ -104,26 +106,33 @@ function EditorPanel({
   }, [interviewerHint, onDismissHint]);
 
   return (
-    <section className="panel panel--editor" ref={editorContainerRef}>
-      <div className="panel__header panel__header--editor">
-        <span>Editor</span>
-        <div className="panel__actions">
+    <section 
+      className="panel panel--editor" 
+      ref={editorContainerRef}
+      aria-labelledby="editor-heading"
+      role="region"
+    >
+      <div className="panel__header panel__header--editor" id="editor-heading">
+        <span>Code Editor</span>
+        <div className="panel__actions" role="toolbar" aria-label="Editor actions">
           <button
             type="button"
             className="panel__action-button panel__action-button--run"
             onClick={onRun}
             disabled={isEditorDisabled || isRunning}
-            aria-label="Run code"
+            aria-label={isRunning ? "Code is running" : "Run code (Ctrl+Enter)"}
             title="Run (⌘/Ctrl+Enter)"
+            aria-busy={isRunning}
           >
-            {isRunning ? "Running..." : "▶ Run"}
+            <span aria-hidden="true">{isRunning ? "⏳" : "▶"}</span>
+            <span>{isRunning ? "Running..." : "Run"}</span>
           </button>
           <button
             type="button"
             className="panel__action-button"
             onClick={onUndo}
             disabled={isEditorDisabled || !canUndo}
-            aria-label="Undo (Command+Z or Control+Z)"
+            aria-label="Undo last change (Ctrl+Z)"
             title="Undo (⌘/Ctrl+Z)"
           >
             Undo
@@ -133,7 +142,7 @@ function EditorPanel({
             className="panel__action-button"
             onClick={onRedo}
             disabled={isEditorDisabled || !canRedo}
-            aria-label="Redo (Command+Shift+Z or Control+Y)"
+            aria-label="Redo last change (Ctrl+Shift+Z)"
             title="Redo (⌘/Ctrl+Shift+Z)"
           >
             Redo
@@ -143,10 +152,12 @@ function EditorPanel({
       <Editor
         height="100%"
         defaultLanguage="javascript"
+        theme={theme === "dark" ? "vs-dark" : "light"}
         value={code}
         onChange={onCodeChange}
         onMount={handleEditorMount}
         options={editorOptions}
+        aria-label="JavaScript code editor"
       />
     </section>
   );
