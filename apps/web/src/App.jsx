@@ -6,6 +6,16 @@ import { getCurrentUserId, getUserById, loadUsers, logIn, logOut, signUp } from 
 import { loadUserJson, loadUserState, saveUserJson } from "./userData.js";
 import { randomId } from "./storage.js";
 import { analyzeCodeForInterruptions } from "./codeAnalysis.js";
+import {
+  GAMIFICATION_DEFAULTS,
+  applyPracticeDay,
+  computeUnlocks,
+  evaluateNewAchievements,
+  getLevelInfo,
+  isProblemUnlocked,
+  normalizeGamificationState,
+  xpForSolve
+} from "./gamification.js";
 
 const PROBLEMS = [
   {
@@ -585,6 +595,7 @@ function ProfileModal({
   attemptStartedAtByProblemId,
   bestTimeSecondsByProblemId,
   history,
+  gamification,
   onLogOut
 }) {
   const attemptedSet = useMemo(() => {
@@ -597,6 +608,13 @@ function ProfileModal({
   const attemptedCount = attemptedSet.size;
   const completedCount = Object.values(solvedByProblemId || {}).filter(Boolean).length;
   const rate = attemptedCount > 0 ? Math.round((completedCount / attemptedCount) * 100) : 0;
+  const normalizedGami = useMemo(() => normalizeGamificationState(gamification), [gamification]);
+  const gamiLevel = useMemo(() => getLevelInfo(normalizedGami.xp), [normalizedGami.xp]);
+  const achievements = useMemo(() => {
+    const list = Object.values(normalizedGami.achievements || {});
+    list.sort((a, b) => Number(b?.unlockedAt || 0) - Number(a?.unlockedAt || 0));
+    return list;
+  }, [normalizedGami.achievements]);
 
   return (
     <Modal isOpen={isOpen} title="Profile" onClose={onClose}>
@@ -630,6 +648,34 @@ function ProfileModal({
             <div className="profile__stat-k">Completion</div>
             <div className="profile__stat-v">{rate}%</div>
           </div>
+          <div className="profile__stat">
+            <div className="profile__stat-k">Level</div>
+            <div className="profile__stat-v">{gamiLevel.level}</div>
+          </div>
+          <div className="profile__stat">
+            <div className="profile__stat-k">XP</div>
+            <div className="profile__stat-v">{normalizedGami.xp}</div>
+          </div>
+          <div className="profile__stat">
+            <div className="profile__stat-k">Streak</div>
+            <div className="profile__stat-v">{normalizedGami.streak}d</div>
+          </div>
+        </div>
+
+        <div className="profile__section">
+          <div className="profile__section-title">Achievements</div>
+          {achievements.length === 0 ? (
+            <div className="profile__empty">No achievements yet. Solve problems to earn badges.</div>
+          ) : (
+            <div className="profile__badges">
+              {achievements.map((a) => (
+                <div key={a.id} className="profile__badge" title={a.description || a.name}>
+                  <div className="profile__badge-name">{a.name}</div>
+                  <div className="profile__badge-desc">{a.description}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="profile__section">
@@ -692,17 +738,27 @@ function ProfileModal({
   );
 }
 
-function LeaderboardModal({ isOpen, onClose, problems, initialProblemId }) {
-  const [selectedProblemId, setSelectedProblemId] = useState(
-    initialProblemId || problems?.[0]?.id || ""
-  );
+function LeaderboardModal({
+  isOpen,
+  onClose,
+  problems,
+  initialProblemId,
+  storageUserId,
+  gamification,
+  onUpdateGamification
+}) {
+  const [view, setView] = useState("time"); // time | xp
+  const [selectedProblemId, setSelectedProblemId] = useState(initialProblemId || problems?.[0]?.id || "");
+  const [xpScope, setXpScope] = useState("all"); // all | friends
+  const [friendToAdd, setFriendToAdd] = useState("");
+  const gami = useMemo(() => normalizeGamificationState(gamification), [gamification]);
 
   useEffect(() => {
     if (!isOpen) return;
     setSelectedProblemId(initialProblemId || problems?.[0]?.id || "");
   }, [isOpen, initialProblemId, problems]);
 
-  const rows = useMemo(() => {
+  const timeRows = useMemo(() => {
     const problemId = String(selectedProblemId || "");
     if (!problemId) return [];
 
@@ -737,53 +793,241 @@ function LeaderboardModal({ isOpen, onClose, problems, initialProblemId }) {
     return competitors.map((c, idx) => ({ ...c, rank: idx + 1 })).slice(0, 20);
   }, [selectedProblemId, isOpen]);
 
+  const xpRows = useMemo(() => {
+    if (!isOpen) return [];
+    const users = loadUsers();
+    const competitors = [];
+
+    const allowedIds =
+      xpScope === "friends"
+        ? new Set([String(storageUserId || "guest"), ...(gami.friends || []).map(String)])
+        : null;
+
+    // Registered users
+    for (const u of users) {
+      if (!u?.id) continue;
+      const id = String(u.id);
+      if (allowedIds && !allowedIds.has(id)) continue;
+      const g = normalizeGamificationState(loadUserJson(id, "gamification", GAMIFICATION_DEFAULTS));
+      competitors.push({
+        key: `user:${id}`,
+        id,
+        name: u.username || u.email || id,
+        xp: Number(g.xp || 0),
+        level: getLevelInfo(Number(g.xp || 0)).level,
+        streak: Number(g.streak || 0)
+      });
+    }
+
+    // Guest (device-local)
+    const guestId = "guest";
+    if (!allowedIds || allowedIds.has(guestId)) {
+      const g = normalizeGamificationState(loadUserJson("guest", "gamification", GAMIFICATION_DEFAULTS));
+      competitors.push({
+        key: "guest",
+        id: "guest",
+        name: "Guest",
+        xp: Number(g.xp || 0),
+        level: getLevelInfo(Number(g.xp || 0)).level,
+        streak: Number(g.streak || 0)
+      });
+    }
+
+    competitors.sort((a, b) => {
+      if (b.xp !== a.xp) return b.xp - a.xp;
+      if (b.level !== a.level) return b.level - a.level;
+      return b.streak - a.streak;
+    });
+    return competitors.map((c, idx) => ({ ...c, rank: idx + 1 })).slice(0, 30);
+  }, [isOpen, xpScope, storageUserId, gami.friends]);
+
   const selectedProblem = problems.find((p) => p.id === selectedProblemId) || null;
+
+  const friendCandidates = useMemo(() => {
+    const self = String(storageUserId || "guest");
+    return loadUsers()
+      .filter((u) => u?.id && String(u.id) !== self)
+      .map((u) => ({ id: String(u.id), name: u.username || u.email || String(u.id) }));
+  }, [storageUserId, isOpen]);
+
+  const addFriend = () => {
+    const id = String(friendToAdd || "");
+    if (!id) return;
+    onUpdateGamification?.((prev) => {
+      const next = normalizeGamificationState(prev);
+      const set = new Set([...(next.friends || []), id]);
+      return { ...next, friends: Array.from(set) };
+    });
+    setFriendToAdd("");
+  };
+
+  const removeFriend = (id) => {
+    const removeId = String(id || "");
+    if (!removeId) return;
+    onUpdateGamification?.((prev) => {
+      const next = normalizeGamificationState(prev);
+      return { ...next, friends: (next.friends || []).filter((x) => String(x) !== removeId) };
+    });
+  };
 
   return (
     <Modal isOpen={isOpen} title="Leaderboards" onClose={onClose}>
       <div className="leaderboard">
-        <div className="leaderboard__top">
-          <div className="leaderboard__picker">
-            <div className="leaderboard__label">Problem</div>
-            <select
-              className="leaderboard__select"
-              value={selectedProblemId}
-              onChange={(e) => setSelectedProblemId(e.target.value)}
-              aria-label="Select problem leaderboard"
-            >
-              {problems.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.title}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="leaderboard__note">
-            Device-only: compares users stored in <code>localStorage</code> on this browser.
-          </div>
+        <div className="leaderboard__tabs" role="tablist" aria-label="Leaderboard views">
+          <button
+            type="button"
+            className={`leaderboard__tab ${view === "time" ? "is-active" : ""}`}
+            onClick={() => setView("time")}
+          >
+            Best time
+          </button>
+          <button
+            type="button"
+            className={`leaderboard__tab ${view === "xp" ? "is-active" : ""}`}
+            onClick={() => setView("xp")}
+          >
+            XP
+          </button>
         </div>
 
-        <div className="leaderboard__table">
-          <div className="leaderboard__head">
-            <div>#</div>
-            <div>User</div>
-            <div>Best time</div>
-          </div>
-
-          {rows.length === 0 ? (
-            <div className="leaderboard__empty">
-              No times yet for {selectedProblem?.title || "this problem"}. Solve it to appear here.
-            </div>
-          ) : (
-            rows.map((r) => (
-              <div key={r.key} className="leaderboard__row">
-                <div className="leaderboard__rank">{r.rank}</div>
-                <div className="leaderboard__user">{r.name}</div>
-                <div className="leaderboard__time">{formatClock(r.bestSeconds)}</div>
+        {view === "time" ? (
+          <>
+            <div className="leaderboard__top">
+              <div className="leaderboard__picker">
+                <div className="leaderboard__label">Problem</div>
+                <select
+                  className="leaderboard__select"
+                  value={selectedProblemId}
+                  onChange={(e) => setSelectedProblemId(e.target.value)}
+                  aria-label="Select problem leaderboard"
+                >
+                  {problems.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.title}
+                    </option>
+                  ))}
+                </select>
               </div>
-            ))
-          )}
-        </div>
+              <div className="leaderboard__note">
+                Device-only: compares users stored in <code>localStorage</code> on this browser.
+              </div>
+            </div>
+
+            <div className="leaderboard__table">
+              <div className="leaderboard__head">
+                <div>#</div>
+                <div>User</div>
+                <div>Best time</div>
+              </div>
+
+              {timeRows.length === 0 ? (
+                <div className="leaderboard__empty">
+                  No times yet for {selectedProblem?.title || "this problem"}. Solve it to appear here.
+                </div>
+              ) : (
+                timeRows.map((r) => (
+                  <div key={r.key} className="leaderboard__row">
+                    <div className="leaderboard__rank">{r.rank}</div>
+                    <div className="leaderboard__user">{r.name}</div>
+                    <div className="leaderboard__time">{formatClock(r.bestSeconds)}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="leaderboard__top">
+              <div className="leaderboard__picker">
+                <div className="leaderboard__label">Scope</div>
+                <select
+                  className="leaderboard__select"
+                  value={xpScope}
+                  onChange={(e) => setXpScope(e.target.value)}
+                  aria-label="Select XP leaderboard scope"
+                >
+                  <option value="all">All local users</option>
+                  <option value="friends">Friends</option>
+                </select>
+              </div>
+              <div className="leaderboard__note">
+                XP is device-only (per browser). Friends are just users you follow on this device.
+              </div>
+            </div>
+
+            <div className="leaderboard__friends">
+              <div className="leaderboard__friends-title">Friends</div>
+              <div className="leaderboard__friends-controls">
+                <select
+                  className="leaderboard__select"
+                  value={friendToAdd}
+                  onChange={(e) => setFriendToAdd(e.target.value)}
+                  aria-label="Select a friend to add"
+                >
+                  <option value="">Select a user</option>
+                  {friendCandidates
+                    .filter((u) => !(gami.friends || []).includes(u.id))
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
+                    ))}
+                </select>
+                <button type="button" className="leaderboard__add-friend" onClick={addFriend} disabled={!friendToAdd}>
+                  Add
+                </button>
+              </div>
+              {(gami.friends || []).length === 0 ? (
+                <div className="leaderboard__empty" style={{ marginTop: 10 }}>
+                  No friends yet. Add a local user to compare XP.
+                </div>
+              ) : (
+                <div className="leaderboard__friends-list">
+                  {(gami.friends || []).map((id) => {
+                    const label = friendCandidates.find((u) => u.id === id)?.name || id;
+                    return (
+                      <div key={id} className="leaderboard__friend">
+                        <div className="leaderboard__friend-name">{label}</div>
+                        <button
+                          type="button"
+                          className="leaderboard__friend-remove"
+                          onClick={() => removeFriend(id)}
+                          aria-label={`Remove ${label} from friends`}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="leaderboard__table">
+              <div className="leaderboard__head leaderboard__head--xp">
+                <div>#</div>
+                <div>User</div>
+                <div>Level</div>
+                <div>XP</div>
+                <div>Streak</div>
+              </div>
+
+              {xpRows.length === 0 ? (
+                <div className="leaderboard__empty">No users found.</div>
+              ) : (
+                xpRows.map((r) => (
+                  <div key={r.key} className="leaderboard__row leaderboard__row--xp">
+                    <div className="leaderboard__rank">{r.rank}</div>
+                    <div className="leaderboard__user">{r.name}</div>
+                    <div className="leaderboard__time">{r.level}</div>
+                    <div className="leaderboard__time">{r.xp}</div>
+                    <div className="leaderboard__time">{r.streak}d</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        )}
       </div>
     </Modal>
   );
@@ -834,6 +1078,9 @@ export default function App() {
   const [history, setHistory] = useState(() => {
     return loadUserState(storageUserId).history;
   });
+  const [gamification, setGamification] = useState(() =>
+    normalizeGamificationState(loadUserJson(storageUserId, "gamification", GAMIFICATION_DEFAULTS))
+  );
 
   useEffect(() => {
     setCurrentUser(currentUserId ? getUserById(currentUserId) : null);
@@ -848,6 +1095,16 @@ export default function App() {
     setBestTimeSecondsByProblemId(next.bestTimeSecondsByProblemId);
     setHistory(next.history);
   }, [storageUserId]);
+
+  useEffect(() => {
+    setGamification(
+      normalizeGamificationState(loadUserJson(storageUserId, "gamification", GAMIFICATION_DEFAULTS))
+    );
+  }, [storageUserId]);
+
+  useEffect(() => {
+    saveUserJson(storageUserId, "gamification", gamification);
+  }, [storageUserId, gamification]);
 
   useEffect(() => {
     setUiPrefs(normalizeUiPrefs(loadUserJson(storageUserId, UI_PREFS_KEY, UI_PREFS_DEFAULTS)));
@@ -1003,6 +1260,8 @@ export default function App() {
     error: null,
     blobUrl: null
   });
+  const [toast, setToast] = useState(null); // { id, kind, title, message }
+  const toastTimerRef = useRef(null);
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -1078,9 +1337,40 @@ export default function App() {
     }
   }, [isLocked]);
 
+  useEffect(() => {
+    if (!toast) return;
+    try {
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      toastTimerRef.current = setTimeout(() => setToast(null), 4500);
+    } catch {
+      // ignore
+    }
+    return () => {
+      try {
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      } catch {
+        // ignore
+      }
+    };
+  }, [toast]);
+
   const isInterviewMode = mode === "interview";
   const remainingSeconds = Math.max(timeLimitSeconds - elapsedSeconds, 0);
   const isTimeUp = elapsedSeconds >= timeLimitSeconds;
+  const levelInfo = useMemo(() => getLevelInfo(gamification.xp), [gamification.xp]);
+  const unlocks = useMemo(
+    () => computeUnlocks({ solvedByProblemId, problems: PROBLEMS }),
+    [solvedByProblemId]
+  );
+
+  useEffect(() => {
+    if (isInterviewMode) return;
+    const current = PROBLEMS.find((p) => p.id === activeProblemId) || null;
+    if (!current) return;
+    if (isProblemUnlocked(current, unlocks)) return;
+    const firstUnlocked = PROBLEMS.find((p) => isProblemUnlocked(p, unlocks))?.id;
+    if (firstUnlocked) setActiveProblemId(firstUnlocked);
+  }, [activeProblemId, isInterviewMode, unlocks]);
 
   const activeInterviewRound = useMemo(() => {
     if (!interviewSession) return null;
@@ -1259,13 +1549,65 @@ export default function App() {
 
         if (isPassing) {
           const wasSolved = Boolean(solvedByProblemIdRef.current?.[problemId]);
+          const now = Date.now();
+          const problem = PROBLEMS.find((p) => p.id === problemId) || null;
 
           setSolvedByProblemId((prev) => {
             const next = { ...(prev || {}), [problemId]: true };
             return next;
           });
 
+          // Gamification: streak always updates on a passing run (counts as practice),
+          // XP only awards the first time you solve a given problem.
+          try {
+            const solvedMapForCounts = wasSolved
+              ? (solvedByProblemIdRef.current || {})
+              : { ...(solvedByProblemIdRef.current || {}), [problemId]: true };
+            const counts = computeUnlocks({ solvedByProblemId: solvedMapForCounts, problems: PROBLEMS })?.counts || {
+              easySolved: 0,
+              mediumSolved: 0,
+              hardSolved: 0
+            };
+            const solvedCount = (counts.easySolved || 0) + (counts.mediumSolved || 0) + (counts.hardSolved || 0);
+            const hardSolvedCount = counts.hardSolved || 0;
+            const rewardXp = wasSolved ? 0 : xpForSolve(problem?.difficulty);
+
+            setGamification((prev) => {
+              let next = applyPracticeDay(prev, now);
+              if (rewardXp > 0) {
+                next = { ...next, xp: Number(next.xp || 0) + rewardXp };
+              }
+              return evaluateNewAchievements({
+                prevState: next,
+                solvedCount,
+                hardSolvedCount,
+                nowTs: now
+              }).nextState;
+            });
+          } catch {
+            // ignore gamification errors
+          }
+
           if (!wasSolved) {
+            try {
+              const currentSolvedCount = Object.values(solvedByProblemIdRef.current || {}).filter(Boolean).length;
+              const nextSolvedCount = currentSolvedCount + 1;
+              const remaining = Math.max(0, PROBLEMS.length - nextSolvedCount);
+              setToast({
+                id: `${now}-${problemId}`,
+                kind: "success",
+                title: "Problem solved",
+                message: `${problem?.title || "Problem"} · ${nextSolvedCount} solved · ${remaining} left`
+              });
+            } catch {
+              setToast({
+                id: `${now}-${problemId}`,
+                kind: "success",
+                title: "Problem solved",
+                message: `${problem?.title || "Problem"}`
+              });
+            }
+
             const endedAt = Date.now();
             const startedAtRaw = attemptStartedAtByProblemIdRef.current?.[problemId];
             const startedAt =
@@ -1286,7 +1628,6 @@ export default function App() {
               return { ...(prev || {}), [problemId]: nextBest };
             });
 
-            const problem = PROBLEMS.find((p) => p.id === problemId);
             const entry = {
               id: randomId("session"),
               createdAt: endedAt,
@@ -2221,6 +2562,23 @@ function __ici_isEqual(problemId, actual, expected) {
 
   return (
     <div className="app">
+      {toast ? (
+        <div className={`toast toast--${toast.kind || "info"}`} role="status" aria-live="polite">
+          <div className="toast__main">
+            <div className="toast__title">{toast.title || "Update"}</div>
+            <div className="toast__msg">{toast.message || ""}</div>
+          </div>
+          <button
+            type="button"
+            className="toast__close"
+            onClick={() => setToast(null)}
+            aria-label="Dismiss notification"
+            title="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
       <a className="skip-link" href="#main-content">
         Skip to main content
       </a>
@@ -2342,6 +2700,7 @@ function __ici_isEqual(problemId, actual, expected) {
         attemptStartedAtByProblemId={attemptStartedAtByProblemId}
         bestTimeSecondsByProblemId={bestTimeSecondsByProblemId}
         history={history}
+        gamification={gamification}
         onLogOut={handleLogOut}
       />
       <LeaderboardModal
@@ -2349,6 +2708,9 @@ function __ici_isEqual(problemId, actual, expected) {
         onClose={() => setIsLeaderboardOpen(false)}
         problems={PROBLEMS}
         initialProblemId={activeProblemId}
+        storageUserId={storageUserId}
+        gamification={gamification}
+        onUpdateGamification={setGamification}
       />
       <Modal
         isOpen={isInterviewSetupOpen}
@@ -2521,6 +2883,27 @@ function __ici_isEqual(problemId, actual, expected) {
               </span>
               {isInterviewMode ? "Next" : "Stop"}
             </button>
+          </div>
+          <div className="gami-card" aria-label="Gamification status">
+            <div className="gami-card__top">
+              <div className="gami-card__k">Level</div>
+              <div className="gami-card__v">{levelInfo.level}</div>
+            </div>
+            <div className="gami-card__sub">
+              <span className="gami-card__pill">XP {gamification.xp}</span>
+              <span className="gami-card__pill">Streak {gamification.streak}d</span>
+            </div>
+            <div className="gami-card__bar" aria-hidden="true">
+              <div
+                className="gami-card__bar-fill"
+                style={{
+                  width: `${Math.max(
+                    0,
+                    Math.min(100, Math.round((levelInfo.intoLevelXp / Math.max(1, levelInfo.nextLevelXp)) * 100))
+                  )}%`
+                }}
+              />
+            </div>
           </div>
           <button
             type="button"
@@ -2725,12 +3108,25 @@ function __ici_isEqual(problemId, actual, expected) {
                   disabled={isLocked || isInterviewMode}
                   aria-label="Select coding problem"
                 >
-                  {PROBLEMS.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.title}
-                    </option>
-                  ))}
+                  {PROBLEMS.map((p) => {
+                    const unlocked = isInterviewMode || isProblemUnlocked(p, unlocks);
+                    const label = unlocked ? p.title : `${p.title} (Locked)`;
+                    return (
+                      <option key={p.id} value={p.id} disabled={!unlocked}>
+                        {label}
+                      </option>
+                    );
+                  })}
                 </select>
+                {!isInterviewMode && (!unlocks.medium || !unlocks.hard) ? (
+                  <div className="problem__unlock-note" role="note">
+                    {!unlocks.medium
+                      ? "Medium unlocks after you solve 2 Easy problems."
+                      : !unlocks.hard
+                        ? "Hard unlocks after you solve 2 Medium problems."
+                        : null}
+                  </div>
+                ) : null}
               </div>
             </div>
 
