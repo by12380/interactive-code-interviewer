@@ -1,5 +1,11 @@
 import { memo, useState, useMemo } from "react";
 import { formatTime, formatDate } from "../services/userService";
+import { 
+  getAchievementsWithStatus, 
+  calculateLevel, 
+  getLevelProgress,
+  xpForLevel
+} from "../services/gamificationService.js";
 
 function UserProfile({ 
   user, 
@@ -17,6 +23,18 @@ function UserProfile({
     bestGrade: null,
     totalTimeSpent: 0,
   };
+
+  const gamification = user?.gamification || {};
+  const xp = gamification.xp || 0;
+  const level = calculateLevel(xp);
+  const levelProgress = getLevelProgress(xp);
+  const streak = gamification.streak || { current: 0, longest: 0 };
+
+  const achievements = useMemo(
+    () => getAchievementsWithStatus(gamification.achievements || []),
+    [gamification.achievements]
+  );
+  const earnedAchievements = achievements.filter(a => a.earned);
 
   const interviewHistory = user?.interviewHistory || [];
   const personalBests = user?.personalBests || {};
@@ -67,12 +85,38 @@ function UserProfile({
           </div>
         </div>
 
+        {/* Level and XP display */}
+        <div className="profile__level-section">
+          <div className="profile__level-badge">
+            <span className="profile__level-number">Lv.{level}</span>
+          </div>
+          <div className="profile__xp-info">
+            <div className="profile__xp-bar">
+              <div 
+                className="profile__xp-fill"
+                style={{ width: `${levelProgress}%` }}
+              />
+            </div>
+            <span className="profile__xp-text">{xp.toLocaleString()} XP</span>
+          </div>
+          <div className="profile__streak-badge">
+            <span className="profile__streak-icon">🔥</span>
+            <span className="profile__streak-value">{streak.current}</span>
+          </div>
+        </div>
+
         <div className="profile__tabs">
           <button
             className={`profile__tab ${activeTab === "stats" ? "profile__tab--active" : ""}`}
             onClick={() => setActiveTab("stats")}
           >
             Statistics
+          </button>
+          <button
+            className={`profile__tab ${activeTab === "achievements" ? "profile__tab--active" : ""}`}
+            onClick={() => setActiveTab("achievements")}
+          >
+            Achievements
           </button>
           <button
             className={`profile__tab ${activeTab === "history" ? "profile__tab--active" : ""}`}
@@ -137,6 +181,50 @@ function UserProfile({
                 </p>
                 <p className="profile__time-label">Total practice time</p>
               </div>
+            </div>
+          )}
+
+          {activeTab === "achievements" && (
+            <div className="profile__achievements">
+              <div className="profile__achievements-summary">
+                <span className="profile__achievements-count">
+                  {earnedAchievements.length} of {achievements.length} achievements
+                </span>
+              </div>
+              
+              {earnedAchievements.length === 0 ? (
+                <div className="profile__empty">
+                  <p>No achievements yet.</p>
+                  <p className="profile__empty-hint">Complete problems to earn achievements!</p>
+                </div>
+              ) : (
+                <div className="profile__achievements-grid">
+                  {earnedAchievements.map(achievement => (
+                    <div key={achievement.id} className="profile__achievement-card">
+                      <span className="profile__achievement-icon">{achievement.icon}</span>
+                      <div className="profile__achievement-info">
+                        <span className="profile__achievement-name">{achievement.name}</span>
+                        <span className="profile__achievement-desc">{achievement.description}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* Locked achievements preview */}
+              {achievements.filter(a => !a.earned).length > 0 && (
+                <div className="profile__locked-achievements">
+                  <h4>Locked Achievements</h4>
+                  <div className="profile__locked-grid">
+                    {achievements.filter(a => !a.earned).slice(0, 6).map(achievement => (
+                      <div key={achievement.id} className="profile__locked-card">
+                        <span className="profile__locked-icon">🔒</span>
+                        <span className="profile__locked-name">{achievement.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

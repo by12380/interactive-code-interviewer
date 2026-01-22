@@ -1,5 +1,6 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { useTheme } from "../contexts/ThemeContext.jsx";
+import { calculateLevel, getLevelProgress } from "../services/gamificationService.js";
 
 const formatTime = (totalSeconds) => {
   const minutes = Math.floor(totalSeconds / 60);
@@ -19,12 +20,20 @@ function Header({
   onStartTutorial,
   onOpenLeaderboard,
   onStartInterviewSim,
+  onOpenGamification,
   problemSelector,
   user,
   onOpenAuth,
   onOpenProfile
 }) {
   const { theme, toggleTheme, openSettings } = useTheme();
+
+  // Gamification data
+  const gamification = user?.gamification;
+  const xp = gamification?.xp || 0;
+  const level = useMemo(() => calculateLevel(xp), [xp]);
+  const levelProgress = useMemo(() => getLevelProgress(xp), [xp]);
+  const streak = gamification?.streak?.current || 0;
 
   return (
     <header className="app__header" role="banner">
@@ -142,26 +151,63 @@ function Header({
         {/* User Authentication Section */}
         <div className="user-section">
           {user ? (
-            <button
-              type="button"
-              className="user-section__profile-btn"
-              onClick={onOpenProfile}
-              aria-label={`Open profile for ${user.username}`}
-            >
-              <span className="user-section__avatar" aria-hidden="true">
-                {user.username?.charAt(0).toUpperCase() || "U"}
-              </span>
-              <span className="user-section__name">{user.username}</span>
-            </button>
+            <>
+              {/* Gamification Stats */}
+              <div className="user-section__gamification">
+                {/* Streak Counter */}
+                <button
+                  type="button"
+                  className={`streak-counter ${streak > 0 ? "streak-counter--active" : ""}`}
+                  onClick={onOpenGamification}
+                  aria-label={`${streak} day streak. Click to view progress`}
+                  title={`${streak} day streak`}
+                >
+                  <span className="streak-counter__icon" aria-hidden="true">🔥</span>
+                  <span className="streak-counter__value">{streak}</span>
+                </button>
+
+                {/* XP/Level Display */}
+                <button
+                  type="button"
+                  className="xp-display"
+                  onClick={onOpenGamification}
+                  aria-label={`Level ${level}, ${xp} XP. Click to view progress`}
+                  title={`Level ${level} • ${xp} XP`}
+                >
+                  <span className="xp-display__level">Lv.{level}</span>
+                  <div className="xp-display__bar">
+                    <div 
+                      className="xp-display__fill"
+                      style={{ width: `${levelProgress}%` }}
+                    />
+                  </div>
+                </button>
+              </div>
+
+              <button
+                type="button"
+                className="user-section__profile-btn"
+                onClick={onOpenProfile}
+                aria-label={`Open profile for ${user.username}`}
+              >
+                <span className="user-section__avatar" aria-hidden="true">
+                  {user.username?.charAt(0).toUpperCase() || "U"}
+                </span>
+                <span className="user-section__name">{user.username}</span>
+              </button>
+            </>
           ) : (
-            <button
-              type="button"
-              className="user-section__login-btn"
-              onClick={onOpenAuth}
-              aria-label="Sign in"
-            >
-              Sign In
-            </button>
+            <div className="user-section__guest">
+              <span className="user-section__guest-hint">Sign in to track XP &amp; achievements</span>
+              <button
+                type="button"
+                className="user-section__login-btn"
+                onClick={onOpenAuth}
+                aria-label="Sign in"
+              >
+                Sign In
+              </button>
+            </div>
           )}
         </div>
       </div>

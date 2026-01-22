@@ -1,5 +1,7 @@
 // User Authentication & Profile Service using localStorage
 
+import { getDefaultGamificationState } from './gamificationService.js';
+
 const USERS_KEY = 'code_interviewer_users';
 const CURRENT_USER_KEY = 'code_interviewer_current_user';
 const LEADERBOARD_KEY = 'code_interviewer_leaderboard';
@@ -33,6 +35,33 @@ const simpleHash = (str) => {
 // Generate unique user ID
 const generateUserId = () => {
   return 'user_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+};
+
+/**
+ * Migrate user to include gamification fields if missing
+ * @param {object} user - User object to migrate
+ * @returns {object} - Migrated user object
+ */
+const migrateUser = (user) => {
+  if (!user) return user;
+  
+  // Add gamification if missing
+  if (!user.gamification) {
+    user.gamification = getDefaultGamificationState();
+  } else {
+    // Ensure all gamification fields exist
+    const defaults = getDefaultGamificationState();
+    user.gamification = {
+      ...defaults,
+      ...user.gamification,
+      streak: {
+        ...defaults.streak,
+        ...(user.gamification.streak || {})
+      }
+    };
+  }
+  
+  return user;
 };
 
 /**
@@ -86,6 +115,7 @@ export const signUp = (username, email, password) => {
     },
     interviewHistory: [],
     personalBests: {}, // problemId -> { time, score, grade, date }
+    gamification: getDefaultGamificationState(), // XP, levels, streaks, achievements, etc.
   };
   
   users[userId] = newUser;
@@ -107,7 +137,7 @@ export const signUp = (username, email, password) => {
 export const login = (email, password) => {
   const users = getUsers();
   
-  const user = Object.values(users).find(u => u.email.toLowerCase() === email.toLowerCase());
+  let user = Object.values(users).find(u => u.email.toLowerCase() === email.toLowerCase());
   if (!user) {
     return { success: false, error: 'No account found with this email.' };
   }
@@ -115,6 +145,13 @@ export const login = (email, password) => {
   if (user.passwordHash !== simpleHash(password)) {
     return { success: false, error: 'Incorrect password.' };
   }
+  
+  // Migrate user if needed
+  user = migrateUser(user);
+  
+  // Save migrated user back to storage
+  users[user.id] = user;
+  saveUsers(users);
   
   const { passwordHash, ...safeUser } = user;
   localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(safeUser));
@@ -135,8 +172,27 @@ export const logout = () => {
  */
 export const getCurrentUser = () => {
   try {
-    const user = localStorage.getItem(CURRENT_USER_KEY);
-    return user ? JSON.parse(user) : null;
+    const userJson = localStorage.getItem(CURRENT_USER_KEY);
+    if (!userJson) return null;
+    
+    let user = JSON.parse(userJson);
+    
+    // Migrate user if needed
+    const migratedUser = migrateUser(user);
+    
+    // If migration happened, save updated user
+    if (!user.gamification && migratedUser.gamification) {
+      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(migratedUser));
+      
+      // Also update in users storage
+      const users = getUsers();
+      if (users[migratedUser.id]) {
+        users[migratedUser.id] = { ...users[migratedUser.id], gamification: migratedUser.gamification };
+        saveUsers(users);
+      }
+    }
+    
+    return migratedUser;
   } catch {
     return null;
   }
@@ -351,6 +407,176 @@ export const formatDate = (isoString) => {
   });
 };
 
+// ===== GAMIFICATION FUNCTIONS =====
+
+/**
+ * Update user's gamification data
+ * @param {object} gamificationUpdates - Partial gamification updates
+ * @returns {{ success: boolean, user?: object, error?: string }}
+ */
+export const updateGamification = (gamificationUpdates) => {
+  const currentUser = getCurrentUser();
+  if (!currentUser) {
+    return { success: false, error: 'No user logged in.' };
+  }
+  
+  const users = getUsers();
+  const user = users[currentUser.id];
+  if (!user) {
+    return { success: false, error: 'User not found.' };
+  }
+  
+  // Ensure gamification exists
+  if (!user.gamification) {
+    user.gamification = getDefaultGamificationState();
+  }
+  
+  // Merge updates
+  user.gamification = {
+    ...user.gamification,
+    ...gamificationUpdates,
+    // Deep merge streak if provided
+    streak: gamificationUpdates.streak 
+      ? { ...user.gamification.streak, ...gamificationUpdates.streak }
+      : user.gamification.streak
+  };
+  
+  saveUsers(users);
+  
+  const { passwordHash, ...safeUser } = user;
+  localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(safeUser));
+  
+  return { success: true, user: safeUser };
+};
+
+/**
+ * Add XP to user's gamification
+ * @param {number} xpAmount - Amount of XP to add
+ * @returns {{ success: boolean, user?: object, leveledUp?: boolean, newLevel?: number }}
+ */
+export const addXP = (xpAmount) => {
+  const currentUser = getCurrentUser();
+  if (!currentUser || !xpAmount || xpAmount <= 0) {
+    return { success: false };
+  }
+  
+  const currentLevel = currentUser.gamification?.level || 1;
+  const newXP = (currentUser.gamification?.xp || 0) + xpAmount;
+  
+  // Import calculateLevel dynamically to avoid circular deps
+  const newLevel = Math.floor(Math.sqrt(newXP / 100)) + 1;
+  const leveledUp = newLevel > currentLevel;
+  
+  const result = updateGamification({ 
+    xp: newXP, 
+    level: newLevel 
+  });
+  
+  return { 
+    ...result, 
+    leveledUp, 
+    newLevel: leveledUp ? newLevel : undefined 
+  };
+};
+
+/**
+ * Unlock achievements for user
+ * @param {string[]} achievementIds - Array of achievement IDs to add
+ * @returns {{ success: boolean, user?: object }}
+ */
+export const unlockAchievements = (achievementIds) => {
+  const currentUser = getCurrentUser();
+  if (!currentUser || !achievementIds?.length) {
+    return { success: false };
+  }
+  
+  const currentAchievements = currentUser.gamification?.achievements || [];
+  const newAchievements = [...new Set([...currentAchievements, ...achievementIds])];
+  
+  return updateGamification({ achievements: newAchievements });
+};
+
+/**
+ * Unlock problems for user
+ * @param {string[]} problemIds - Array of problem IDs to unlock
+ * @returns {{ success: boolean, user?: object }}
+ */
+export const unlockProblems = (problemIds) => {
+  const currentUser = getCurrentUser();
+  if (!currentUser || !problemIds?.length) {
+    return { success: false };
+  }
+  
+  const currentUnlocked = currentUser.gamification?.unlockedProblems || [];
+  const newUnlocked = [...new Set([...currentUnlocked, ...problemIds])];
+  
+  return updateGamification({ unlockedProblems: newUnlocked });
+};
+
+/**
+ * Add a friend by friend code
+ * @param {string} friendCode - Friend code to add
+ * @returns {{ success: boolean, user?: object, error?: string, friend?: object }}
+ */
+export const addFriend = (friendCode) => {
+  const currentUser = getCurrentUser();
+  if (!currentUser) {
+    return { success: false, error: 'No user logged in.' };
+  }
+  
+  const normalizedCode = friendCode.toUpperCase().trim();
+  
+  // Can't add yourself
+  if (normalizedCode === currentUser.gamification?.friendCode) {
+    return { success: false, error: "You can't add yourself as a friend." };
+  }
+  
+  // Check if already friends
+  const existingFriends = currentUser.gamification?.friends || [];
+  if (existingFriends.some(f => f.code === normalizedCode)) {
+    return { success: false, error: 'This friend is already in your list.' };
+  }
+  
+  // Find user by friend code
+  const users = getUsers();
+  const friendUser = Object.values(users).find(u => 
+    u.gamification?.friendCode === normalizedCode
+  );
+  
+  if (!friendUser) {
+    return { success: false, error: 'No user found with this friend code.' };
+  }
+  
+  const newFriend = {
+    code: normalizedCode,
+    username: friendUser.username,
+    addedAt: new Date().toISOString()
+  };
+  
+  const result = updateGamification({ 
+    friends: [...existingFriends, newFriend] 
+  });
+  
+  return { ...result, friend: newFriend };
+};
+
+/**
+ * Remove a friend by friend code
+ * @param {string} friendCode - Friend code to remove
+ * @returns {{ success: boolean, user?: object }}
+ */
+export const removeFriend = (friendCode) => {
+  const currentUser = getCurrentUser();
+  if (!currentUser) {
+    return { success: false };
+  }
+  
+  const existingFriends = currentUser.gamification?.friends || [];
+  const newFriends = existingFriends.filter(f => f.code !== friendCode.toUpperCase());
+  
+  return updateGamification({ friends: newFriends });
+};
+
 // ===== LEADERBOARD FUNCTIONS =====
 
 /**
@@ -525,6 +751,12 @@ export default {
   updateProfile,
   formatTime,
   formatDate,
+  updateGamification,
+  addXP,
+  unlockAchievements,
+  unlockProblems,
+  addFriend,
+  removeFriend,
   updateLeaderboard,
   getProblemLeaderboard,
   getAllLeaderboards,

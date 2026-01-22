@@ -17,18 +17,31 @@ import InterviewSimulation from "./components/InterviewSimulation.jsx";
 import SettingsPanel from "./components/SettingsPanel.jsx";
 import OnboardingTour from "./components/OnboardingTour.jsx";
 import SkipLinks from "./components/SkipLinks.jsx";
+import GamificationPanel from "./components/GamificationPanel.jsx";
+import UnlockToast from "./components/UnlockToast.jsx";
 import { useTheme } from "./contexts/ThemeContext.jsx";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
 import { 
   getCurrentUser, 
   logout as logoutUser, 
   saveInterviewResult,
-  getPersonalBest 
+  getPersonalBest,
+  updateGamification,
+  addXP,
+  unlockAchievements,
+  unlockProblems
 } from "./services/userService.js";
 import { 
   analyzeCode, 
   createAnalyzerState 
 } from "./services/codeAnalyzer.js";
+import {
+  checkStreak,
+  calculateProblemXP,
+  checkAchievements,
+  checkUnlockableProblems,
+  calculateLevel
+} from "./services/gamificationService.js";
 
 const getTimeScore = (elapsedSeconds, limitSeconds) => {
   if (elapsedSeconds <= 10 * 60) {
@@ -200,6 +213,11 @@ export default function App() {
   const [isLeaderboardVisible, setIsLeaderboardVisible] = useState(false);
   const [personalBest, setPersonalBest] = useState(null);
   
+  // Gamification state
+  const [isGamificationVisible, setIsGamificationVisible] = useState(false);
+  const [toasts, setToasts] = useState([]);
+  const toastIdRef = useRef(0);
+  
   // Interview simulation state
   const [isInterviewLauncherVisible, setIsInterviewLauncherVisible] = useState(false);
   const [isInterviewSimActive, setIsInterviewSimActive] = useState(false);
@@ -333,6 +351,101 @@ export default function App() {
       setPersonalBest(best);
     }
   }, [user, currentProblemId]);
+
+  // Toast helper function
+  const addToast = useCallback((toast) => {
+    const id = ++toastIdRef.current;
+    setToasts(prev => [...prev, { ...toast, id }]);
+    return id;
+  }, []);
+
+  const dismissToast = useCallback((toastId) => {
+    setToasts(prev => prev.filter(t => t.id !== toastId));
+  }, []);
+
+  // Check daily login streak on mount and when user logs in
+  useEffect(() => {
+    if (!user) return;
+
+    const streakResult = checkStreak(user.gamification || {});
+    
+    if (streakResult.isNewDay) {
+      // Update streak in user data
+      const updates = { streak: streakResult.streak };
+      
+      // Award daily/streak XP
+      if (streakResult.xpAwarded > 0) {
+        updates.xp = (user.gamification?.xp || 0) + streakResult.xpAwarded;
+        updates.level = calculateLevel(updates.xp);
+        
+        // Show streak toast
+        const toastId = ++toastIdRef.current;
+        if (streakResult.streak.current > 1) {
+          setToasts(prev => [...prev, {
+            id: toastId,
+            type: 'streak',
+            title: `${streakResult.streak.current} Day Streak!`,
+            message: 'Keep up the great work!',
+            xp: streakResult.xpAwarded
+          }]);
+        } else {
+          setToasts(prev => [...prev, {
+            id: toastId,
+            type: 'xp',
+            title: 'Welcome Back!',
+            message: 'Daily login bonus',
+            xp: streakResult.xpAwarded
+          }]);
+        }
+      }
+      
+      const result = updateGamification(updates);
+      if (result.success) {
+        setUser(result.user);
+        
+        // Check for streak achievements
+        const newAchievements = checkAchievements(
+          { ...user.gamification, ...updates },
+          user.stats || {}
+        );
+        
+        if (newAchievements.length > 0) {
+          let totalAchievementXP = 0;
+          newAchievements.forEach(achievement => {
+            totalAchievementXP += achievement.xpReward;
+            const achievementToastId = ++toastIdRef.current;
+            setToasts(prev => [...prev, {
+              id: achievementToastId,
+              type: 'achievement',
+              title: 'Achievement Unlocked!',
+              message: achievement.name,
+              icon: achievement.icon,
+              rarity: achievement.rarity,
+              xp: achievement.xpReward
+            }]);
+          });
+          
+          // Award achievement XP and unlock
+          const achievementIds = newAchievements.map(a => a.id);
+          unlockAchievements(achievementIds);
+          const xpResult = addXP(totalAchievementXP);
+          if (xpResult.success) {
+            setUser(xpResult.user);
+            
+            if (xpResult.leveledUp) {
+              const levelToastId = ++toastIdRef.current;
+              setToasts(prev => [...prev, {
+                id: levelToastId,
+                type: 'level_up',
+                title: 'Level Up!',
+                message: `You reached Level ${xpResult.newLevel}!`
+              }]);
+            }
+          }
+        }
+      }
+    }
+  }, [user?.id]); // Only run when user ID changes (login)
 
   const handlePauseToggle = useCallback(() => {
     if (isPaused) {
@@ -624,6 +737,15 @@ export default function App() {
     setIsLocked(true);
     setIsReportVisible(true);
     
+    // If not logged in, show a prompt to sign up for gamification
+    if (!user && currentProblem) {
+      addToast({
+        type: 'xp',
+        title: 'Great work!',
+        message: 'Sign in to track XP, earn achievements, and unlock problems!'
+      });
+    }
+    
     // Save interview result if user is logged in
     if (user && currentProblem) {
       // Calculate scores for saving
@@ -658,9 +780,105 @@ export default function App() {
         // Update personal best
         const best = getPersonalBest(currentProblem.id);
         setPersonalBest(best);
+        
+        // === GAMIFICATION: Award XP and check achievements ===
+        const completionData = {
+          timeSpent: elapsedSeconds,
+          score: totalScoreVal,
+          hintsUsed,
+          testsPassed,
+          testsTotal: testsTotal || currentProblem.testCases?.length || 0
+        };
+        
+        // Calculate and award XP for completing the problem
+        const problemXP = calculateProblemXP(currentProblem.difficulty, totalScoreVal);
+        addToast({
+          type: 'xp',
+          title: 'Problem Completed!',
+          message: `${currentProblem.title}`,
+          xp: problemXP
+        });
+        
+        const xpResult = addXP(problemXP);
+        if (xpResult.success) {
+          setUser(xpResult.user);
+          
+          // Check for level up
+          if (xpResult.leveledUp) {
+            addToast({
+              type: 'level_up',
+              title: 'Level Up!',
+              message: `You reached Level ${xpResult.newLevel}!`
+            });
+          }
+          
+          // Check for new achievements
+          const newAchievements = checkAchievements(
+            xpResult.user.gamification,
+            xpResult.user.stats,
+            completionData
+          );
+          
+          if (newAchievements.length > 0) {
+            let totalAchievementXP = 0;
+            newAchievements.forEach(achievement => {
+              totalAchievementXP += achievement.xpReward;
+              addToast({
+                type: 'achievement',
+                title: 'Achievement Unlocked!',
+                message: achievement.name,
+                icon: achievement.icon,
+                rarity: achievement.rarity,
+                xp: achievement.xpReward
+              });
+            });
+            
+            // Award achievement XP
+            const achievementIds = newAchievements.map(a => a.id);
+            unlockAchievements(achievementIds);
+            const achievementXpResult = addXP(totalAchievementXP);
+            if (achievementXpResult.success) {
+              setUser(achievementXpResult.user);
+              
+              if (achievementXpResult.leveledUp) {
+                addToast({
+                  type: 'level_up',
+                  title: 'Level Up!',
+                  message: `You reached Level ${achievementXpResult.newLevel}!`
+                });
+              }
+            }
+          }
+          
+          // Check for new problem unlocks
+          const newUnlocks = checkUnlockableProblems(
+            xpResult.user.gamification,
+            xpResult.user.stats?.problemsCompleted || []
+          );
+          
+          if (newUnlocks.length > 0) {
+            unlockProblems(newUnlocks);
+            newUnlocks.forEach(problemId => {
+              const unlockedProblem = PROBLEMS.find(p => p.id === problemId);
+              if (unlockedProblem) {
+                addToast({
+                  type: 'problem_unlock',
+                  title: 'Problem Unlocked!',
+                  message: `${unlockedProblem.title} (${unlockedProblem.difficulty})`
+                });
+              }
+            });
+            
+            // Refresh user to get updated unlocked problems
+            const updatedUser = getCurrentUser();
+            if (updatedUser) {
+              setUser(updatedUser);
+            }
+          }
+        }
       }
     }
-  }, [user, currentProblem, elapsedSeconds, efficiency, hintsUsed, testsPassed, testsTotal, code]);
+  }, [user, currentProblem, elapsedSeconds, efficiency, hintsUsed, testsPassed, testsTotal, code, addToast]);
 
   const handleInputChange = useCallback((event) => {
     setInput(event.target.value);
@@ -798,6 +1016,19 @@ export default function App() {
 
   const handleCloseLeaderboard = useCallback(() => {
     setIsLeaderboardVisible(false);
+  }, []);
+
+  // Gamification handlers
+  const handleOpenGamification = useCallback(() => {
+    setIsGamificationVisible(true);
+  }, []);
+
+  const handleCloseGamification = useCallback(() => {
+    setIsGamificationVisible(false);
+  }, []);
+
+  const handleGamificationUserUpdate = useCallback((updatedUser) => {
+    setUser(updatedUser);
   }, []);
 
   // Interview simulation handlers
@@ -1016,6 +1247,7 @@ export default function App() {
         onStartTutorial={handleStartTutorial}
         onOpenLeaderboard={handleOpenLeaderboard}
         onStartInterviewSim={handleOpenInterviewLauncher}
+        onOpenGamification={handleOpenGamification}
         user={user}
         onOpenAuth={handleOpenAuth}
         onOpenProfile={handleOpenProfile}
@@ -1025,6 +1257,7 @@ export default function App() {
             currentProblemId={currentProblemId}
             onSelectProblem={handleSelectProblem}
             isLocked={isLocked}
+            user={user}
           />
         }
       />
@@ -1206,6 +1439,18 @@ export default function App() {
           onExit={handleExitInterviewSim}
         />
       )}
+      
+      {/* Gamification Panel */}
+      {isGamificationVisible && user && (
+        <GamificationPanel
+          user={user}
+          onClose={handleCloseGamification}
+          onUserUpdate={handleGamificationUserUpdate}
+        />
+      )}
+      
+      {/* Unlock Toasts */}
+      <UnlockToast toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 }
