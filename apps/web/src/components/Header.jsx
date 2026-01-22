@@ -21,6 +21,7 @@ function Header({
   onOpenLeaderboard,
   onStartInterviewSim,
   onOpenGamification,
+  onOpenRoadmap,
   problemSelector,
   user,
   onOpenAuth,
@@ -69,6 +70,19 @@ function Header({
           <span className="leaderboard-trigger__icon" aria-hidden="true">🏆</span>
           <span className="button-text">Leaderboard</span>
         </button>
+        
+        {/* Roadmap Button - Only show when logged in */}
+        {user && (
+          <button
+            type="button"
+            className="roadmap-trigger"
+            onClick={onOpenRoadmap}
+            aria-label="Open interview prep roadmap"
+          >
+            <span className="roadmap-trigger__icon" aria-hidden="true">🗺️</span>
+            <span className="button-text">Roadmap</span>
+          </button>
+        )}
         
         {/* Theme Toggle */}
         <button

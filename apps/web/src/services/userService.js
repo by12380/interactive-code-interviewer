@@ -1,6 +1,7 @@
 // User Authentication & Profile Service using localStorage
 
 import { getDefaultGamificationState } from './gamificationService.js';
+import { getDefaultRoadmapState } from './roadmapService.js';
 
 const USERS_KEY = 'code_interviewer_users';
 const CURRENT_USER_KEY = 'code_interviewer_current_user';
@@ -61,6 +62,22 @@ const migrateUser = (user) => {
     };
   }
   
+  // Add roadmap if missing
+  if (!user.roadmap) {
+    user.roadmap = getDefaultRoadmapState();
+  } else {
+    // Ensure all roadmap fields exist
+    const roadmapDefaults = getDefaultRoadmapState();
+    user.roadmap = {
+      ...roadmapDefaults,
+      ...user.roadmap,
+      preferences: {
+        ...roadmapDefaults.preferences,
+        ...(user.roadmap.preferences || {})
+      }
+    };
+  }
+  
   return user;
 };
 
@@ -116,6 +133,7 @@ export const signUp = (username, email, password) => {
     interviewHistory: [],
     personalBests: {}, // problemId -> { time, score, grade, date }
     gamification: getDefaultGamificationState(), // XP, levels, streaks, achievements, etc.
+    roadmap: getDefaultRoadmapState(), // Interview prep roadmap, skills, study plans
   };
   
   users[userId] = newUser;
@@ -577,6 +595,160 @@ export const removeFriend = (friendCode) => {
   return updateGamification({ friends: newFriends });
 };
 
+// ===== ROADMAP FUNCTIONS =====
+
+/**
+ * Update user's roadmap data
+ * @param {object} roadmapUpdates - Partial roadmap updates
+ * @returns {{ success: boolean, user?: object, error?: string }}
+ */
+export const updateRoadmap = (roadmapUpdates) => {
+  const currentUser = getCurrentUser();
+  if (!currentUser) {
+    return { success: false, error: 'No user logged in.' };
+  }
+  
+  const users = getUsers();
+  const user = users[currentUser.id];
+  if (!user) {
+    return { success: false, error: 'User not found.' };
+  }
+  
+  // Ensure roadmap exists
+  if (!user.roadmap) {
+    user.roadmap = getDefaultRoadmapState();
+  }
+  
+  // Merge updates
+  user.roadmap = {
+    ...user.roadmap,
+    ...roadmapUpdates,
+    // Deep merge preferences if provided
+    preferences: roadmapUpdates.preferences 
+      ? { ...user.roadmap.preferences, ...roadmapUpdates.preferences }
+      : user.roadmap.preferences
+  };
+  
+  saveUsers(users);
+  
+  const { passwordHash, ...safeUser } = user;
+  localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(safeUser));
+  
+  return { success: true, user: safeUser };
+};
+
+/**
+ * Save skill assessment results
+ * @param {object} skills - Skills object from assessment
+ * @returns {{ success: boolean, user?: object }}
+ */
+export const saveSkillAssessment = (skills) => {
+  return updateRoadmap({
+    assessmentComplete: true,
+    skills,
+    assessmentDate: new Date().toISOString()
+  });
+};
+
+/**
+ * Save or update current study plan
+ * @param {object} plan - Study plan object
+ * @returns {{ success: boolean, user?: object }}
+ */
+export const saveStudyPlan = (plan) => {
+  const currentUser = getCurrentUser();
+  if (!currentUser) {
+    return { success: false };
+  }
+  
+  // If there's an existing plan, archive it
+  const existingPlan = currentUser.roadmap?.currentPlan;
+  const planHistory = currentUser.roadmap?.planHistory || [];
+  
+  if (existingPlan) {
+    planHistory.push({
+      ...existingPlan,
+      archivedAt: new Date().toISOString()
+    });
+  }
+  
+  return updateRoadmap({
+    currentPlan: plan,
+    planHistory: planHistory.slice(-5) // Keep last 5 plans
+  });
+};
+
+/**
+ * Update task completion in current plan
+ * @param {number} dayIndex - Index of the day
+ * @param {number} taskIndex - Index of the task
+ * @param {object} taskData - Task completion data
+ * @returns {{ success: boolean, user?: object }}
+ */
+export const updatePlanTask = (dayIndex, taskIndex, taskData) => {
+  const currentUser = getCurrentUser();
+  if (!currentUser || !currentUser.roadmap?.currentPlan) {
+    return { success: false };
+  }
+  
+  const plan = { ...currentUser.roadmap.currentPlan };
+  plan.dailyTasks = [...plan.dailyTasks];
+  plan.dailyTasks[dayIndex] = { ...plan.dailyTasks[dayIndex] };
+  plan.dailyTasks[dayIndex].tasks = [...plan.dailyTasks[dayIndex].tasks];
+  plan.dailyTasks[dayIndex].tasks[taskIndex] = {
+    ...plan.dailyTasks[dayIndex].tasks[taskIndex],
+    ...taskData
+  };
+  
+  // Check if all tasks for the day are complete
+  const allComplete = plan.dailyTasks[dayIndex].tasks.every(t => t.completed);
+  plan.dailyTasks[dayIndex].completed = allComplete;
+  
+  return updateRoadmap({ currentPlan: plan });
+};
+
+/**
+ * Get roadmap statistics for a user
+ * @returns {object} - Roadmap statistics
+ */
+export const getRoadmapStats = () => {
+  const user = getCurrentUser();
+  if (!user || !user.roadmap) {
+    return {
+      hasAssessment: false,
+      hasPlan: false,
+      daysCompleted: 0,
+      tasksCompleted: 0,
+      currentStreak: 0
+    };
+  }
+  
+  const { roadmap } = user;
+  const plan = roadmap.currentPlan;
+  
+  let daysCompleted = 0;
+  let tasksCompleted = 0;
+  
+  if (plan?.dailyTasks) {
+    plan.dailyTasks.forEach(day => {
+      if (day.completed) daysCompleted++;
+      day.tasks.forEach(task => {
+        if (task.completed) tasksCompleted++;
+      });
+    });
+  }
+  
+  return {
+    hasAssessment: roadmap.assessmentComplete,
+    hasPlan: !!plan,
+    daysCompleted,
+    tasksCompleted,
+    skills: roadmap.skills || {},
+    planDuration: plan?.planDuration || 0,
+    company: plan?.company || null
+  };
+};
+
 // ===== LEADERBOARD FUNCTIONS =====
 
 /**
@@ -763,4 +935,9 @@ export default {
   getGlobalRankings,
   getUserRankForProblem,
   getUserGlobalRank,
+  updateRoadmap,
+  saveSkillAssessment,
+  saveStudyPlan,
+  updatePlanTask,
+  getRoadmapStats,
 };

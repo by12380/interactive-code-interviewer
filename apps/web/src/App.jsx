@@ -19,6 +19,7 @@ import OnboardingTour from "./components/OnboardingTour.jsx";
 import SkipLinks from "./components/SkipLinks.jsx";
 import GamificationPanel from "./components/GamificationPanel.jsx";
 import UnlockToast from "./components/UnlockToast.jsx";
+import PrepRoadmap from "./components/PrepRoadmap.jsx";
 import { useTheme } from "./contexts/ThemeContext.jsx";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
 import { 
@@ -217,6 +218,9 @@ export default function App() {
   const [isGamificationVisible, setIsGamificationVisible] = useState(false);
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
+  
+  // Roadmap state
+  const [isRoadmapVisible, setIsRoadmapVisible] = useState(false);
   
   // Interview simulation state
   const [isInterviewLauncherVisible, setIsInterviewLauncherVisible] = useState(false);
@@ -1031,6 +1035,19 @@ export default function App() {
     setUser(updatedUser);
   }, []);
 
+  // Roadmap handlers
+  const handleOpenRoadmap = useCallback(() => {
+    setIsRoadmapVisible(true);
+  }, []);
+
+  const handleCloseRoadmap = useCallback(() => {
+    setIsRoadmapVisible(false);
+  }, []);
+
+  const handleRoadmapUserUpdate = useCallback((updatedUser) => {
+    setUser(updatedUser);
+  }, []);
+
   // Interview simulation handlers
   const handleOpenInterviewLauncher = useCallback(() => {
     setIsInterviewLauncherVisible(true);
@@ -1248,6 +1265,7 @@ export default function App() {
         onOpenLeaderboard={handleOpenLeaderboard}
         onStartInterviewSim={handleOpenInterviewLauncher}
         onOpenGamification={handleOpenGamification}
+        onOpenRoadmap={handleOpenRoadmap}
         user={user}
         onOpenAuth={handleOpenAuth}
         onOpenProfile={handleOpenProfile}
@@ -1446,6 +1464,17 @@ export default function App() {
           user={user}
           onClose={handleCloseGamification}
           onUserUpdate={handleGamificationUserUpdate}
+        />
+      )}
+      
+      {/* Prep Roadmap Panel */}
+      {isRoadmapVisible && user && (
+        <PrepRoadmap
+          user={user}
+          onClose={handleCloseRoadmap}
+          onUserUpdate={handleRoadmapUserUpdate}
+          onSelectProblem={handleSelectProblem}
+          problems={PROBLEMS}
         />
       )}
       
