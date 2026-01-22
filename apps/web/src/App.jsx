@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { sendChat } from "./api.js";
 import TutorialOverlay from "./TutorialOverlay.jsx";
+import VoicePanel from "./VoicePanel.jsx";
 import { getCurrentUserId, getUserById, loadUsers, logIn, logOut, signUp } from "./auth.js";
 import { loadUserJson, loadUserState, saveUserJson } from "./userData.js";
 import { randomId } from "./storage.js";
@@ -1242,6 +1243,7 @@ export default function App() {
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [isPaused, setIsPaused] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [difficulty, setDifficulty] = useState("Medium");
   const [mode, setMode] = useState("practice"); // practice | interview
@@ -1260,6 +1262,7 @@ export default function App() {
     error: null,
     blobUrl: null
   });
+  const [isVoiceHold, setIsVoiceHold] = useState(false);
   const [toast, setToast] = useState(null); // { id, kind, title, message }
   const toastTimerRef = useRef(null);
   const [messages, setMessages] = useState([
@@ -1279,9 +1282,12 @@ export default function App() {
   const lastCodeSentRef = useRef("");
   const llmMessagesRef = useRef([]);
   const timerStartAtRef = useRef(Date.now());
+  const elapsedSecondsRef = useRef(0);
   const runnerIframeRef = useRef(null);
   const runIdRef = useRef(0);
   const chatMessagesRef = useRef(null);
+  const editorRef = useRef(null);
+  const monacoRef = useRef(null);
   const storageUserIdRef = useRef(storageUserId);
   const solvedByProblemIdRef = useRef(solvedByProblemId);
   const attemptStartedAtByProblemIdRef = useRef(attemptStartedAtByProblemId);
@@ -1321,6 +1327,9 @@ export default function App() {
   useEffect(() => {
     difficultyRef.current = difficulty;
   }, [difficulty]);
+  useEffect(() => {
+    elapsedSecondsRef.current = elapsedSeconds;
+  }, [elapsedSeconds]);
 
   useEffect(() => {
     // Auto-scroll ONLY the chat panel (avoid scrolling the whole page while typing code).
@@ -1716,15 +1725,70 @@ export default function App() {
       fontSize: 14,
       scrollBeyondLastLine: false,
       wordWrap: "on",
-      readOnly: isLocked
+      readOnly: isLocked || isVoiceHold
     }),
-    [isLocked]
+    [isLocked, isVoiceHold]
   );
 
   const formatTime = (totalSeconds) => {
     const minutes = Math.floor(totalSeconds / 60);
     const seconds = totalSeconds % 60;
     return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  };
+
+  const pushToast = (kind, title, message) => {
+    setToast({
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      kind: kind || "info",
+      title: title || "Update",
+      message: message || ""
+    });
+  };
+
+  const pauseInterviewTimer = (source = "manual") => {
+    if (!isInterviewMode) return;
+    setIsPaused((prev) => {
+      if (prev) return prev;
+      if (source !== "voice") {
+        pushToast("info", "Interview paused", "Paused.");
+      }
+      return true;
+    });
+  };
+
+  const resumeInterviewTimer = (source = "manual") => {
+    if (!isInterviewMode) return;
+    setIsPaused((prev) => {
+      if (!prev) return prev;
+      // Keep elapsedSeconds stable while paused by shifting the start reference.
+      timerStartAtRef.current = Date.now() - elapsedSecondsRef.current * 1000;
+      if (source !== "voice") {
+        pushToast("success", "Interview resumed", "Resumed.");
+      }
+      return false;
+    });
+  };
+
+  const insertIntoEditor = (snippet) => {
+    const text = String(snippet || "");
+    if (!text) return;
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) {
+      setCode(`${code}${text}`);
+      return;
+    }
+    const model = editor.getModel();
+    if (!model) return;
+    const selection = editor.getSelection();
+    const pos = editor.getPosition();
+    const range =
+      selection ||
+      (pos
+        ? new monaco.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column)
+        : new monaco.Range(1, 1, 1, 1));
+    editor.executeEdits("voice", [{ range, text, forceMoveMarkers: true }]);
+    editor.focus();
   };
 
   const stopInterview = (outcome = "stopped") => {
@@ -1927,22 +1991,30 @@ export default function App() {
         setTimeLimitSeconds(Number(nextRound.seconds || 15 * 60));
         timerStartAtRef.current = Date.now();
         setElapsedSeconds(0);
+        setIsPaused(false);
+        setIsVoiceHold(false);
         setProblemTab("Description");
       } else if (nextRound.type === "behavioral") {
         setIsLocked(true);
         setTimeLimitSeconds(Number(nextRound.seconds || 3 * 60));
         timerStartAtRef.current = Date.now();
         setElapsedSeconds(0);
+        setIsPaused(false);
+        setIsVoiceHold(false);
       } else if (nextRound.type === "system_design") {
         setIsLocked(true);
         setTimeLimitSeconds(Number(nextRound.seconds || 12 * 60));
         timerStartAtRef.current = Date.now();
         setElapsedSeconds(0);
+        setIsPaused(false);
+        setIsVoiceHold(false);
       } else if (nextRound.type === "feedback") {
         setIsLocked(true);
         setTimeLimitSeconds(Number(nextRound.seconds || 3 * 60));
         timerStartAtRef.current = Date.now();
         setElapsedSeconds(0);
+        setIsPaused(false);
+        setIsVoiceHold(false);
 
         const interruptionCount = llmMessagesRef.current.filter(
           (m) => m?.role === "assistant" && String(m?.content || "").startsWith("Wait,")
@@ -1976,6 +2048,8 @@ export default function App() {
       setTimeLimitSeconds(30 * 60);
       timerStartAtRef.current = Date.now();
       setElapsedSeconds(0);
+      setIsPaused(false);
+      setIsVoiceHold(false);
       return;
     }
 
@@ -2123,13 +2197,17 @@ export default function App() {
       return;
     }
 
+    if (isPaused) {
+      return;
+    }
+
     const interval = setInterval(() => {
       const elapsed = Math.floor((Date.now() - timerStartAtRef.current) / 1000);
       setElapsedSeconds(elapsed);
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isLocked, isInterviewMode]);
+  }, [isLocked, isInterviewMode, isPaused]);
 
   const appendCodeUpdateIfNeeded = (nextCode, messageList) => {
     if (nextCode === lastCodeSentRef.current) {
@@ -2494,8 +2572,9 @@ function __ici_isEqual(problemId, actual, expected) {
     );
   };
 
-  const handleSend = async () => {
-    const trimmed = input.trim();
+  const handleSend = async (overrideText = null) => {
+    const raw = overrideText == null ? input : String(overrideText);
+    const trimmed = raw.trim();
     if (!trimmed || isSending) {
       return;
     }
@@ -2508,7 +2587,7 @@ function __ici_isEqual(problemId, actual, expected) {
 
     const nextMessages = [...messages, { role: "user", content: trimmed }];
     setMessages(nextMessages);
-    setInput("");
+    if (overrideText == null) setInput("");
     setIsSending(true);
 
     try {
@@ -2547,6 +2626,59 @@ function __ici_isEqual(problemId, actual, expected) {
     Number(revealedHintCount?.[activeProblem?.id] || 0),
     activeProblem?.hints?.length || 0
   );
+
+  const revealNextHint = () => {
+    if (!activeProblem?.id) return;
+    if (!Array.isArray(activeProblem?.hints) || activeProblem.hints.length === 0) {
+      // No built-in hints; ask the coach instead.
+      handleSend(`Can I get a hint for "${activeProblem?.title || "this problem"}"?`);
+      return;
+    }
+    setRevealedHintCount((prev) => ({
+      ...(prev || {}),
+      [activeProblem.id]: Math.min((prev?.[activeProblem.id] || 0) + 1, activeProblem.hints.length)
+    }));
+  };
+
+  const resetHints = () => {
+    if (!activeProblem?.id) return;
+    setRevealedHintCount((prev) => ({ ...(prev || {}), [activeProblem.id]: 0 }));
+  };
+
+  const handleExplainApproach = () => {
+    const title = activeProblem?.title || "this problem";
+    handleSend(
+      `Explain the best approach for "${title}" (high-level steps + time/space complexity), and mention common pitfalls.`
+    );
+  };
+
+  const handleNextProblemOrRound = () => {
+    if (isInterviewMode) {
+      advanceInterviewRound("stopped");
+      return;
+    }
+
+    const currentIdx = PROBLEMS.findIndex((p) => p.id === activeProblemId);
+    for (let step = 1; step <= PROBLEMS.length; step++) {
+      const idx = (currentIdx + step) % PROBLEMS.length;
+      const candidate = PROBLEMS[idx];
+      if (!candidate) continue;
+      if (isProblemUnlocked(candidate, unlocks)) {
+        setActiveProblemId(candidate.id);
+        pushToast("success", "Next problem", candidate.title);
+        return;
+      }
+    }
+    pushToast("info", "Next problem", "No unlocked problems available.");
+  };
+
+  const handleStopOrNext = () => {
+    if (isInterviewMode) {
+      advanceInterviewRound("stopped");
+    } else {
+      stopInterview("stopped");
+    }
+  };
 
   const handleAuthed = (user) => {
     setCurrentUserIdState(user?.id || null);
@@ -2749,6 +2881,8 @@ function __ici_isEqual(problemId, actual, expected) {
                 setTimeLimitSeconds(Number(first.seconds || 15 * 60));
                 timerStartAtRef.current = Date.now();
                 setElapsedSeconds(0);
+                setIsPaused(false);
+                setIsVoiceHold(false);
                 setBehavioralAnswer("");
                 setSystemDesignAnswer("");
                 setFeedbackText("");
@@ -2800,6 +2934,8 @@ function __ici_isEqual(problemId, actual, expected) {
                 setTimeLimitSeconds(Number(first.seconds || 15 * 60));
                 timerStartAtRef.current = Date.now();
                 setElapsedSeconds(0);
+                setIsPaused(false);
+                setIsVoiceHold(false);
                 setBehavioralAnswer("");
                 setSystemDesignAnswer("");
                 setFeedbackText("");
@@ -2868,13 +3004,7 @@ function __ici_isEqual(problemId, actual, expected) {
             <button
               type="button"
               className="time-tracker__action"
-              onClick={() => {
-                if (isInterviewMode) {
-                  advanceInterviewRound("stopped");
-                } else {
-                  stopInterview("stopped");
-                }
-              }}
+              onClick={handleStopOrNext}
               disabled={!isInterviewMode && isLocked}
               aria-label="Stop interview"
             >
@@ -3018,6 +3148,10 @@ function __ici_isEqual(problemId, actual, expected) {
               defaultLanguage="javascript"
               theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
               value={code}
+              onMount={(editor, monaco) => {
+                editorRef.current = editor;
+                monacoRef.current = monaco;
+              }}
               onChange={(value) => setCode(value ?? "")}
               options={editorOptions}
             />
@@ -3411,15 +3545,7 @@ function __ici_isEqual(problemId, actual, expected) {
                         <button
                           type="button"
                           className="problem__hint-btn"
-                          onClick={() =>
-                            setRevealedHintCount((prev) => ({
-                              ...(prev || {}),
-                              [activeProblem.id]: Math.min(
-                                (prev?.[activeProblem.id] || 0) + 1,
-                                activeProblem.hints.length
-                              )
-                            }))
-                          }
+                          onClick={revealNextHint}
                           disabled={revealedCount >= activeProblem.hints.length}
                         >
                           Reveal next hint ({revealedCount}/{activeProblem.hints.length})
@@ -3427,12 +3553,7 @@ function __ici_isEqual(problemId, actual, expected) {
                         <button
                           type="button"
                           className="problem__hint-btn problem__hint-btn--ghost"
-                          onClick={() =>
-                            setRevealedHintCount((prev) => ({
-                              ...(prev || {}),
-                              [activeProblem.id]: 0
-                            }))
-                          }
+                          onClick={resetHints}
                           disabled={revealedCount === 0}
                         >
                           Reset hints
@@ -3472,6 +3593,25 @@ function __ici_isEqual(problemId, actual, expected) {
               </div>
             </div>
           </section>
+
+          <VoicePanel
+            isLocked={isLocked}
+            isInterviewMode={isInterviewMode}
+            isPaused={isPaused}
+            messages={messages}
+            onInsertCode={insertIntoEditor}
+            onSendChatText={(text) => handleSend(text)}
+            onRunCode={handleRunCode}
+            onRunTests={handleRunTests}
+            onNext={handleNextProblemOrRound}
+            onStop={handleStopOrNext}
+            onRevealHint={revealNextHint}
+            onExplainApproach={handleExplainApproach}
+            onPause={(source) => pauseInterviewTimer(source)}
+            onResume={(source) => resumeInterviewTimer(source)}
+            onSetVoiceHold={(v) => setIsVoiceHold(Boolean(v))}
+            onToast={(kind, title, message) => pushToast(kind, title, message)}
+          />
 
           <section className="panel panel--chat" data-tutorial="coach">
             <div className="panel__header">Interview Coach</div>
