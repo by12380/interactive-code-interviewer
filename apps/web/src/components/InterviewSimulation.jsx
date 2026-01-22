@@ -17,6 +17,9 @@ import BehavioralQuestion from "./BehavioralQuestion.jsx";
 import SystemDesignPanel from "./SystemDesignPanel.jsx";
 import InterviewFeedback from "./InterviewFeedback.jsx";
 import VideoRecorder from "./VideoRecorder.jsx";
+import VoiceControlPanel from "./VoiceControlPanel.jsx";
+import TranscriptPanel from "./TranscriptPanel.jsx";
+import { useVoice } from "../contexts/VoiceContext.jsx";
 
 // Interview phases
 const PHASES = {
@@ -87,6 +90,7 @@ export default function InterviewSimulation({
   onComplete,
   onExit,
   enableVideoRecording = false,
+  enableVoice = true,
   customConfig = null
 }) {
   // Interview configuration - use custom config if provided
@@ -101,6 +105,30 @@ export default function InterviewSimulation({
   } : INTERVIEW_CONFIG.modes[mode] || INTERVIEW_CONFIG.modes.standard;
   
   const interviewer = INTERVIEWER_PERSONAS.find(p => p.id === persona) || INTERVIEWER_PERSONAS[1];
+  
+  // Voice features
+  const {
+    isSupported: voiceSupported,
+    voiceSettings,
+    isListening,
+    startListening,
+    stopListening,
+    speak,
+    cancelSpeech,
+    isSpeaking,
+    setCommandCallback,
+    setMessageCallback,
+    addTranscriptEntry,
+    startRecording: startVoiceRecording,
+    stopRecording: stopVoiceRecording,
+    pauseRecording: pauseVoiceRecording,
+    resumeRecording: resumeVoiceRecording,
+    repeatLastResponse,
+    VOICE_COMMANDS
+  } = useVoice();
+  
+  // Voice UI state
+  const [showTranscript, setShowTranscript] = useState(false);
 
   // Phase management
   const [currentPhase, setCurrentPhase] = useState(PHASES.INTRO);
@@ -523,6 +551,220 @@ export default function InterviewSimulation({
     setRecordedChunks(chunks);
   }, []);
 
+  // Voice command handler
+  const handleVoiceCommand = useCallback((command, transcript) => {
+    switch (command.id) {
+      case 'run_code':
+        if (currentPhase === PHASES.CODING) {
+          handleRunCode();
+          speak("Running your code now.", { skipTranscript: true });
+        }
+        break;
+      
+      case 'next_problem':
+        if (currentPhase !== PHASES.INTRO && currentPhase !== PHASES.FEEDBACK) {
+          speak("Moving to the next section.", { skipTranscript: true });
+          handleSkipPhase();
+        }
+        break;
+      
+      case 'hint':
+        // Send a hint request to the AI
+        const hintMessage = "Can you give me a hint for this problem?";
+        setChatInput(hintMessage);
+        // Trigger send after state update
+        setTimeout(() => {
+          const trimmed = hintMessage;
+          setMessages(prev => [...prev, { role: "user", content: trimmed }]);
+          setChatInput("");
+          setIsSending(true);
+          
+          const contextMessages = [...llmMessagesRef.current, { role: "user", content: trimmed }];
+          if (currentPhase === PHASES.CODING && code) {
+            contextMessages.push({ role: "user", content: `[Current code]\n${code}` });
+          }
+          llmMessagesRef.current = contextMessages;
+          
+          sendChat({
+            messages: contextMessages,
+            mode: "chat",
+            interruptContext: {
+              interviewPhase: currentPhase,
+              interviewerStyle: interviewer.promptModifier,
+              problemTitle: currentProblem?.title || currentSystemDesign?.title || null
+            }
+          }).then(data => {
+            const reply = data.reply || "Let me think about that...";
+            setMessages(prev => [...prev, { role: "assistant", content: reply }]);
+            llmMessagesRef.current.push({ role: "assistant", content: reply });
+            
+            // Speak the response if voice is enabled
+            if (voiceSettings.autoSpeak) {
+              speak(reply);
+            }
+          }).catch(() => {
+            setMessages(prev => [...prev, {
+              role: "assistant",
+              content: "I apologize, I'm having some technical difficulties."
+            }]);
+          }).finally(() => {
+            setIsSending(false);
+          });
+        }, 0);
+        break;
+      
+      case 'explain':
+        speak("Sure, please explain your approach. I'm listening.", { skipTranscript: true });
+        break;
+      
+      case 'pause':
+        if (!isPaused) {
+          handlePauseToggle();
+          speak("Interview paused. Say resume when you're ready to continue.", { skipTranscript: true });
+        }
+        break;
+      
+      case 'resume':
+        if (isPaused) {
+          handlePauseToggle();
+          speak("Resuming the interview. Let's continue.", { skipTranscript: true });
+        }
+        break;
+      
+      case 'repeat':
+        repeatLastResponse();
+        break;
+      
+      default:
+        break;
+    }
+  }, [
+    currentPhase, handleRunCode, handleSkipPhase, handlePauseToggle, 
+    isPaused, speak, voiceSettings.autoSpeak, code, interviewer, 
+    currentProblem, currentSystemDesign, repeatLastResponse
+  ]);
+
+  // Voice message handler (non-command speech)
+  const handleVoiceMessage = useCallback(async (transcript) => {
+    if (!transcript.trim() || isSending) return;
+    
+    // Check for "ready" in intro phase
+    if (currentPhase === PHASES.INTRO && /\bready\b/i.test(transcript)) {
+      handleStart();
+      return;
+    }
+    
+    setMessages(prev => [...prev, { role: "user", content: transcript }]);
+    setIsSending(true);
+    
+    try {
+      const contextMessages = [...llmMessagesRef.current, { role: "user", content: transcript }];
+      
+      // Add current code context for coding phase
+      if (currentPhase === PHASES.CODING && code) {
+        contextMessages.push({
+          role: "user",
+          content: `[Current code]\n${code}`
+        });
+      }
+      
+      llmMessagesRef.current = contextMessages;
+      
+      const data = await sendChat({
+        messages: contextMessages,
+        mode: "chat",
+        interruptContext: {
+          interviewPhase: currentPhase,
+          interviewerStyle: interviewer.promptModifier,
+          problemTitle: currentProblem?.title || currentSystemDesign?.title || null
+        }
+      });
+      
+      const reply = data.reply || "I see. Please continue.";
+      setMessages(prev => [...prev, { role: "assistant", content: reply }]);
+      llmMessagesRef.current.push({ role: "assistant", content: reply });
+      
+      // Speak the response if voice is enabled
+      if (voiceSettings.autoSpeak) {
+        speak(reply);
+      }
+    } catch (error) {
+      const errorMsg = "I apologize, I'm having some technical difficulties. Please continue.";
+      setMessages(prev => [...prev, { role: "assistant", content: errorMsg }]);
+      if (voiceSettings.autoSpeak) {
+        speak(errorMsg);
+      }
+    } finally {
+      setIsSending(false);
+    }
+  }, [
+    isSending, currentPhase, handleStart, code, interviewer, 
+    currentProblem, currentSystemDesign, voiceSettings.autoSpeak, speak
+  ]);
+
+  // Set up voice callbacks when component mounts
+  useEffect(() => {
+    if (enableVoice && voiceSupported) {
+      setCommandCallback(handleVoiceCommand);
+      setMessageCallback(handleVoiceMessage);
+    }
+    
+    return () => {
+      setCommandCallback(null);
+      setMessageCallback(null);
+    };
+  }, [enableVoice, voiceSupported, handleVoiceCommand, handleVoiceMessage, setCommandCallback, setMessageCallback]);
+
+  // Auto-start voice listening when interview starts (if enabled)
+  useEffect(() => {
+    if (enableVoice && voiceSupported && voiceSettings.voiceEnabled && currentPhase !== PHASES.FEEDBACK) {
+      startListening();
+    }
+    
+    return () => {
+      if (enableVoice && voiceSupported) {
+        stopListening();
+      }
+    };
+  }, [enableVoice, voiceSupported, voiceSettings.voiceEnabled, currentPhase, startListening, stopListening]);
+
+  // Pause/resume voice when interview is paused
+  useEffect(() => {
+    if (!enableVoice || !voiceSupported) return;
+    
+    if (isPaused) {
+      stopListening();
+      pauseVoiceRecording();
+    } else if (voiceSettings.voiceEnabled && currentPhase !== PHASES.FEEDBACK) {
+      startListening();
+      resumeVoiceRecording();
+    }
+  }, [isPaused, enableVoice, voiceSupported, voiceSettings.voiceEnabled, currentPhase, startListening, stopListening, pauseVoiceRecording, resumeVoiceRecording]);
+
+  // Speak AI messages when they are added (intro message, etc.)
+  useEffect(() => {
+    if (!enableVoice || !voiceSupported || !voiceSettings.autoSpeak) return;
+    
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      // Only speak assistant messages that haven't been spoken
+      if (lastMessage.role === "assistant" && !lastMessage.spoken) {
+        speak(lastMessage.content);
+        // Mark as spoken
+        setMessages(prev => 
+          prev.map((msg, idx) => 
+            idx === prev.length - 1 ? { ...msg, spoken: true } : msg
+          )
+        );
+      }
+    }
+  }, [messages, enableVoice, voiceSupported, voiceSettings.autoSpeak, speak]);
+
+  // Toggle transcript panel
+  const handleToggleTranscript = useCallback(() => {
+    setShowTranscript(prev => !prev);
+  }, []);
+
   // System design notes handler
   const handleSystemDesignNotesChange = useCallback((notes) => {
     setSystemDesignNotes(notes);
@@ -766,6 +1008,17 @@ export default function InterviewSimulation({
                   Next Section →
                 </button>
               )}
+
+              {/* Voice transcript toggle */}
+              {enableVoice && voiceSupported && (
+                <button
+                  className={`interview-sim__transcript-btn ${showTranscript ? 'active' : ''}`}
+                  onClick={handleToggleTranscript}
+                  title={showTranscript ? "Hide Transcript" : "Show Transcript"}
+                >
+                  📝 {showTranscript ? "Hide" : "Transcript"}
+                </button>
+              )}
             </>
           )}
 
@@ -784,6 +1037,25 @@ export default function InterviewSimulation({
           onRecordingComplete={handleRecordingStop}
           autoStartRecording={enableVideoRecording}
           isPaused={isPaused}
+        />
+      )}
+
+      {/* Voice Control Panel - Floating controls for voice features */}
+      {enableVoice && voiceSupported && currentPhase !== PHASES.FEEDBACK && (
+        <VoiceControlPanel
+          onCommand={handleVoiceCommand}
+          isPaused={isPaused}
+          position="bottom-right"
+        />
+      )}
+
+      {/* Transcript Panel - Toggle with button in header */}
+      {enableVoice && voiceSupported && showTranscript && (
+        <TranscriptPanel
+          isVisible={showTranscript}
+          onClose={handleToggleTranscript}
+          isPaused={isPaused}
+          className="interview-sim__transcript"
         />
       )}
 

@@ -1,4 +1,5 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useCallback, useState } from "react";
+import { useVoice } from "../contexts/VoiceContext.jsx";
 
 function ChatPanel({
   messages,
@@ -8,11 +9,45 @@ function ChatPanel({
   isSending,
   onInputChange,
   onKeyDown,
-  onSend
+  onSend,
+  showVoiceControls = true
 }) {
   const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const textareaRef = useRef(null);
+  
+  // Voice integration
+  const {
+    isSupported: voiceSupported,
+    voiceSettings,
+    speak,
+    cancelSpeech,
+    isSpeaking,
+    currentSpokenText
+  } = useVoice();
+  
+  const [speakingMessageIndex, setSpeakingMessageIndex] = useState(null);
+  
+  // Handle speak button click for a specific message
+  const handleSpeakMessage = useCallback((content, index) => {
+    if (isSpeaking && speakingMessageIndex === index) {
+      // Cancel if already speaking this message
+      cancelSpeech();
+      setSpeakingMessageIndex(null);
+    } else {
+      // Speak the message
+      cancelSpeech(); // Cancel any current speech first
+      speak(content, { skipTranscript: true });
+      setSpeakingMessageIndex(index);
+    }
+  }, [isSpeaking, speakingMessageIndex, speak, cancelSpeech]);
+  
+  // Reset speaking index when speech ends
+  useEffect(() => {
+    if (!isSpeaking) {
+      setSpeakingMessageIndex(null);
+    }
+  }, [isSpeaking]);
 
   // Scroll to bottom only within the chat panel (not the whole page)
   useEffect(() => {
@@ -56,10 +91,12 @@ function ChatPanel({
         >
           {messages.map((message, index) => {
             const isInterruption = message.isInterruption;
+            const isCurrentlySpeaking = isSpeaking && speakingMessageIndex === index;
             const messageClasses = [
               "chat__message",
               `chat__message--${message.role}`,
-              isInterruption ? "chat__message--interruption" : ""
+              isInterruption ? "chat__message--interruption" : "",
+              isCurrentlySpeaking ? "chat__message--speaking" : ""
             ].filter(Boolean).join(" ");
 
             return (
@@ -80,6 +117,9 @@ function ChatPanel({
                       <span className="chat__interviewer-label">
                         <span className="chat__interviewer-icon" aria-hidden="true">👤</span>
                         <span>Interviewer</span>
+                        {isCurrentlySpeaking && (
+                          <span className="chat__speaking-indicator" aria-hidden="true">🔊</span>
+                        )}
                       </span>
                     )
                   ) : (
@@ -89,7 +129,22 @@ function ChatPanel({
                     </span>
                   )}
                 </div>
-                <div className="chat__content">{message.content}</div>
+                <div className="chat__content">
+                  {message.content}
+                  
+                  {/* Speak button for assistant messages */}
+                  {message.role === "assistant" && showVoiceControls && voiceSupported && voiceSettings.voiceEnabled && (
+                    <button
+                      type="button"
+                      className={`chat__speak-btn ${isCurrentlySpeaking ? 'chat__speak-btn--speaking' : ''}`}
+                      onClick={() => handleSpeakMessage(message.content, index)}
+                      aria-label={isCurrentlySpeaking ? "Stop speaking" : "Speak this message"}
+                      title={isCurrentlySpeaking ? "Stop" : "Speak"}
+                    >
+                      {isCurrentlySpeaking ? '⏹️' : '🔊'}
+                    </button>
+                  )}
+                </div>
               </article>
             );
           })}

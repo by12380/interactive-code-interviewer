@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useRef } from "react";
 import { useTheme, THEMES, COLOR_SCHEMES } from "../contexts/ThemeContext.jsx";
+import { useVoice } from "../contexts/VoiceContext.jsx";
 
 function SettingsPanel() {
   const {
@@ -13,6 +14,17 @@ function SettingsPanel() {
     isSettingsOpen,
     closeSettings,
   } = useTheme();
+
+  const {
+    isSupported: voiceSupported,
+    browserSupport,
+    voiceSettings,
+    updateVoiceSettings,
+    resetVoiceSettings,
+    availableVoices,
+    testVoice,
+    isSpeaking
+  } = useVoice();
 
   const panelRef = useRef(null);
   const firstFocusableRef = useRef(null);
@@ -230,6 +242,236 @@ function SettingsPanel() {
               </label>
             </div>
           </section>
+
+          {/* Voice Settings Section */}
+          <section className="settings-section" aria-labelledby="voice-heading">
+            <h3 id="voice-heading" className="settings-section__title">
+              <span className="settings-section__icon">🎤</span>
+              Voice Settings
+            </h3>
+
+            {!voiceSupported ? (
+              <div className="settings-group settings-group--warning">
+                <p className="settings-warning">
+                  <span className="settings-warning__icon">⚠️</span>
+                  {browserSupport?.message || "Voice features are not supported in this browser. Please use Chrome, Edge, or Safari."}
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="settings-group">
+                  <label className="settings-toggle">
+                    <input
+                      type="checkbox"
+                      checked={voiceSettings.voiceEnabled}
+                      onChange={(e) => updateVoiceSettings("voiceEnabled", e.target.checked)}
+                    />
+                    <span className="settings-toggle__slider" />
+                    <span className="settings-toggle__label">
+                      <strong>Enable Voice Features</strong>
+                      <span className="settings-toggle__description">
+                        Use speech recognition and text-to-speech in interview mode
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
+                <div className="settings-group">
+                  <label className="settings-toggle">
+                    <input
+                      type="checkbox"
+                      checked={voiceSettings.autoSpeak}
+                      onChange={(e) => updateVoiceSettings("autoSpeak", e.target.checked)}
+                      disabled={!voiceSettings.voiceEnabled}
+                    />
+                    <span className="settings-toggle__slider" />
+                    <span className="settings-toggle__label">
+                      <strong>Auto-Speak AI Responses</strong>
+                      <span className="settings-toggle__description">
+                        AI interviewer speaks responses automatically
+                      </span>
+                    </span>
+                  </label>
+                </div>
+
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="voice-select">
+                    AI Voice
+                  </label>
+                  <div className="settings-voice-select-wrapper">
+                    <select
+                      id="voice-select"
+                      className="settings-select"
+                      value={voiceSettings.selectedVoice || ""}
+                      onChange={(e) => updateVoiceSettings("selectedVoice", e.target.value)}
+                      disabled={!voiceSettings.voiceEnabled}
+                    >
+                      {availableVoices.length === 0 && (
+                        <option value="">Loading voices...</option>
+                      )}
+                      {availableVoices.map((voice) => (
+                        <option key={voice.voiceURI} value={voice.voiceURI}>
+                          {voice.name} ({voice.lang})
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      className="settings-voice-test-btn"
+                      onClick={testVoice}
+                      disabled={!voiceSettings.voiceEnabled || isSpeaking}
+                      title="Test voice"
+                    >
+                      {isSpeaking ? "..." : "🔊 Test"}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="speech-rate">
+                    Speech Rate: {voiceSettings.speechRate.toFixed(1)}x
+                  </label>
+                  <input
+                    type="range"
+                    id="speech-rate"
+                    className="settings-range"
+                    min="0.5"
+                    max="2"
+                    step="0.1"
+                    value={voiceSettings.speechRate}
+                    onChange={(e) => updateVoiceSettings("speechRate", parseFloat(e.target.value))}
+                    disabled={!voiceSettings.voiceEnabled}
+                  />
+                  <div className="settings-range-labels">
+                    <span>Slow</span>
+                    <span>Normal</span>
+                    <span>Fast</span>
+                  </div>
+                </div>
+
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="pitch">
+                    Pitch: {voiceSettings.pitch.toFixed(1)}
+                  </label>
+                  <input
+                    type="range"
+                    id="pitch"
+                    className="settings-range"
+                    min="0.5"
+                    max="2"
+                    step="0.1"
+                    value={voiceSettings.pitch}
+                    onChange={(e) => updateVoiceSettings("pitch", parseFloat(e.target.value))}
+                    disabled={!voiceSettings.voiceEnabled}
+                  />
+                  <div className="settings-range-labels">
+                    <span>Low</span>
+                    <span>Normal</span>
+                    <span>High</span>
+                  </div>
+                </div>
+
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="volume">
+                    Volume: {Math.round(voiceSettings.volume * 100)}%
+                  </label>
+                  <input
+                    type="range"
+                    id="volume"
+                    className="settings-range"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={voiceSettings.volume}
+                    onChange={(e) => updateVoiceSettings("volume", parseFloat(e.target.value))}
+                    disabled={!voiceSettings.voiceEnabled}
+                  />
+                  <div className="settings-range-labels">
+                    <span>🔇</span>
+                    <span>🔉</span>
+                    <span>🔊</span>
+                  </div>
+                </div>
+
+                <div className="settings-group">
+                  <label className="settings-label" htmlFor="language-select">
+                    Recognition Language
+                  </label>
+                  <select
+                    id="language-select"
+                    className="settings-select"
+                    value={voiceSettings.language}
+                    onChange={(e) => updateVoiceSettings("language", e.target.value)}
+                    disabled={!voiceSettings.voiceEnabled}
+                  >
+                    <option value="en-US">English (US)</option>
+                    <option value="en-GB">English (UK)</option>
+                    <option value="en-AU">English (Australia)</option>
+                    <option value="en-IN">English (India)</option>
+                    <option value="es-ES">Spanish (Spain)</option>
+                    <option value="es-MX">Spanish (Mexico)</option>
+                    <option value="fr-FR">French</option>
+                    <option value="de-DE">German</option>
+                    <option value="it-IT">Italian</option>
+                    <option value="pt-BR">Portuguese (Brazil)</option>
+                    <option value="ja-JP">Japanese</option>
+                    <option value="ko-KR">Korean</option>
+                    <option value="zh-CN">Chinese (Simplified)</option>
+                    <option value="hi-IN">Hindi</option>
+                  </select>
+                </div>
+
+                <div className="settings-group">
+                  <button
+                    type="button"
+                    className="settings-reset-voice-btn"
+                    onClick={resetVoiceSettings}
+                  >
+                    Reset Voice Settings
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+
+          {/* Voice Commands Reference */}
+          {voiceSupported && (
+            <section className="settings-section" aria-labelledby="voice-commands-heading">
+              <h3 id="voice-commands-heading" className="settings-section__title">
+                <span className="settings-section__icon">🗣️</span>
+                Voice Commands
+              </h3>
+              <p className="settings-section__description">
+                Say these commands during an interview simulation:
+              </p>
+              <div className="voice-commands-grid">
+                <div className="voice-command-item">
+                  <span className="voice-command-phrase">"Run code"</span>
+                  <span className="voice-command-desc">Execute your solution</span>
+                </div>
+                <div className="voice-command-item">
+                  <span className="voice-command-phrase">"Next problem"</span>
+                  <span className="voice-command-desc">Skip to next section</span>
+                </div>
+                <div className="voice-command-item">
+                  <span className="voice-command-phrase">"Give me a hint"</span>
+                  <span className="voice-command-desc">Request AI assistance</span>
+                </div>
+                <div className="voice-command-item">
+                  <span className="voice-command-phrase">"Pause"</span>
+                  <span className="voice-command-desc">Pause the interview</span>
+                </div>
+                <div className="voice-command-item">
+                  <span className="voice-command-phrase">"Resume"</span>
+                  <span className="voice-command-desc">Continue interview</span>
+                </div>
+                <div className="voice-command-item">
+                  <span className="voice-command-phrase">"Repeat that"</span>
+                  <span className="voice-command-desc">AI repeats last response</span>
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* Keyboard Shortcuts Info */}
           <section className="settings-section" aria-labelledby="shortcuts-heading">
