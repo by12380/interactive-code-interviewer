@@ -3,10 +3,17 @@ import Editor from "@monaco-editor/react";
 import { sendChat } from "./api.js";
 import TutorialOverlay from "./TutorialOverlay.jsx";
 import VoicePanel from "./VoicePanel.jsx";
+import RoadmapPanel from "./RoadmapPanel.jsx";
 import { getCurrentUserId, getUserById, loadUsers, logIn, logOut, signUp } from "./auth.js";
 import { loadUserJson, loadUserState, saveUserJson } from "./userData.js";
 import { randomId } from "./storage.js";
 import { analyzeCodeForInterruptions } from "./codeAnalysis.js";
+import {
+  ROADMAP_DEFAULTS,
+  applySolvedProblemToRoadmap,
+  evaluateRoadmapMilestones,
+  normalizeRoadmapState
+} from "./roadmap.js";
 import {
   GAMIFICATION_DEFAULTS,
   applyPracticeDay,
@@ -1082,6 +1089,9 @@ export default function App() {
   const [gamification, setGamification] = useState(() =>
     normalizeGamificationState(loadUserJson(storageUserId, "gamification", GAMIFICATION_DEFAULTS))
   );
+  const [roadmap, setRoadmap] = useState(() =>
+    normalizeRoadmapState(loadUserJson(storageUserId, "roadmap", ROADMAP_DEFAULTS))
+  );
 
   useEffect(() => {
     setCurrentUser(currentUserId ? getUserById(currentUserId) : null);
@@ -1095,6 +1105,7 @@ export default function App() {
     setAttemptStartedAtByProblemId(next.attemptStartedAtByProblemId);
     setBestTimeSecondsByProblemId(next.bestTimeSecondsByProblemId);
     setHistory(next.history);
+    setRoadmap(normalizeRoadmapState(loadUserJson(storageUserId, "roadmap", ROADMAP_DEFAULTS)));
   }, [storageUserId]);
 
   useEffect(() => {
@@ -1106,6 +1117,10 @@ export default function App() {
   useEffect(() => {
     saveUserJson(storageUserId, "gamification", gamification);
   }, [storageUserId, gamification]);
+
+  useEffect(() => {
+    saveUserJson(storageUserId, "roadmap", roadmap);
+  }, [storageUserId, roadmap]);
 
   useEffect(() => {
     setUiPrefs(normalizeUiPrefs(loadUserJson(storageUserId, UI_PREFS_KEY, UI_PREFS_DEFAULTS)));
@@ -1652,6 +1667,30 @@ export default function App() {
               codeSnapshot: String(codeByProblemIdRef.current?.[problemId] || "")
             };
             setHistory((prev) => [entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 200));
+
+            // Roadmap: update skill/performance signals + auto-complete plan tasks tied to this problem.
+            try {
+              setRoadmap((prev) => {
+                const p = normalizeRoadmapState(prev);
+                const updated = applySolvedProblemToRoadmap({
+                  prevState: p,
+                  problemId,
+                  problems: PROBLEMS,
+                  nowTs: now
+                });
+                const evaluated = evaluateRoadmapMilestones({
+                  prevState: p,
+                  nextState: updated,
+                  nowTs: now
+                });
+                for (const m of evaluated.unlocked || []) {
+                  pushToast("success", m.name, m.description);
+                }
+                return evaluated.nextState;
+              });
+            } catch {
+              // ignore roadmap errors
+            }
           }
         }
       }
@@ -3593,6 +3632,25 @@ function __ici_isEqual(problemId, actual, expected) {
               </div>
             </div>
           </section>
+
+          <RoadmapPanel
+            roadmap={roadmap}
+            problems={PROBLEMS}
+            solvedByProblemId={solvedByProblemId}
+            onSelectProblem={(pid) => {
+              if (isInterviewMode) {
+                pushToast("info", "Roadmap", "Finish the interview simulation to switch problems.");
+                return;
+              }
+              const nextId = String(pid || "");
+              if (!nextId) return;
+              setActiveProblemId(nextId);
+              const label = PROBLEMS.find((p) => p.id === nextId)?.title || nextId;
+              pushToast("success", "Roadmap", `Opened: ${label}`);
+            }}
+            onUpdateRoadmap={setRoadmap}
+            onToast={(kind, title, message) => pushToast(kind, title, message)}
+          />
 
           <VoicePanel
             isLocked={isLocked}
