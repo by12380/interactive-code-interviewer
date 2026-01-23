@@ -3010,148 +3010,158 @@ function __ici_isEqual(problemId, actual, expected) {
           </div>
         </div>
       </Modal>
-      <header className="app__header">
-        <div className="app__header-text">
-          <h1>Live AI Coding Interviewer</h1>
-          <p>Prototype UI with editor + chat. Proactive guidance is next.</p>
-        </div>
-        <div className="app__header-actions">
-          <div className="difficulty-card" data-tutorial="difficulty">
-            <span className="difficulty-card__label">Difficulty</span>
-            <select
-              className="difficulty-card__select"
-              value={difficulty}
-              onChange={(event) => setDifficulty(event.target.value)}
-              disabled={isLocked || isInterviewMode}
-              aria-label="Select interview difficulty"
-            >
-              <option value="Easy">Easy</option>
-              <option value="Medium">Medium</option>
-              <option value="Hard">Hard</option>
-            </select>
+
+      <div className="app__shell">
+        <aside className="app__sidebar" aria-label="Interview controls and navigation">
+          <div className="app__brand">
+            <div className="app__brand-title">Live AI Coding Interviewer</div>
+            <div className="app__brand-sub">Prototype UI with editor + chat.</div>
           </div>
-          <div className="time-card" data-tutorial="timer">
-            <div className="time-tracker">
-              <span className="time-tracker__label">Time left</span>
-              <span className="time-tracker__value">
-                {isTimeUp ? "00:00" : formatTime(remainingSeconds)}
-              </span>
-              {isTimeUp && (
-                <span className="time-tracker__status">Time is up</span>
-              )}
+
+          <div className="app__sidebar-section" aria-label="Session controls">
+            <div className="difficulty-card" data-tutorial="difficulty">
+              <span className="difficulty-card__label">Difficulty</span>
+              <select
+                className="difficulty-card__select"
+                value={difficulty}
+                onChange={(event) => setDifficulty(event.target.value)}
+                disabled={isLocked || isInterviewMode}
+                aria-label="Select interview difficulty"
+              >
+                <option value="Easy">Easy</option>
+                <option value="Medium">Medium</option>
+                <option value="Hard">Hard</option>
+              </select>
             </div>
-            <button
-              type="button"
-              className="time-tracker__action"
-              onClick={handleStopOrNext}
-              disabled={!isInterviewMode && isLocked}
-              aria-label="Stop interview"
-            >
-              <span className="time-tracker__icon" aria-hidden="true">
-                ■
-              </span>
-              {isInterviewMode ? "Next" : "Stop"}
-            </button>
+
+            <div className="time-card" data-tutorial="timer">
+              <div className="time-tracker">
+                <span className="time-tracker__label">Time left</span>
+                <span className="time-tracker__value">
+                  {isTimeUp ? "00:00" : formatTime(remainingSeconds)}
+                </span>
+                {isTimeUp && <span className="time-tracker__status">Time is up</span>}
+              </div>
+              <button
+                type="button"
+                className="time-tracker__action"
+                onClick={handleStopOrNext}
+                disabled={!isInterviewMode && isLocked}
+                aria-label="Stop interview"
+              >
+                <span className="time-tracker__icon" aria-hidden="true">
+                  ■
+                </span>
+                {isInterviewMode ? "Next" : "Stop"}
+              </button>
+            </div>
+
+            <div className="gami-card" aria-label="Gamification status">
+              <div className="gami-card__top">
+                <div className="gami-card__k">Level</div>
+                <div className="gami-card__v">{levelInfo.level}</div>
+              </div>
+              <div className="gami-card__sub">
+                <span className="gami-card__pill">XP {gamification.xp}</span>
+                <span className="gami-card__pill">Streak {gamification.streak}d</span>
+              </div>
+              <div className="gami-card__bar" aria-hidden="true">
+                <div
+                  className="gami-card__bar-fill"
+                  style={{
+                    width: `${Math.max(
+                      0,
+                      Math.min(100, Math.round((levelInfo.intoLevelXp / Math.max(1, levelInfo.nextLevelXp)) * 100))
+                    )}%`
+                  }}
+                />
+              </div>
+            </div>
           </div>
-          <div className="gami-card" aria-label="Gamification status">
-            <div className="gami-card__top">
-              <div className="gami-card__k">Level</div>
-              <div className="gami-card__v">{levelInfo.level}</div>
-            </div>
-            <div className="gami-card__sub">
-              <span className="gami-card__pill">XP {gamification.xp}</span>
-              <span className="gami-card__pill">Streak {gamification.streak}d</span>
-            </div>
-            <div className="gami-card__bar" aria-hidden="true">
-              <div
-                className="gami-card__bar-fill"
-                style={{
-                  width: `${Math.max(
-                    0,
-                    Math.min(100, Math.round((levelInfo.intoLevelXp / Math.max(1, levelInfo.nextLevelXp)) * 100))
-                  )}%`
-                }}
-              />
-            </div>
-          </div>
-          <button
-            type="button"
-            className="tutorial-trigger"
-            onClick={() => setIsInterviewSetupOpen(true)}
-            aria-label="Open interview simulation"
-          >
-            Interview Simulation
-          </button>
-          {isInterviewMode ? (
+
+          <div className="app__sidebar-section" aria-label="Quick actions">
             <button
               type="button"
               className="tutorial-trigger"
-              onClick={() => endInterviewSimulation("ended")}
-              aria-label="End interview simulation"
+              onClick={() => setIsInterviewSetupOpen(true)}
+              aria-label="Open interview simulation"
             >
-              End session
+              Interview Simulation
             </button>
-          ) : null}
-          <button
-            type="button"
-            className="tutorial-trigger"
-            onClick={() => {
-              setIsTutorialOpen(true);
-              setTutorialStepIndex(0);
-            }}
-            aria-label="Start tutorial"
-          >
-            Tutorial
-          </button>
-          <button
-            type="button"
-            className="tutorial-trigger"
-            onClick={() => setIsLeaderboardOpen(true)}
-            aria-label="Open leaderboards"
-          >
-            Leaderboards
-          </button>
-          <button
-            type="button"
-            className="tutorial-trigger"
-            onClick={() => setIsPreferencesOpen(true)}
-            aria-label="Open appearance and accessibility settings"
-          >
-            Preferences
-          </button>
-          <div className="user-actions">
+            {isInterviewMode ? (
+              <button
+                type="button"
+                className="tutorial-trigger"
+                onClick={() => endInterviewSimulation("ended")}
+                aria-label="End interview simulation"
+              >
+                End session
+              </button>
+            ) : null}
             <button
               type="button"
-              className="user-actions__btn user-actions__btn--primary"
-              onClick={() => setIsProfileOpen(true)}
-              aria-label="Open profile"
+              className="tutorial-trigger"
+              onClick={() => {
+                setIsTutorialOpen(true);
+                setTutorialStepIndex(0);
+              }}
+              aria-label="Start tutorial"
             >
-              {currentUser ? currentUser.username : "Guest"} · Profile
+              Tutorial
             </button>
-            {currentUser ? (
-              <button
-                type="button"
-                className="user-actions__btn"
-                onClick={handleLogOut}
-                aria-label="Log out"
-              >
-                Log out
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="user-actions__btn"
-                onClick={() => setIsAuthOpen(true)}
-                aria-label="Log in or sign up"
-              >
-                Log in / Sign up
-              </button>
-            )}
+            <button
+              type="button"
+              className="tutorial-trigger"
+              onClick={() => setIsLeaderboardOpen(true)}
+              aria-label="Open leaderboards"
+            >
+              Leaderboards
+            </button>
+            <button
+              type="button"
+              className="tutorial-trigger"
+              onClick={() => setIsPreferencesOpen(true)}
+              aria-label="Open appearance and accessibility settings"
+            >
+              Preferences
+            </button>
           </div>
-        </div>
-      </header>
 
-      <main id="main-content" className="app__main">
+          <div className="app__sidebar-section app__sidebar-section--bottom" aria-label="Account">
+            <div className="user-actions">
+              <button
+                type="button"
+                className="user-actions__btn user-actions__btn--primary"
+                onClick={() => setIsProfileOpen(true)}
+                aria-label="Open profile"
+              >
+                {currentUser ? currentUser.username : "Guest"} · Profile
+              </button>
+              {currentUser ? (
+                <button
+                  type="button"
+                  className="user-actions__btn"
+                  onClick={handleLogOut}
+                  aria-label="Log out"
+                >
+                  Log out
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="user-actions__btn"
+                  onClick={() => setIsAuthOpen(true)}
+                  aria-label="Log in or sign up"
+                >
+                  Log in / Sign up
+                </button>
+              )}
+            </div>
+          </div>
+        </aside>
+
+        <div className="app__content">
+          <main id="main-content" className="app__main">
         <div className="app__left">
           <section className="panel panel--editor" data-tutorial="editor">
             <div className="panel__header">Editor</div>
@@ -3274,32 +3284,34 @@ function __ici_isEqual(problemId, actual, expected) {
                 )}
               </div>
               <div className="problem__controls">
-                <select
-                  className="problem__select"
-                  value={activeProblemId}
-                  onChange={(e) => setActiveProblemId(e.target.value)}
-                  disabled={isLocked || isInterviewMode}
-                  aria-label="Select coding problem"
-                >
-                  {PROBLEMS.map((p) => {
-                    const unlocked = isInterviewMode || isProblemUnlocked(p, unlocks);
-                    const label = unlocked ? p.title : `${p.title} (Locked)`;
-                    return (
-                      <option key={p.id} value={p.id} disabled={!unlocked}>
-                        {label}
-                      </option>
-                    );
-                  })}
-                </select>
-                {!isInterviewMode && (!unlocks.medium || !unlocks.hard) ? (
-                  <div className="problem__unlock-note" role="note">
-                    {!unlocks.medium
-                      ? "Medium unlocks after you solve 2 Easy problems."
-                      : !unlocks.hard
-                        ? "Hard unlocks after you solve 2 Medium problems."
-                        : null}
-                  </div>
-                ) : null}
+                <div className="problem__picker">
+                  {!isInterviewMode && (!unlocks.medium || !unlocks.hard) ? (
+                    <div className="problem__unlock-note" role="note">
+                      {!unlocks.medium
+                        ? "Medium unlocks after you solve 2 Easy problems."
+                        : !unlocks.hard
+                          ? "Hard unlocks after you solve 2 Medium problems."
+                          : null}
+                    </div>
+                  ) : null}
+                  <select
+                    className="problem__select"
+                    value={activeProblemId}
+                    onChange={(e) => setActiveProblemId(e.target.value)}
+                    disabled={isLocked || isInterviewMode}
+                    aria-label="Select coding problem"
+                  >
+                    {PROBLEMS.map((p) => {
+                      const unlocked = isInterviewMode || isProblemUnlocked(p, unlocks);
+                      const label = unlocked ? p.title : `${p.title} (Locked)`;
+                      return (
+                        <option key={p.id} value={p.id} disabled={!unlocked}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -3710,7 +3722,9 @@ function __ici_isEqual(problemId, actual, expected) {
             </div>
           </section>
         </div>
-      </main>
+          </main>
+        </div>
+      </div>
     </div>
   );
 }

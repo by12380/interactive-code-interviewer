@@ -129,9 +129,103 @@ html[data-keyboard-nav="true"] a:focus {
 }
 
 .app {
+  min-height: 100vh;
+}
+
+.app__shell {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.app__sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: auto;
+  padding: 18px 16px;
+  background: linear-gradient(180deg, rgba(236, 254, 255, 0.75) 0%, rgba(238, 242, 255, 0.75) 45%, rgba(248, 250, 252, 0.9) 100%);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  gap: 14px;
+}
+
+html[data-theme="dark"] .app__sidebar {
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(17, 24, 39, 0.96) 100%);
+}
+
+.app__brand {
+  padding: 10px 10px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: rgba(255, 255, 255, 0.75);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+}
+
+html[data-theme="dark"] .app__brand {
+  background: rgba(15, 23, 42, 0.7);
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+.app__brand-title {
+  font-weight: 950;
+  letter-spacing: -0.02em;
+  font-size: 16px;
+  color: #0f172a;
+}
+
+html[data-theme="dark"] .app__brand-title {
+  color: #e5e7eb;
+}
+
+.app__brand-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.app__sidebar-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: rgba(255, 255, 255, 0.62);
+}
+
+html[data-theme="dark"] .app__sidebar-section {
+  background: rgba(15, 23, 42, 0.65);
+  border-color: rgba(148, 163, 184, 0.25);
+}
+
+.app__sidebar-section--bottom {
+  margin-top: auto;
+}
+
+.app__content {
+  min-width: 0;
+}
+
+.app__sidebar .difficulty-card,
+.app__sidebar .time-card,
+.app__sidebar .gami-card {
+  width: 100%;
+  min-width: 0;
+}
+
+.app__sidebar .tutorial-trigger,
+.app__sidebar .user-actions__btn {
+  width: 100%;
+}
+
+.app__sidebar .user-actions {
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .app__header {
@@ -575,6 +669,15 @@ html[data-theme="dark"] .panel__header {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.problem__picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
 .problem__select {
@@ -1620,8 +1723,15 @@ html[data-theme="dark"] .voice__chip {
 }
 
 @media (max-width: 1024px) {
-  .app__header {
+  .app__shell {
+    grid-template-columns: 1fr;
+  }
+
+  .app__sidebar {
     position: static;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
   }
 
   .app__main {
@@ -1638,30 +1748,8 @@ html[data-theme="dark"] .voice__chip {
 }
 
 @media (max-width: 640px) {
-  .app__header {
-    padding: 16px;
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .app__header-actions {
-    width: 100%;
-    justify-content: flex-start;
-    gap: 10px;
-  }
-
-  .difficulty-card,
-  .time-card {
-    width: 100%;
-  }
-
-  .tutorial-trigger,
-  .user-actions__btn {
-    width: 100%;
-  }
-
-  .user-actions {
-    width: 100%;
+  .app__sidebar {
+    padding: 14px 12px;
   }
 
   .app__main {
@@ -2478,10 +2566,25 @@ html[data-theme="dark"] .gami-card__bar {
 }
 
 .problem__unlock-note {
-  margin-top: 8px;
+  margin-top: 0;
   font-size: 12px;
   color: #64748b;
   font-weight: 800;
+  line-height: 1.35;
+  max-width: 320px;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .problem__select {
+    max-width: 100%;
+  }
+
+  .problem__unlock-note {
+    max-width: 100%;
+  }
 }
 
 .profile__badges {
