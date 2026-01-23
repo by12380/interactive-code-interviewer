@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { sendChat } from "./api.js";
 import Header from "./components/Header.jsx";
+import Sidebar from "./components/Sidebar.jsx";
 import EditorPanel from "./components/EditorPanel.jsx";
 import ConsolePanel from "./components/ConsolePanel.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
@@ -1239,7 +1240,7 @@ export default function App() {
   }, [efficiencyScore, hintsScore, testsScore]);
 
   return (
-    <div className="app" role="application" aria-label="Live AI Coding Interviewer">
+    <div className="app app--with-sidebar" role="application" aria-label="Live AI Coding Interviewer">
       {/* Skip links for keyboard navigation */}
       <SkipLinks />
       
@@ -1252,23 +1253,17 @@ export default function App() {
         id="sr-announcements"
       />
       
-      <Header
-        difficulty={difficulty}
-        isLocked={isLocked}
-        isPaused={isPaused}
-        isTimeUp={isTimeUp}
-        remainingSeconds={remainingSeconds}
-        onDifficultyChange={handleDifficultyChange}
-        onPauseToggle={handlePauseToggle}
-        onStop={handleStop}
-        onStartTutorial={handleStartTutorial}
+      {/* Sidebar Navigation */}
+      <Sidebar
+        user={user}
+        onOpenAuth={handleOpenAuth}
+        onOpenProfile={handleOpenProfile}
+        onLogout={handleLogout}
         onOpenLeaderboard={handleOpenLeaderboard}
         onStartInterviewSim={handleOpenInterviewLauncher}
         onOpenGamification={handleOpenGamification}
         onOpenRoadmap={handleOpenRoadmap}
-        user={user}
-        onOpenAuth={handleOpenAuth}
-        onOpenProfile={handleOpenProfile}
+        onStartTutorial={handleStartTutorial}
         problemSelector={
           <ProblemSelector
             problems={PROBLEMS}
@@ -1280,7 +1275,21 @@ export default function App() {
         }
       />
 
-      <main className="app__main" id="main-content" role="main">
+      {/* Main Content Area */}
+      <div className="app__content">
+        <Header
+          difficulty={difficulty}
+          isLocked={isLocked}
+          isPaused={isPaused}
+          isTimeUp={isTimeUp}
+          remainingSeconds={remainingSeconds}
+          onDifficultyChange={handleDifficultyChange}
+          onPauseToggle={handlePauseToggle}
+          onStop={handleStop}
+          currentProblemTitle={currentProblem?.title}
+        />
+
+        <main className="app__main" id="main-content" role="main">
         <div className="app__problem-section" id="problem-panel">
           <ProblemPanel
             problem={currentProblem}
@@ -1396,6 +1405,7 @@ export default function App() {
           aiFeedback={aiFeedback}
           detailedAnalysis={detailedAnalysis}
         />
+      </div>
       </div>
 
       <Tutorial isVisible={isTutorialVisible} onClose={handleCloseTutorial} />
