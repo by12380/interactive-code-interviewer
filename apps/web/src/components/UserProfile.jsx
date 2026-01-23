@@ -6,12 +6,14 @@ import {
   getLevelProgress,
   xpForLevel
 } from "../services/gamificationService.js";
+import { getReplayByInterviewId } from "../services/codeReplayService.js";
 
 function UserProfile({ 
   user, 
   onClose, 
   problems = [],
-  onLogout 
+  onLogout,
+  onOpenReplay, // New prop for opening replay viewer
 }) {
   const [activeTab, setActiveTab] = useState("stats");
 
@@ -237,36 +239,51 @@ function UserProfile({
                 </div>
               ) : (
                 <div className="profile__history-list">
-                  {interviewHistory.map((interview) => (
-                    <div key={interview.id} className="profile__history-item">
-                      <div className="profile__history-main">
-                        <span className="profile__history-title">{interview.problemTitle}</span>
-                        <span className={difficultyClass(interview.difficulty)}>
-                          {interview.difficulty}
-                        </span>
+                  {interviewHistory.map((interview) => {
+                    const hasReplay = !!getReplayByInterviewId(interview.id);
+                    return (
+                      <div key={interview.id} className="profile__history-item">
+                        <div className="profile__history-main">
+                          <span className="profile__history-title">{interview.problemTitle}</span>
+                          <span className={difficultyClass(interview.difficulty)}>
+                            {interview.difficulty}
+                          </span>
+                        </div>
+                        <div className="profile__history-details">
+                          <span className="profile__history-score">
+                            Score: <strong>{interview.score}</strong>
+                          </span>
+                          <span 
+                            className="profile__history-grade"
+                            style={{ color: gradeColor(interview.grade) }}
+                          >
+                            {interview.grade}
+                          </span>
+                          <span className="profile__history-time">
+                            {formatTime(interview.timeSpent)}
+                          </span>
+                          <span className="profile__history-tests">
+                            {interview.testsPassed}/{interview.testsTotal} tests
+                          </span>
+                        </div>
+                        <div className="profile__history-actions">
+                          <span className="profile__history-date">
+                            {formatDate(interview.completedAt)}
+                          </span>
+                          {hasReplay && onOpenReplay && (
+                            <button
+                              className="profile__replay-btn"
+                              onClick={() => onOpenReplay(interview.id, interview.problemTitle)}
+                              title="Watch code replay"
+                            >
+                              <span className="profile__replay-icon">▶</span>
+                              Watch Replay
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="profile__history-details">
-                        <span className="profile__history-score">
-                          Score: <strong>{interview.score}</strong>
-                        </span>
-                        <span 
-                          className="profile__history-grade"
-                          style={{ color: gradeColor(interview.grade) }}
-                        >
-                          {interview.grade}
-                        </span>
-                        <span className="profile__history-time">
-                          {formatTime(interview.timeSpent)}
-                        </span>
-                        <span className="profile__history-tests">
-                          {interview.testsPassed}/{interview.testsTotal} tests
-                        </span>
-                      </div>
-                      <div className="profile__history-date">
-                        {formatDate(interview.completedAt)}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

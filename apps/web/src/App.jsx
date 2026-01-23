@@ -21,6 +21,7 @@ import SkipLinks from "./components/SkipLinks.jsx";
 import GamificationPanel from "./components/GamificationPanel.jsx";
 import UnlockToast from "./components/UnlockToast.jsx";
 import PrepRoadmap from "./components/PrepRoadmap.jsx";
+import CodeReplayPanel from "./components/CodeReplayPanel.jsx";
 import { useTheme } from "./contexts/ThemeContext.jsx";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
 import { 
@@ -44,6 +45,17 @@ import {
   checkUnlockableProblems,
   calculateLevel
 } from "./services/gamificationService.js";
+import {
+  createRecordingSession,
+  recordCodeChange,
+  recordCursorMove,
+  recordSelection,
+  recordPauseEvent,
+  finalizeRecording,
+  saveReplay,
+  getReplayByInterviewId,
+  getAllReplays,
+} from "./services/codeReplayService.js";
 
 const getTimeScore = (elapsedSeconds, limitSeconds) => {
   if (elapsedSeconds <= 10 * 60) {
@@ -295,11 +307,67 @@ export default function App() {
   // Inline editor hint state (shows above cursor like IDE suggestions)
   const [editorHint, setEditorHint] = useState(null);
 
+  // Code Replay state
+  const [replaySession, setReplaySession] = useState(null);
+  const [isReplayVisible, setIsReplayVisible] = useState(false);
+  const [currentReplay, setCurrentReplay] = useState(null);
+  const [allReplays, setAllReplays] = useState(() => getAllReplays());
+
   const TOTAL_SECONDS = currentProblem?.timeLimit || 30 * 60;
   const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
   const isTimeUp = elapsedSeconds >= TOTAL_SECONDS;
   const isEditorDisabled = isLocked || isPaused;
   const isCompleted = isLocked;
+
+  // === Code Replay Recording Handlers ===
+  // (Defined early to avoid hoisting issues with other callbacks)
+  
+  // Initialize recording session when starting a problem
+  const initializeReplayRecording = useCallback((problemId, starterCode) => {
+    const session = createRecordingSession(problemId, starterCode);
+    setReplaySession(session);
+  }, []);
+
+  // Record cursor movement
+  const handleRecordCursorMove = useCallback((position) => {
+    if (!replaySession || isLocked) return;
+    setReplaySession(prev => recordCursorMove(prev, position));
+  }, [replaySession, isLocked]);
+
+  // Record selection changes
+  const handleRecordSelection = useCallback((selection) => {
+    if (!replaySession || isLocked) return;
+    setReplaySession(prev => recordSelection(prev, selection));
+  }, [replaySession, isLocked]);
+
+  // Finalize and save replay
+  const finalizeAndSaveReplay = useCallback((interviewId, interviewData) => {
+    if (!replaySession) return null;
+    
+    const finalReplay = finalizeRecording(replaySession, interviewData);
+    if (finalReplay) {
+      saveReplay(interviewId, finalReplay);
+      // Update the allReplays list
+      setAllReplays(getAllReplays());
+      return finalReplay;
+    }
+    return null;
+  }, [replaySession]);
+
+  // Open replay viewer
+  const handleOpenReplay = useCallback((interviewId, problemTitle) => {
+    const replay = getReplayByInterviewId(interviewId);
+    if (replay) {
+      setCurrentReplay({ ...replay, problemTitle });
+      setIsReplayVisible(true);
+    }
+  }, []);
+
+  // Close replay viewer
+  const handleCloseReplay = useCallback(() => {
+    setIsReplayVisible(false);
+    setCurrentReplay(null);
+  }, []);
 
   const editorOptions = useMemo(
     () => ({
@@ -356,6 +424,13 @@ export default function App() {
       setPersonalBest(best);
     }
   }, [user, currentProblemId]);
+
+  // Initialize replay recording on mount
+  useEffect(() => {
+    if (currentProblem && !replaySession && !isLocked) {
+      setReplaySession(createRecordingSession(currentProblem.id, currentProblem.starterCode));
+    }
+  }, [currentProblem, replaySession, isLocked]);
 
   // Toast helper function
   const addToast = useCallback((toast) => {
@@ -457,12 +532,20 @@ export default function App() {
       const pausedFor = Date.now() - pauseAtRef.current;
       pausedDurationRef.current += pausedFor;
       setIsPaused(false);
+      // Record resume event (inline to avoid hoisting issues)
+      if (replaySession) {
+        setReplaySession(prev => recordPauseEvent(prev, false));
+      }
       return;
     }
 
     pauseAtRef.current = Date.now();
     setIsPaused(true);
-  }, [isPaused]);
+    // Record pause event (inline to avoid hoisting issues)
+    if (replaySession) {
+      setReplaySession(prev => recordPauseEvent(prev, true));
+    }
+  }, [isPaused, replaySession]);
 
   const appendCodeUpdateIfNeeded = useCallback((nextCode, messageList) => {
     if (nextCode === lastCodeSentRef.current) {
@@ -714,12 +797,17 @@ export default function App() {
   }, [appendCodeUpdateIfNeeded, code, input, isSending, messages]);
 
   const handleEditorChange = useCallback((value) => {
-    setCode(value ?? "");
+    const newCode = value ?? "";
+    setCode(newCode);
     // Dismiss editor hint when user types (handled in EditorPanel too, but this is backup)
     if (editorHint) {
       setEditorHint(null);
     }
-  }, [editorHint]);
+    // Record the code change for replay (inline to avoid hoisting issues)
+    if (replaySession && !isLocked) {
+      setReplaySession(prev => recordCodeChange(prev, newCode));
+    }
+  }, [editorHint, replaySession, isLocked]);
 
   const handleDismissEditorHint = useCallback(() => {
     setEditorHint(null);
@@ -766,7 +854,7 @@ export default function App() {
       );
       const gradeVal = getGrade(totalScoreVal);
       
-      const result = saveInterviewResult({
+      const interviewData = {
         problemId: currentProblem.id,
         problemTitle: currentProblem.title,
         difficulty: currentProblem.difficulty,
@@ -778,9 +866,26 @@ export default function App() {
         hintsUsed,
         efficiency,
         code,
-      });
+      };
+      
+      const result = saveInterviewResult(interviewData);
       
       if (result.success) {
+        // Get the interview ID from the history
+        const interviewId = result.user?.interviewHistory?.[0]?.id;
+        
+        // Save the code replay for this interview
+        if (interviewId) {
+          finalizeAndSaveReplay(interviewId, {
+            score: totalScoreVal,
+            grade: gradeVal,
+            testsPassed,
+            testsTotal: testsTotal || currentProblem.testCases?.length || 0,
+            hintsUsed,
+            efficiency,
+          });
+        }
+        
         setUser(result.user);
         // Update personal best
         const best = getPersonalBest(currentProblem.id);
@@ -883,7 +988,7 @@ export default function App() {
         }
       }
     }
-  }, [user, currentProblem, elapsedSeconds, efficiency, hintsUsed, testsPassed, testsTotal, code, addToast]);
+  }, [user, currentProblem, elapsedSeconds, efficiency, hintsUsed, testsPassed, testsTotal, code, addToast, finalizeAndSaveReplay]);
 
   const handleInputChange = useCallback((event) => {
     setInput(event.target.value);
@@ -958,12 +1063,15 @@ export default function App() {
     analyzerStateRef.current = createAnalyzerState();
     lastAnalyzedCodeRef.current = "";
     
+    // Initialize replay recording for the new problem
+    initializeReplayRecording(problemId, problem.starterCode);
+    
     // Update personal best for the new problem
     if (user) {
       const best = getPersonalBest(problemId);
       setPersonalBest(best);
     }
-  }, [isLocked, user]);
+  }, [isLocked, user, initializeReplayRecording]);
 
   const handleRevealHint = useCallback((hintNumber) => {
     if (!currentProblem || hintNumber > currentProblem.hints.length) return;
@@ -1315,6 +1423,9 @@ export default function App() {
             code={code}
             interviewerHint={editorHint}
             onDismissHint={handleDismissEditorHint}
+            onRecordCursorMove={handleRecordCursorMove}
+            onRecordSelection={handleRecordSelection}
+            isRecording={!!replaySession && !isLocked}
           />
           <ConsolePanel
             logs={consoleLogs}
@@ -1435,6 +1546,7 @@ export default function App() {
           onClose={handleCloseProfile}
           problems={PROBLEMS}
           onLogout={handleLogout}
+          onOpenReplay={handleOpenReplay}
         />
       )}
       
@@ -1490,6 +1602,16 @@ export default function App() {
       
       {/* Unlock Toasts */}
       <UnlockToast toasts={toasts} onDismiss={dismissToast} />
+      
+      {/* Code Replay Panel */}
+      {isReplayVisible && currentReplay && (
+        <CodeReplayPanel
+          replay={currentReplay}
+          onClose={handleCloseReplay}
+          problemTitle={currentReplay.problemTitle || currentProblem?.title || "Problem"}
+          allReplays={allReplays}
+        />
+      )}
     </div>
   );
 }

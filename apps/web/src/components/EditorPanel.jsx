@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, useCallback } from "react";
 import Editor from "@monaco-editor/react";
 import { useTheme } from "../contexts/ThemeContext.jsx";
 
@@ -15,16 +15,22 @@ function EditorPanel({
   editorOptions,
   code,
   interviewerHint,
-  onDismissHint
+  onDismissHint,
+  // Replay recording props
+  onRecordCursorMove,
+  onRecordSelection,
+  isRecording = false,
 }) {
   const { theme } = useTheme();
   const editorContainerRef = useRef(null);
   const widgetRef = useRef(null);
   const editorInstanceRef = useRef(null);
   const monacoInstanceRef = useRef(null);
+  const cursorListenerRef = useRef(null);
+  const selectionListenerRef = useRef(null);
 
   // Handle editor mount - store references
-  const handleEditorMount = (editor, monaco) => {
+  const handleEditorMount = useCallback((editor, monaco) => {
     editorInstanceRef.current = editor;
     monacoInstanceRef.current = monaco;
     
@@ -37,7 +43,45 @@ function EditorPanel({
         onDismissHint();
       }
     });
-  };
+
+    // Set up cursor position tracking for replay recording
+    if (onRecordCursorMove) {
+      cursorListenerRef.current = editor.onDidChangeCursorPosition((e) => {
+        if (isRecording && onRecordCursorMove) {
+          onRecordCursorMove({
+            lineNumber: e.position.lineNumber,
+            column: e.position.column,
+          });
+        }
+      });
+    }
+
+    // Set up selection tracking for replay recording
+    if (onRecordSelection) {
+      selectionListenerRef.current = editor.onDidChangeCursorSelection((e) => {
+        if (isRecording && onRecordSelection && e.selection) {
+          onRecordSelection({
+            startLineNumber: e.selection.startLineNumber,
+            startColumn: e.selection.startColumn,
+            endLineNumber: e.selection.endLineNumber,
+            endColumn: e.selection.endColumn,
+          });
+        }
+      });
+    }
+  }, [onEditorMount, onDismissHint, onRecordCursorMove, onRecordSelection, isRecording]);
+
+  // Cleanup cursor and selection listeners
+  useEffect(() => {
+    return () => {
+      if (cursorListenerRef.current) {
+        cursorListenerRef.current.dispose();
+      }
+      if (selectionListenerRef.current) {
+        selectionListenerRef.current.dispose();
+      }
+    };
+  }, []);
 
   // Show/hide the interviewer hint widget
   useEffect(() => {
