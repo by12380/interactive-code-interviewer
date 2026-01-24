@@ -20,6 +20,7 @@ export function loadUserState(userId) {
   const attemptStartedAtByProblemId = loadUserJson(userId, "attemptStartedAtByProblemId", {});
   const bestTimeSecondsByProblemId = loadUserJson(userId, "bestTimeSecondsByProblemId", {});
   const history = loadUserJson(userId, "history", []);
+  const replayIndex = loadUserJson(userId, "replayIndex", []);
 
   return {
     codeByProblemId: codeByProblemId && typeof codeByProblemId === "object" ? codeByProblemId : {},
@@ -35,7 +36,8 @@ export function loadUserState(userId) {
       bestTimeSecondsByProblemId && typeof bestTimeSecondsByProblemId === "object"
         ? bestTimeSecondsByProblemId
         : {},
-    history: Array.isArray(history) ? history : []
+    history: Array.isArray(history) ? history : [],
+    replayIndex: Array.isArray(replayIndex) ? replayIndex : []
   };
 }
 

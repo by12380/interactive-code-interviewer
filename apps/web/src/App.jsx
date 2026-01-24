@@ -8,6 +8,9 @@ import { getCurrentUserId, getUserById, loadUsers, logIn, logOut, signUp } from 
 import { loadUserJson, loadUserState, saveUserJson } from "./userData.js";
 import { randomId } from "./storage.js";
 import { analyzeCodeForInterruptions } from "./codeAnalysis.js";
+import { createReplayRecorder } from "./replay.js";
+import { putReplay, pruneOldReplays } from "./replayStore.js";
+import CodeReplayModal from "./CodeReplayModal.jsx";
 import {
   ROADMAP_DEFAULTS,
   applySolvedProblemToRoadmap,
@@ -604,7 +607,8 @@ function ProfileModal({
   bestTimeSecondsByProblemId,
   history,
   gamification,
-  onLogOut
+  onLogOut,
+  onOpenReplay
 }) {
   const attemptedSet = useMemo(() => {
     const out = new Set();
@@ -721,8 +725,23 @@ function ProfileModal({
             <div className="profile__empty">No sessions yet.</div>
           ) : (
             <div className="profile__history">
-              {history.slice(0, 25).map((h) => (
-                <div key={h.id} className="profile__history-row">
+              {history.slice(0, 25).map((h) => {
+                const directReplayId = h?.replayId ? String(h.replayId) : "";
+                const roundReplayIds = Array.isArray(h?.interview?.rounds)
+                  ? h.interview.rounds
+                      .filter((r) => r?.type === "coding" && r?.replayId)
+                      .map((r) => String(r.replayId))
+                      .filter(Boolean)
+                  : [];
+                const replayIds = [
+                  ...(directReplayId ? [directReplayId] : []),
+                  ...roundReplayIds
+                ];
+                const uniqueReplayIds = Array.from(new Set(replayIds));
+                const hasReplay = uniqueReplayIds.length > 0;
+
+                return (
+                  <div key={h.id} className="profile__history-row">
                   <div className="profile__history-main">
                     <div className="profile__history-title">{h.problemTitle || h.problemId}</div>
                     <div className="profile__history-meta">
@@ -732,9 +751,26 @@ function ProfileModal({
                   </div>
                   <div className="profile__history-side">
                     <div className="profile__pill">{h.difficulty || "—"}</div>
+                    {hasReplay ? (
+                      <button
+                        type="button"
+                        className="profile__replay-btn"
+                        onClick={() => {
+                          const first = uniqueReplayIds[0] || null;
+                          if (!first) return;
+                          onOpenReplay?.({
+                            replayId: first,
+                            sessionReplayIds: uniqueReplayIds
+                          });
+                        }}
+                      >
+                        Replay
+                      </button>
+                    ) : null}
                   </div>
-                </div>
-              ))}
+                  </div>
+                );
+              })}
             </div>
           )}
           {history.length > 25 && (
@@ -1050,6 +1086,11 @@ export default function App() {
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [isInterviewSetupOpen, setIsInterviewSetupOpen] = useState(false);
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
+  const [replayModal, setReplayModal] = useState({
+    isOpen: false,
+    replayId: null,
+    sessionReplayIds: []
+  });
   const [uiPrefs, setUiPrefs] = useState(() =>
     normalizeUiPrefs(loadUserJson(storageUserId, UI_PREFS_KEY, UI_PREFS_DEFAULTS))
   );
@@ -1086,6 +1127,9 @@ export default function App() {
   const [history, setHistory] = useState(() => {
     return loadUserState(storageUserId).history;
   });
+  const [replayIndex, setReplayIndex] = useState(() => {
+    return loadUserState(storageUserId).replayIndex;
+  });
   const [gamification, setGamification] = useState(() =>
     normalizeGamificationState(loadUserJson(storageUserId, "gamification", GAMIFICATION_DEFAULTS))
   );
@@ -1105,6 +1149,7 @@ export default function App() {
     setAttemptStartedAtByProblemId(next.attemptStartedAtByProblemId);
     setBestTimeSecondsByProblemId(next.bestTimeSecondsByProblemId);
     setHistory(next.history);
+    setReplayIndex(next.replayIndex);
     setRoadmap(normalizeRoadmapState(loadUserJson(storageUserId, "roadmap", ROADMAP_DEFAULTS)));
   }, [storageUserId]);
 
@@ -1303,6 +1348,9 @@ export default function App() {
   const chatMessagesRef = useRef(null);
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
+  const [editorReadyTick, setEditorReadyTick] = useState(0);
+  const replayRecorderRef = useRef(null);
+  const replayActiveKeyRef = useRef("");
   const storageUserIdRef = useRef(storageUserId);
   const solvedByProblemIdRef = useRef(solvedByProblemId);
   const attemptStartedAtByProblemIdRef = useRef(attemptStartedAtByProblemId);
@@ -1310,6 +1358,7 @@ export default function App() {
   const testRunByProblemIdRef = useRef(testRunByProblemId);
   const codeByProblemIdRef = useRef(codeByProblemId);
   const historyRef = useRef(history);
+  const replayIndexRef = useRef(replayIndex);
   const difficultyRef = useRef(difficulty);
   const stopOnceRef = useRef(false);
   const lastAutoAdvanceRoundIdRef = useRef("");
@@ -1339,6 +1388,9 @@ export default function App() {
   useEffect(() => {
     historyRef.current = history;
   }, [history]);
+  useEffect(() => {
+    replayIndexRef.current = replayIndex;
+  }, [replayIndex]);
   useEffect(() => {
     difficultyRef.current = difficulty;
   }, [difficulty]);
@@ -1652,21 +1704,43 @@ export default function App() {
               return { ...(prev || {}), [problemId]: nextBest };
             });
 
-            const entry = {
-              id: randomId("session"),
-              createdAt: endedAt,
-              startedAt,
-              endedAt,
-              durationSeconds,
-              outcome: "solved",
-              problemId,
-              problemTitle: problem?.title || problemId,
-              difficulty: difficultyRef.current,
-              testsPassed: passed,
-              testsTotal: total,
-              codeSnapshot: String(codeByProblemIdRef.current?.[problemId] || "")
-            };
-            setHistory((prev) => [entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 200));
+            persistReplayIfAny()
+              .then((meta) => {
+                const entry = {
+                  id: randomId("session"),
+                  createdAt: endedAt,
+                  startedAt,
+                  endedAt,
+                  durationSeconds,
+                  outcome: "solved",
+                  problemId,
+                  problemTitle: problem?.title || problemId,
+                  difficulty: difficultyRef.current,
+                  testsPassed: passed,
+                  testsTotal: total,
+                  codeSnapshot: String(codeByProblemIdRef.current?.[problemId] || ""),
+                  replayId: meta?.id || null
+                };
+                setHistory((prev) => [entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 200));
+              })
+              .catch(() => {
+                const entry = {
+                  id: randomId("session"),
+                  createdAt: endedAt,
+                  startedAt,
+                  endedAt,
+                  durationSeconds,
+                  outcome: "solved",
+                  problemId,
+                  problemTitle: problem?.title || problemId,
+                  difficulty: difficultyRef.current,
+                  testsPassed: passed,
+                  testsTotal: total,
+                  codeSnapshot: String(codeByProblemIdRef.current?.[problemId] || ""),
+                  replayId: null
+                };
+                setHistory((prev) => [entry, ...(Array.isArray(prev) ? prev : [])].slice(0, 200));
+              });
 
             // Roadmap: update skill/performance signals + auto-complete plan tasks tied to this problem.
             try {
@@ -1784,6 +1858,18 @@ export default function App() {
     });
   };
 
+  const openReplay = ({ replayId, sessionReplayIds }) => {
+    const rid = replayId ? String(replayId) : "";
+    if (!rid) return;
+    setReplayModal({
+      isOpen: true,
+      replayId: rid,
+      sessionReplayIds: Array.isArray(sessionReplayIds) ? sessionReplayIds.map(String).filter(Boolean) : [rid]
+    });
+    // Avoid stacking modals.
+    setIsProfileOpen(false);
+  };
+
   const pauseInterviewTimer = (source = "manual") => {
     if (!isInterviewMode) return;
     setIsPaused((prev) => {
@@ -1830,9 +1916,17 @@ export default function App() {
     editor.focus();
   };
 
-  const stopInterview = (outcome = "stopped") => {
+  const stopInterview = async (outcome = "stopped") => {
     if (stopOnceRef.current) return;
     stopOnceRef.current = true;
+
+    let replayId = null;
+    try {
+      const meta = await persistReplayIfAny();
+      replayId = meta?.id || null;
+    } catch {
+      // ignore replay failures
+    }
 
     const endedAt = Date.now();
     const problemId = String(activeProblem?.id || "");
@@ -1865,7 +1959,8 @@ export default function App() {
       difficulty: difficultyRef.current,
       testsPassed: testsTotal ? testsPassed : 0,
       testsTotal: testsTotal || 0,
-      codeSnapshot: String(codeByProblemIdRef.current?.[problemId] || "")
+      codeSnapshot: String(codeByProblemIdRef.current?.[problemId] || ""),
+      replayId
     };
 
     setAttemptStartedAtByProblemId((prev) => {
@@ -1988,7 +2083,17 @@ export default function App() {
     return rounds;
   };
 
-  const advanceInterviewRound = (reason = "next") => {
+  const advanceInterviewRound = async (reason = "next") => {
+    let replayId = null;
+    try {
+      if (activeInterviewRound?.type === "coding") {
+        const meta = await persistReplayIfAny();
+        replayId = meta?.id || null;
+      }
+    } catch {
+      // ignore replay failures
+    }
+
     setInterviewSession((prev) => {
       if (!prev) return prev;
       const idx = prev.roundIndex ?? 0;
@@ -2001,6 +2106,7 @@ export default function App() {
           endedAt: now,
           durationSeconds: Math.max(0, Math.floor((now - (cur.startedAt || now)) / 1000)),
           reason,
+          replayId: cur.type === "coding" ? replayId : cur.replayId,
           answer:
             cur.type === "behavioral"
               ? String(behavioralAnswer || "")
@@ -2184,6 +2290,65 @@ export default function App() {
     content: `[code update]\n${nextCode || "// No code provided"}`
   });
 
+  const upsertReplayMeta = (meta) => {
+    const m = meta && typeof meta === "object" ? meta : null;
+    if (!m?.id) return;
+    const MAX_REPLAYS = 50;
+    setReplayIndex((prev) => {
+      const arr = Array.isArray(prev) ? prev : [];
+      const filtered = arr.filter((r) => r?.id !== m.id);
+      const next = [m, ...filtered].slice(0, MAX_REPLAYS);
+      return next;
+    });
+  };
+
+  const persistReplayIfAny = async () => {
+    const rec = replayRecorderRef.current;
+    if (!rec) return null;
+    replayRecorderRef.current = null;
+    replayActiveKeyRef.current = "";
+
+    const res = rec.stop?.();
+    const meta = res?.meta || null;
+    const payload = res?.payload || null;
+    if (!meta?.id || !payload?.id) return null;
+    if (Number(meta.eventCount || 0) <= 0) return null;
+
+    try {
+      await putReplay(payload);
+    } catch {
+      return null;
+    }
+    upsertReplayMeta(meta);
+    return meta;
+  };
+
+  const startReplayIfNeeded = async ({ key, mode, problemId, problemTitle, startedAt }) => {
+    const k = String(key || "");
+    if (!k) return;
+    if (replayActiveKeyRef.current === k && replayRecorderRef.current) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    // If switching contexts (problem/round), persist any existing replay.
+    await persistReplayIfAny();
+
+    const pid = String(problemId || "");
+    if (!pid) return;
+    const initialCode = String(codeByProblemIdRef.current?.[pid] || "");
+    const replayId = randomId("replay");
+    replayActiveKeyRef.current = k;
+    replayRecorderRef.current = createReplayRecorder({
+      replayId,
+      mode,
+      problemId: pid,
+      problemTitle,
+      startedAt,
+      initialCode,
+      editor
+    });
+  };
+
   useEffect(() => {
     try {
       localStorage.setItem("ici.activeProblemId", activeProblemId);
@@ -2217,9 +2382,57 @@ export default function App() {
   }, [storageUserId, history]);
 
   useEffect(() => {
+    saveUserJson(storageUserId, "replayIndex", replayIndex || []);
+  }, [storageUserId, replayIndex]);
+
+  useEffect(() => {
     setProblemTab("Description");
     setIsSolutionVisible(false);
   }, [activeProblemId]);
+
+  // Keep IndexedDB payloads in sync with the local replay index cap.
+  useEffect(() => {
+    const ids = (Array.isArray(replayIndex) ? replayIndex : [])
+      .map((r) => String(r?.id || ""))
+      .filter(Boolean);
+    if (!ids.length) return;
+    pruneOldReplays(ids).catch(() => {});
+  }, [replayIndex]);
+
+  // Auto-start/stop recording based on whether the editor is writable.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const isCodingRound = !isInterviewMode || activeInterviewRound?.type === "coding";
+    const problemId = String(activeProblem?.id || "");
+    if (!problemId) return;
+
+    const shouldRecord = Boolean(!isLocked && isCodingRound);
+    if (!shouldRecord) {
+      // Don't await; we just want best-effort persistence if the user navigates away.
+      persistReplayIfAny().catch(() => {});
+      return;
+    }
+
+    const mode = isInterviewMode ? "interview" : "practice";
+    const key = isInterviewMode
+      ? `interview:${String(activeInterviewRound?.id || "")}:${problemId}`
+      : `practice:${problemId}`;
+    const startedAt = isInterviewMode
+      ? Number(activeInterviewRound?.startedAt || Date.now())
+      : Number(attemptStartedAtByProblemIdRef.current?.[problemId] || Date.now());
+    const title = String(activeProblem?.title || problemId);
+    startReplayIfNeeded({ key, mode, problemId, problemTitle: title, startedAt }).catch(() => {});
+  }, [
+    editorReadyTick,
+    isLocked,
+    isInterviewMode,
+    activeInterviewRound?.id,
+    activeInterviewRound?.type,
+    activeInterviewRound?.startedAt,
+    activeProblemId
+  ]);
 
   useEffect(() => {
     if (isLocked) return;
@@ -2861,6 +3074,13 @@ function __ici_isEqual(problemId, actual, expected) {
         onClose={() => setIsAuthOpen(false)}
         onAuthed={handleAuthed}
       />
+      <CodeReplayModal
+        isOpen={replayModal.isOpen}
+        onClose={() => setReplayModal({ isOpen: false, replayId: null, sessionReplayIds: [] })}
+        initialReplayId={replayModal.replayId}
+        sessionReplayIds={replayModal.sessionReplayIds}
+        replayIndex={replayIndex}
+      />
       <ProfileModal
         isOpen={isProfileOpen}
         onClose={() => setIsProfileOpen(false)}
@@ -2873,6 +3093,7 @@ function __ici_isEqual(problemId, actual, expected) {
         history={history}
         gamification={gamification}
         onLogOut={handleLogOut}
+        onOpenReplay={openReplay}
       />
       <LeaderboardModal
         isOpen={isLeaderboardOpen}
@@ -3158,7 +3379,7 @@ function __ici_isEqual(problemId, actual, expected) {
               )}
             </div>
           </div>
-        </aside>
+        </aside>8834e6f6-df02-4f1c-b2ab-b801600f6c5d
 
         <div className="app__content">
           <main id="main-content" className="app__main">
@@ -3200,6 +3421,7 @@ function __ici_isEqual(problemId, actual, expected) {
               onMount={(editor, monaco) => {
                 editorRef.current = editor;
                 monacoRef.current = monaco;
+                setEditorReadyTick((t) => t + 1);
               }}
               onChange={(value) => setCode(value ?? "")}
               options={editorOptions}
