@@ -139,6 +139,8 @@ html[data-keyboard-nav="true"] a:focus {
 }
 
 .app__sidebar {
+  grid-column: 1;
+  grid-row: 1;
   position: sticky;
   top: 0;
   height: 100vh;
@@ -208,6 +210,8 @@ html[data-theme="dark"] .app__sidebar-section {
 }
 
 .app__content {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
 }
 
@@ -1728,10 +1732,17 @@ html[data-theme="dark"] .voice__chip {
   }
 
   .app__sidebar {
+    grid-column: 1;
+    grid-row: 1;
     position: static;
     height: auto;
     border-right: none;
     border-bottom: 1px solid var(--border);
+  }
+
+  .app__content {
+    grid-column: 1;
+    grid-row: 2;
   }
 
   .app__main {
