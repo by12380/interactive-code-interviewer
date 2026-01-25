@@ -3379,7 +3379,7 @@ function __ici_isEqual(problemId, actual, expected) {
               )}
             </div>
           </div>
-        </aside>8834e6f6-df02-4f1c-b2ab-b801600f6c5d
+        </aside>
 
         <div className="app__content">
           <main id="main-content" className="app__main">
