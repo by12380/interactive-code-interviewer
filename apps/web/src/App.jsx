@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
-import { sendChat } from "./api.js";
+import { sendChat, translateCode } from "./api.js";
 import TutorialOverlay from "./TutorialOverlay.jsx";
 import VoicePanel from "./VoicePanel.jsx";
 import RoadmapPanel from "./RoadmapPanel.jsx";
@@ -471,6 +471,225 @@ function Modal({ isOpen, title, children, onClose }) {
         <div className="ici-modal__body">{children}</div>
       </div>
     </div>
+  );
+}
+
+function CodeTranslationModal({ isOpen, onClose, problem, code, onApplyCode }) {
+  const [sourceLanguage, setSourceLanguage] = useState("javascript");
+  const [targetLanguage, setTargetLanguage] = useState("python");
+  const [includeTests, setIncludeTests] = useState(true);
+  const [idiomatic, setIdiomatic] = useState(true);
+  const [preserveFormatting, setPreserveFormatting] = useState(true);
+  const [preserveComments, setPreserveComments] = useState(true);
+  const [activeTab, setActiveTab] = useState("code"); // code | tests | notes
+
+  const [isWorking, setIsWorking] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setError("");
+    setIsWorking(false);
+    setResult(null);
+    setActiveTab("code");
+  }, [isOpen]);
+
+  const doTranslate = async () => {
+    setError("");
+    setIsWorking(true);
+    try {
+      const res = await translateCode({
+        sourceLanguage,
+        targetLanguage,
+        code,
+        problem,
+        options: {
+          includeTests,
+          idiomatic,
+          preserveFormatting,
+          preserveComments
+        }
+      });
+      setResult(res || null);
+      setActiveTab("code");
+    } catch (e) {
+      setError(e?.message || "Unable to translate right now.");
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
+  const copyToClipboard = async (text) => {
+    try {
+      await navigator.clipboard.writeText(String(text || ""));
+    } catch {
+      // If clipboard fails (non-HTTPS), fall back to selecting text manually.
+    }
+  };
+
+  const canApply = Boolean(result?.code && typeof onApplyCode === "function");
+  const showTests = Boolean(result?.tests) && includeTests;
+
+  return (
+    <Modal isOpen={isOpen} title="Code Translation" onClose={onClose}>
+      <div className="translate">
+        <div className="translate__grid">
+          <label className="translate__field">
+            <span className="translate__label">From</span>
+            <select value={sourceLanguage} onChange={(e) => setSourceLanguage(e.target.value)}>
+              <option value="javascript">JavaScript</option>
+              <option value="python">Python</option>
+              <option value="java">Java</option>
+              <option value="cpp">C++</option>
+            </select>
+          </label>
+          <label className="translate__field">
+            <span className="translate__label">To</span>
+            <select value={targetLanguage} onChange={(e) => setTargetLanguage(e.target.value)}>
+              <option value="python">Python</option>
+              <option value="javascript">JavaScript</option>
+              <option value="java">Java</option>
+              <option value="cpp">C++</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="translate__toggles">
+          <label className="translate__toggle">
+            <input
+              type="checkbox"
+              checked={includeTests}
+              onChange={(e) => setIncludeTests(e.target.checked)}
+            />
+            <span>Translate tests</span>
+          </label>
+          <label className="translate__toggle">
+            <input type="checkbox" checked={idiomatic} onChange={(e) => setIdiomatic(e.target.checked)} />
+            <span>Idiomatic output</span>
+          </label>
+          <label className="translate__toggle">
+            <input
+              type="checkbox"
+              checked={preserveFormatting}
+              onChange={(e) => setPreserveFormatting(e.target.checked)}
+            />
+            <span>Preserve formatting</span>
+          </label>
+          <label className="translate__toggle">
+            <input
+              type="checkbox"
+              checked={preserveComments}
+              onChange={(e) => setPreserveComments(e.target.checked)}
+            />
+            <span>Preserve comments</span>
+          </label>
+        </div>
+
+        {error ? <div className="translate__error">{error}</div> : null}
+
+        <div className="translate__actions">
+          <button type="button" className="translate__btn translate__btn--primary" onClick={doTranslate} disabled={isWorking}>
+            {isWorking ? "Translating..." : "Translate"}
+          </button>
+          {result?.code ? (
+            <>
+              <button type="button" className="translate__btn" onClick={() => copyToClipboard(result.code)}>
+                Copy code
+              </button>
+              {showTests ? (
+                <button type="button" className="translate__btn" onClick={() => copyToClipboard(result.tests)}>
+                  Copy tests
+                </button>
+              ) : null}
+              {canApply ? (
+                <button
+                  type="button"
+                  className="translate__btn"
+                  onClick={() => onApplyCode(result.code)}
+                  title="Replace the editor contents with the translated code"
+                >
+                  Apply to editor
+                </button>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+
+        {result ? (
+          <>
+            <div className="translate__tabs" role="tablist" aria-label="Translation output tabs">
+              <button
+                type="button"
+                className={`translate__tab ${activeTab === "code" ? "is-active" : ""}`}
+                onClick={() => setActiveTab("code")}
+              >
+                Code
+              </button>
+              <button
+                type="button"
+                className={`translate__tab ${activeTab === "tests" ? "is-active" : ""}`}
+                onClick={() => setActiveTab("tests")}
+                disabled={!showTests}
+                title={!showTests ? "No tests were generated." : ""}
+              >
+                Tests
+              </button>
+              <button
+                type="button"
+                className={`translate__tab ${activeTab === "notes" ? "is-active" : ""}`}
+                onClick={() => setActiveTab("notes")}
+              >
+                Notes
+              </button>
+            </div>
+
+            <div className="translate__output">
+              {activeTab === "code" ? (
+                <pre className="translate__pre">{result.code || ""}</pre>
+              ) : null}
+              {activeTab === "tests" ? (
+                <pre className="translate__pre">{result.tests || ""}</pre>
+              ) : null}
+              {activeTab === "notes" ? (
+                <div className="translate__notes">
+                  {Array.isArray(result.warnings) && result.warnings.length ? (
+                    <div className="translate__note-block">
+                      <div className="translate__note-title">Warnings</div>
+                      <ul className="translate__note-list">
+                        {result.warnings.map((w, i) => (
+                          <li key={`w-${i}`}>{String(w)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  {Array.isArray(result.notes) && result.notes.length ? (
+                    <div className="translate__note-block">
+                      <div className="translate__note-title">Notes</div>
+                      <ul className="translate__note-list">
+                        {result.notes.map((n, i) => (
+                          <li key={`n-${i}`}>{String(n)}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <div className="translate__muted">No notes.</div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="translate__hint">
+              Tip: This app can only run JavaScript in the built-in runner, but you can copy the translated code/tests into your language environment.
+            </div>
+          </>
+        ) : (
+          <div className="translate__muted">
+            Choose source/target languages, then translate the current editor code.
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -1086,6 +1305,7 @@ export default function App() {
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
   const [isInterviewSetupOpen, setIsInterviewSetupOpen] = useState(false);
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
+  const [isTranslateOpen, setIsTranslateOpen] = useState(false);
   const [replayModal, setReplayModal] = useState({
     isOpen: false,
     replayId: null,
@@ -3069,6 +3289,27 @@ function __ici_isEqual(problemId, actual, expected) {
           </div>
         </div>
       </Modal>
+      <CodeTranslationModal
+        isOpen={isTranslateOpen}
+        onClose={() => setIsTranslateOpen(false)}
+        problem={
+          activeProblem
+            ? {
+                id: activeProblem.id,
+                title: activeProblem.title,
+                signature: activeProblem.signature,
+                functionName: activeProblem.functionName,
+                difficulty: activeProblem.difficulty,
+                tests: activeProblem.tests
+              }
+            : null
+        }
+        code={code}
+        onApplyCode={(next) => {
+          setCode(next);
+          setIsTranslateOpen(false);
+        }}
+      />
       <AuthModal
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
@@ -3345,6 +3586,14 @@ function __ici_isEqual(problemId, actual, expected) {
               aria-label="Open appearance and accessibility settings"
             >
               Preferences
+            </button>
+            <button
+              type="button"
+              className="tutorial-trigger"
+              onClick={() => setIsTranslateOpen(true)}
+              aria-label="Open code translation"
+            >
+              Code Translation
             </button>
           </div>
 
