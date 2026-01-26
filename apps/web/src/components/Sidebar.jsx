@@ -12,6 +12,7 @@ function Sidebar({
   onOpenGamification,
   onOpenRoadmap,
   onStartTutorial,
+  onOpenTranslator,
   problemSelector,
 }) {
   const { theme, toggleTheme, openSettings } = useTheme();
@@ -218,6 +219,16 @@ function Sidebar({
             {!isCollapsed && <span className="sidebar__nav-text">Achievements</span>}
           </button>
         )}
+
+        <button
+          type="button"
+          className="sidebar__nav-item"
+          onClick={onOpenTranslator}
+          aria-label="Code translator"
+        >
+          <span className="sidebar__nav-icon">🔄</span>
+          {!isCollapsed && <span className="sidebar__nav-text">Code Translator</span>}
+        </button>
 
         <button
           type="button"

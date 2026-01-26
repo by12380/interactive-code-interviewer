@@ -110,6 +110,126 @@ When the candidate asks for help, guide them with questions rather than direct a
   }
 });
 
+// Code Translation endpoint
+app.post("/api/translate", async (req, res) => {
+  if (!OPENAI_API_KEY) {
+    return res.status(500).send("Missing OPENAI_API_KEY on the server.");
+  }
+
+  const { code, sourceLanguage, targetLanguage, options = {} } = req.body || {};
+
+  if (!code || typeof code !== "string") {
+    return res.status(400).send("code must be a non-empty string.");
+  }
+
+  if (!sourceLanguage || !targetLanguage) {
+    return res.status(400).send("sourceLanguage and targetLanguage are required.");
+  }
+
+  const validLanguages = ["javascript", "python", "java", "cpp"];
+  if (!validLanguages.includes(sourceLanguage) || !validLanguages.includes(targetLanguage)) {
+    return res.status(400).send(`Languages must be one of: ${validLanguages.join(", ")}`);
+  }
+
+  const languageNames = {
+    javascript: "JavaScript",
+    python: "Python",
+    java: "Java",
+    cpp: "C++"
+  };
+
+  const { preserveComments = true, generateIdiomatic = true, includeTestCases = true } = options;
+
+  const systemPrompt = `You are an expert code translator specializing in converting code between programming languages.
+Your task is to translate ${languageNames[sourceLanguage]} code to ${languageNames[targetLanguage]}.
+
+TRANSLATION RULES:
+1. ${preserveComments ? "PRESERVE all comments and translate them to the target language's comment syntax." : "You may remove comments."}
+2. ${generateIdiomatic ? "Generate IDIOMATIC code that follows best practices and conventions of the target language." : "Perform a direct translation without optimizing for idioms."}
+3. ${includeTestCases ? "Translate any test cases, assertions, or example usage to the target language format." : "Focus only on the main code logic."}
+
+LANGUAGE-SPECIFIC GUIDELINES:
+
+For JavaScript:
+- Use modern ES6+ syntax (const/let, arrow functions, template literals)
+- Use Array methods (map, filter, reduce) where appropriate
+- Handle async operations with async/await
+
+For Python:
+- Use Pythonic idioms (list comprehensions, generators, context managers)
+- Follow PEP 8 style guidelines
+- Use f-strings for string formatting
+- Add type hints where beneficial
+
+For Java:
+- Wrap code in appropriate class structure if needed
+- Use proper access modifiers
+- Use Java Streams for collection operations where appropriate
+- Include necessary imports as comments
+
+For C++:
+- Use modern C++ features (auto, range-based for, smart pointers)
+- Include necessary #include directives as comments
+- Use STL containers appropriately
+- Consider memory management
+
+IMPORTANT:
+- Maintain the same logic and functionality
+- Preserve variable names where possible (adjust for naming conventions)
+- Handle language-specific features intelligently
+- If something cannot be directly translated, provide an equivalent implementation with a comment explaining the adaptation
+- Output ONLY the translated code, no explanations before or after`;
+
+  const payload = {
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `Translate this ${languageNames[sourceLanguage]} code to ${languageNames[targetLanguage]}:\n\n${code}` }
+    ],
+    temperature: 0.2,
+    max_tokens: 2000
+  };
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(response.status).send(errorText);
+    }
+
+    const data = await response.json();
+    let translatedCode = data.choices?.[0]?.message?.content?.trim() || "";
+
+    // Clean up the response - remove markdown code blocks if present
+    translatedCode = translatedCode
+      .replace(/^```[\w]*\n?/gm, "")
+      .replace(/\n?```$/gm, "")
+      .trim();
+
+    return res.json({
+      translatedCode,
+      sourceLanguage,
+      targetLanguage,
+      metadata: {
+        model: "gpt-4o-mini",
+        preservedComments: preserveComments,
+        idiomaticCode: generateIdiomatic,
+        includedTestCases: includeTestCases
+      }
+    });
+  } catch (error) {
+    return res.status(500).send(error.message || "Translation request failed.");
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`API server listening on http://localhost:${PORT}`);
 });

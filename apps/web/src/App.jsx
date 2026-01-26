@@ -22,6 +22,7 @@ import GamificationPanel from "./components/GamificationPanel.jsx";
 import UnlockToast from "./components/UnlockToast.jsx";
 import PrepRoadmap from "./components/PrepRoadmap.jsx";
 import CodeReplayPanel from "./components/CodeReplayPanel.jsx";
+import CodeTranslatorPanel from "./components/CodeTranslatorPanel.jsx";
 import { useTheme } from "./contexts/ThemeContext.jsx";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
 import { 
@@ -313,6 +314,9 @@ export default function App() {
   const [currentReplay, setCurrentReplay] = useState(null);
   const [allReplays, setAllReplays] = useState(() => getAllReplays());
 
+  // Code Translator state
+  const [isTranslatorVisible, setIsTranslatorVisible] = useState(false);
+
   const TOTAL_SECONDS = currentProblem?.timeLimit || 30 * 60;
   const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
   const isTimeUp = elapsedSeconds >= TOTAL_SECONDS;
@@ -367,6 +371,15 @@ export default function App() {
   const handleCloseReplay = useCallback(() => {
     setIsReplayVisible(false);
     setCurrentReplay(null);
+  }, []);
+
+  // Code Translator handlers
+  const handleOpenTranslator = useCallback(() => {
+    setIsTranslatorVisible(true);
+  }, []);
+
+  const handleCloseTranslator = useCallback(() => {
+    setIsTranslatorVisible(false);
   }, []);
 
   const editorOptions = useMemo(
@@ -1372,6 +1385,7 @@ export default function App() {
         onOpenGamification={handleOpenGamification}
         onOpenRoadmap={handleOpenRoadmap}
         onStartTutorial={handleStartTutorial}
+        onOpenTranslator={handleOpenTranslator}
         problemSelector={
           <ProblemSelector
             problems={PROBLEMS}
@@ -1610,6 +1624,15 @@ export default function App() {
           onClose={handleCloseReplay}
           problemTitle={currentReplay.problemTitle || currentProblem?.title || "Problem"}
           allReplays={allReplays}
+        />
+      )}
+      
+      {/* Code Translator Panel */}
+      {isTranslatorVisible && (
+        <CodeTranslatorPanel
+          onClose={handleCloseTranslator}
+          initialCode={code}
+          initialLanguage="javascript"
         />
       )}
     </div>
