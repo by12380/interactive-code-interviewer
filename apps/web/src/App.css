@@ -630,6 +630,315 @@ html[data-theme="dark"] .auth__field input {
   letter-spacing: 0.01em;
 }
 
+.panel__header--chat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.chat__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat__header-btn {
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  background: rgba(255, 255, 255, 0.85);
+  color: #0f172a;
+  padding: 8px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+
+html[data-theme="dark"] .chat__header-btn {
+  background: rgba(15, 23, 42, 0.7);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #e5e7eb;
+}
+
+.templates-modal__panel {
+  width: min(980px, calc(100vw - 40px));
+}
+
+.templates {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.templates__top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.templates__filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.templates__grid {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 520px;
+}
+
+@media (max-width: 820px) {
+  .templates__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.templates__list {
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 14px;
+  overflow: auto;
+  background: rgba(248, 250, 252, 0.6);
+  display: flex;
+  flex-direction: column;
+}
+
+html[data-theme="dark"] .templates__list {
+  background: rgba(15, 23, 42, 0.65);
+  border-color: rgba(148, 163, 184, 0.26);
+}
+
+.templates__row {
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+}
+
+.templates__row:first-of-type {
+  border-top: none;
+}
+
+.templates__row.is-active {
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.templates__item {
+  flex: 1;
+  text-align: left;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.templates__item-run {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 950;
+  padding: 10px 12px;
+  border-left: 1px solid rgba(226, 232, 240, 0.8);
+  color: #312e81;
+}
+
+html[data-theme="dark"] .templates__item-run {
+  border-left-color: rgba(148, 163, 184, 0.25);
+  color: #c7d2fe;
+}
+
+.templates__item-title {
+  font-weight: 950;
+}
+
+.templates__item-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 800;
+}
+
+html[data-theme="dark"] .templates__item-meta {
+  color: #94a3b8;
+}
+
+.templates__detail {
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 14px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.92);
+  overflow: auto;
+}
+
+html[data-theme="dark"] .templates__detail {
+  background: rgba(15, 23, 42, 0.75);
+  border-color: rgba(148, 163, 184, 0.26);
+}
+
+.templates__detail-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.templates__detail-title {
+  font-weight: 950;
+  font-size: 14px;
+}
+
+.templates__detail-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.templates__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 900;
+  color: #334155;
+}
+
+html[data-theme="dark"] .templates__field {
+  color: #e5e7eb;
+}
+
+.templates__field--grow {
+  flex: 1;
+  min-width: 200px;
+}
+
+.templates__label {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.templates__field input,
+.templates__field select,
+.templates__field textarea {
+  border: 1px solid #cbd5f5;
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: #ffffff;
+  color: inherit;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.05);
+  font: inherit;
+}
+
+html[data-theme="dark"] .templates__field input,
+html[data-theme="dark"] .templates__field select,
+html[data-theme="dark"] .templates__field textarea {
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(148, 163, 184, 0.35);
+  color: #e5e7eb;
+}
+
+.templates__btn {
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  background: rgba(248, 250, 252, 0.9);
+  color: inherit;
+  padding: 10px 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.templates__btn--primary {
+  border: none;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-strong) 100%);
+  color: #ffffff;
+  box-shadow: 0 10px 18px rgba(79, 70, 229, 0.22);
+}
+
+.templates__btn--danger {
+  border: none;
+  background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);
+  color: #ffffff;
+}
+
+.templates__error {
+  margin-top: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.08);
+  color: #7f1d1d;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-weight: 800;
+}
+
+html[data-theme="dark"] .templates__error {
+  background: rgba(127, 29, 29, 0.25);
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fecaca;
+}
+
+.templates__vars {
+  margin-top: 12px;
+}
+
+.templates__vars-title,
+.templates__preview-title {
+  font-weight: 950;
+  margin-bottom: 8px;
+}
+
+.templates__vars-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .templates__vars-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.templates__preview {
+  margin-top: 12px;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.templates__pre {
+  margin: 0;
+  padding: 12px;
+  background: #0b1220;
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.templates__hint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+html[data-theme="dark"] .templates__hint {
+  color: #94a3b8;
+}
+
+.templates__empty {
+  padding: 12px;
+  color: #64748b;
+  font-weight: 800;
+}
+
 html[data-theme="dark"] .panel__header {
   background: rgba(17, 24, 39, 0.95);
   color: #e5e7eb;

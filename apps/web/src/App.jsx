@@ -4,6 +4,7 @@ import { sendChat, translateCode } from "./api.js";
 import TutorialOverlay from "./TutorialOverlay.jsx";
 import VoicePanel from "./VoicePanel.jsx";
 import RoadmapPanel from "./RoadmapPanel.jsx";
+import PromptTemplatesModal from "./PromptTemplatesModal.jsx";
 import { getCurrentUserId, getUserById, loadUsers, logIn, logOut, signUp } from "./auth.js";
 import { loadUserJson, loadUserState, saveUserJson } from "./userData.js";
 import { randomId } from "./storage.js";
@@ -1306,6 +1307,7 @@ export default function App() {
   const [isInterviewSetupOpen, setIsInterviewSetupOpen] = useState(false);
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
   const [isTranslateOpen, setIsTranslateOpen] = useState(false);
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [replayModal, setReplayModal] = useState({
     isOpen: false,
     replayId: null,
@@ -1356,6 +1358,11 @@ export default function App() {
   const [roadmap, setRoadmap] = useState(() =>
     normalizeRoadmapState(loadUserJson(storageUserId, "roadmap", ROADMAP_DEFAULTS))
   );
+  const [promptTemplates, setPromptTemplates] = useState(() =>
+    Array.isArray(loadUserJson(storageUserId, "promptTemplates", []))
+      ? loadUserJson(storageUserId, "promptTemplates", [])
+      : []
+  );
 
   useEffect(() => {
     setCurrentUser(currentUserId ? getUserById(currentUserId) : null);
@@ -1371,6 +1378,8 @@ export default function App() {
     setHistory(next.history);
     setReplayIndex(next.replayIndex);
     setRoadmap(normalizeRoadmapState(loadUserJson(storageUserId, "roadmap", ROADMAP_DEFAULTS)));
+    const nextTemplates = loadUserJson(storageUserId, "promptTemplates", []);
+    setPromptTemplates(Array.isArray(nextTemplates) ? nextTemplates : []);
   }, [storageUserId]);
 
   useEffect(() => {
@@ -1386,6 +1395,10 @@ export default function App() {
   useEffect(() => {
     saveUserJson(storageUserId, "roadmap", roadmap);
   }, [storageUserId, roadmap]);
+
+  useEffect(() => {
+    saveUserJson(storageUserId, "promptTemplates", Array.isArray(promptTemplates) ? promptTemplates : []);
+  }, [storageUserId, promptTemplates]);
 
   useEffect(() => {
     setUiPrefs(normalizeUiPrefs(loadUserJson(storageUserId, UI_PREFS_KEY, UI_PREFS_DEFAULTS)));
@@ -3164,6 +3177,18 @@ function __ici_isEqual(problemId, actual, expected) {
     setIsProfileOpen(false);
   };
 
+  const templateContextVars = useMemo(() => {
+    const hints = Array.isArray(activeProblem?.hints) ? activeProblem.hints : [];
+    return {
+      code: String(code || ""),
+      problemTitle: String(activeProblem?.title || ""),
+      problemDescription: String(activeProblem?.description || ""),
+      problemSignature: String(activeProblem?.signature || ""),
+      difficulty: String(difficulty || ""),
+      hints: hints.join("\n")
+    };
+  }, [code, activeProblem, difficulty]);
+
   return (
     <div className="app">
       {toast ? (
@@ -3289,6 +3314,15 @@ function __ici_isEqual(problemId, actual, expected) {
           </div>
         </div>
       </Modal>
+      <PromptTemplatesModal
+        isOpen={isTemplatesOpen}
+        onClose={() => setIsTemplatesOpen(false)}
+        storageUserId={storageUserId}
+        customTemplates={promptTemplates}
+        onChangeCustomTemplates={setPromptTemplates}
+        contextVars={templateContextVars}
+        onRunPrompt={(text) => handleSend(text)}
+      />
       <CodeTranslationModal
         isOpen={isTranslateOpen}
         onClose={() => setIsTranslateOpen(false)}
@@ -4155,7 +4189,18 @@ function __ici_isEqual(problemId, actual, expected) {
           />
 
           <section className="panel panel--chat" data-tutorial="coach">
-            <div className="panel__header">Interview Coach</div>
+            <div className="panel__header panel__header--chat">
+              <div>Interview Coach</div>
+              <div className="chat__header-actions">
+                <button
+                  type="button"
+                  className="chat__header-btn"
+                  onClick={() => setIsTemplatesOpen(true)}
+                >
+                  Templates
+                </button>
+              </div>
+            </div>
             <div className="chat">
               <div className="chat__messages" ref={chatMessagesRef}>
                 {messages.map((message, index) => (
