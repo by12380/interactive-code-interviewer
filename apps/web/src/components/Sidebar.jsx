@@ -1,5 +1,6 @@
 import { memo, useState, useCallback, useMemo } from "react";
 import { useTheme } from "../contexts/ThemeContext.jsx";
+import { useFocusMode } from "../contexts/FocusModeContext.jsx";
 import { calculateLevel, getLevelProgress } from "../services/gamificationService.js";
 
 function Sidebar({
@@ -17,6 +18,7 @@ function Sidebar({
   problemSelector,
 }) {
   const { theme, toggleTheme, openSettings } = useTheme();
+  const { settings: focusSettings, toggleFocusMode, openPanel: openFocusPanel } = useFocusMode();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
@@ -239,6 +241,21 @@ function Sidebar({
         >
           <span className="sidebar__nav-icon">📝</span>
           {!isCollapsed && <span className="sidebar__nav-text">Prompt Templates</span>}
+        </button>
+
+        <button
+          type="button"
+          className={`sidebar__nav-item ${focusSettings.isEnabled ? "sidebar__nav-item--active" : ""}`}
+          onClick={openFocusPanel}
+          aria-label="Focus Mode settings"
+        >
+          <span className="sidebar__nav-icon">🎯</span>
+          {!isCollapsed && (
+            <span className="sidebar__nav-text">
+              Focus Mode
+              {focusSettings.isEnabled && <span className="sidebar__nav-badge">ON</span>}
+            </span>
+          )}
         </button>
 
         <button

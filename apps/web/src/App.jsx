@@ -24,7 +24,9 @@ import PrepRoadmap from "./components/PrepRoadmap.jsx";
 import CodeReplayPanel from "./components/CodeReplayPanel.jsx";
 import CodeTranslatorPanel from "./components/CodeTranslatorPanel.jsx";
 import PromptTemplatesPanel from "./components/PromptTemplatesPanel.jsx";
+import FocusModePanel from "./components/FocusModePanel.jsx";
 import { useTheme } from "./contexts/ThemeContext.jsx";
+import { useFocusMode } from "./contexts/FocusModeContext.jsx";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
 import { 
   getCurrentUser, 
@@ -221,6 +223,7 @@ const runTestCases = (code, testCases, problem) => {
 
 export default function App() {
   const { accessibility } = useTheme();
+  const { settings: focusSettings, toggleFocusMode, disableFocusMode } = useFocusMode();
   
   // User authentication state
   const [user, setUser] = useState(() => getCurrentUser());
@@ -1332,18 +1335,29 @@ export default function App() {
     }, 100);
   }, [code, isRunning, isEditorDisabled]);
 
-  // Add keyboard shortcut for running code
+  // Add keyboard shortcut for running code and focus mode
   useEffect(() => {
     const handleKeyDown = (event) => {
+      // Ctrl/Cmd + Enter to run code
       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
         event.preventDefault();
         handleRunCode();
+      }
+      // Ctrl/Cmd + Shift + F to toggle focus mode
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        toggleFocusMode();
+      }
+      // Escape to exit focus mode
+      if (event.key === "Escape" && focusSettings.isEnabled) {
+        event.preventDefault();
+        disableFocusMode();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleRunCode]);
+  }, [handleRunCode, toggleFocusMode, disableFocusMode, focusSettings.isEnabled]);
 
   const timeScore = useMemo(
     () => getTimeScore(elapsedSeconds, TOTAL_SECONDS),
@@ -1418,8 +1432,20 @@ export default function App() {
     return "Solid performance. Review runtime complexity for further gains.";
   }, [efficiencyScore, hintsScore, testsScore]);
 
+  // Focus mode computed values
+  const shouldHideSidebar = focusSettings.isEnabled && focusSettings.hideSidebar;
+  const shouldHideHeader = focusSettings.isEnabled && focusSettings.hideHeader;
+  const shouldHideChat = focusSettings.isEnabled && focusSettings.hideChat;
+  const shouldHideMetrics = focusSettings.isEnabled && focusSettings.hideMetrics;
+  const shouldHideProblem = focusSettings.isEnabled && focusSettings.hideProblem;
+  const isZenMode = focusSettings.isEnabled && focusSettings.zenMode;
+
   return (
-    <div className="app app--with-sidebar" role="application" aria-label="Live AI Coding Interviewer">
+    <div 
+      className={`app app--with-sidebar ${focusSettings.isEnabled ? "app--focus-mode" : ""} ${isZenMode ? "app--zen-mode" : ""}`} 
+      role="application" 
+      aria-label="Live AI Coding Interviewer"
+    >
       {/* Skip links for keyboard navigation */}
       <SkipLinks />
       
@@ -1431,57 +1457,76 @@ export default function App() {
         aria-atomic="true"
         id="sr-announcements"
       />
+
+      {/* Focus Mode Exit Button (floating) */}
+      {focusSettings.isEnabled && (
+        <button
+          type="button"
+          className="focus-mode-exit-fab"
+          onClick={disableFocusMode}
+          aria-label="Exit focus mode"
+          title="Exit Focus Mode (Esc)"
+        >
+          <span className="focus-mode-exit-fab__icon">×</span>
+        </button>
+      )}
       
       {/* Sidebar Navigation */}
-      <Sidebar
-        user={user}
-        onOpenAuth={handleOpenAuth}
-        onOpenProfile={handleOpenProfile}
-        onLogout={handleLogout}
-        onOpenLeaderboard={handleOpenLeaderboard}
-        onStartInterviewSim={handleOpenInterviewLauncher}
-        onOpenGamification={handleOpenGamification}
-        onOpenRoadmap={handleOpenRoadmap}
-        onStartTutorial={handleStartTutorial}
-        onOpenTranslator={handleOpenTranslator}
-        onOpenTemplates={handleOpenTemplates}
-        problemSelector={
-          <ProblemSelector
-            problems={PROBLEMS}
-            currentProblemId={currentProblemId}
-            onSelectProblem={handleSelectProblem}
-            isLocked={isLocked}
-            user={user}
-          />
-        }
-      />
+      {!shouldHideSidebar && (
+        <Sidebar
+          user={user}
+          onOpenAuth={handleOpenAuth}
+          onOpenProfile={handleOpenProfile}
+          onLogout={handleLogout}
+          onOpenLeaderboard={handleOpenLeaderboard}
+          onStartInterviewSim={handleOpenInterviewLauncher}
+          onOpenGamification={handleOpenGamification}
+          onOpenRoadmap={handleOpenRoadmap}
+          onStartTutorial={handleStartTutorial}
+          onOpenTranslator={handleOpenTranslator}
+          onOpenTemplates={handleOpenTemplates}
+          problemSelector={
+            <ProblemSelector
+              problems={PROBLEMS}
+              currentProblemId={currentProblemId}
+              onSelectProblem={handleSelectProblem}
+              isLocked={isLocked}
+              user={user}
+            />
+          }
+        />
+      )}
 
       {/* Main Content Area */}
-      <div className="app__content">
-        <Header
-          difficulty={difficulty}
-          isLocked={isLocked}
-          isPaused={isPaused}
-          isTimeUp={isTimeUp}
-          remainingSeconds={remainingSeconds}
-          onDifficultyChange={handleDifficultyChange}
-          onPauseToggle={handlePauseToggle}
-          onStop={handleStop}
-          currentProblemTitle={currentProblem?.title}
-        />
-
-        <main className="app__main" id="main-content" role="main">
-        <div className="app__problem-section" id="problem-panel">
-          <ProblemPanel
-            problem={currentProblem}
-            hintsRevealed={hintsRevealed}
-            onRevealHint={handleRevealHint}
-            showSolution={showSolution}
-            onShowSolution={handleShowSolution}
-            isCompleted={isCompleted}
+      <div className={`app__content ${shouldHideSidebar ? "app__content--full-width" : ""}`}>
+        {!shouldHideHeader && (
+          <Header
+            difficulty={difficulty}
+            isLocked={isLocked}
+            isPaused={isPaused}
+            isTimeUp={isTimeUp}
+            remainingSeconds={remainingSeconds}
+            onDifficultyChange={handleDifficultyChange}
+            onPauseToggle={handlePauseToggle}
+            onStop={handleStop}
+            currentProblemTitle={currentProblem?.title}
           />
-        </div>
-        <div className="app__editor-section" id="editor-panel">
+        )}
+
+        <main className={`app__main ${isZenMode ? "app__main--zen" : ""} ${shouldHideProblem && !isZenMode ? "app__main--no-problem" : ""} ${shouldHideChat && !isZenMode ? "app__main--no-chat" : ""}`} id="main-content" role="main">
+        {!isZenMode && !shouldHideProblem && (
+          <div className="app__problem-section" id="problem-panel">
+            <ProblemPanel
+              problem={currentProblem}
+              hintsRevealed={hintsRevealed}
+              onRevealHint={handleRevealHint}
+              showSolution={showSolution}
+              onShowSolution={handleShowSolution}
+              isCompleted={isCompleted}
+            />
+          </div>
+        )}
+        <div className={`app__editor-section ${isZenMode ? "app__editor-section--zen" : ""}`} id="editor-panel">
           <EditorPanel
             canUndo={canUndo}
             canRedo={canRedo}
@@ -1500,37 +1545,43 @@ export default function App() {
             onRecordSelection={handleRecordSelection}
             isRecording={!!replaySession && !isLocked}
           />
-          <ConsolePanel
-            logs={consoleLogs}
-            onClear={handleClearConsole}
-            isRunning={isRunning}
-          />
+          {!isZenMode && (
+            <ConsolePanel
+              logs={consoleLogs}
+              onClear={handleClearConsole}
+              isRunning={isRunning}
+            />
+          )}
         </div>
-        <div className="app__sidebar" id="chat-panel">
-          <ChatPanel
-            messages={messages}
-            input={input}
-            isLocked={isLocked}
-            isPaused={isPaused}
-            isSending={isSending}
-            onInputChange={handleInputChange}
-            onKeyDown={handleInputKeyDown}
-            onSend={handleSend}
-          />
-          <SessionMetrics
-            hintsUsed={hintsUsed}
-            testsPassed={testsPassed}
-            testsTotal={testsTotal}
-            testResults={testResults}
-            efficiency={efficiency}
-            efficiencyNote={efficiencyNote}
-            testsNote={testsNote}
-            isLocked={isLocked}
-            onEvaluateEfficiency={handleEvaluateEfficiency}
-            onRunTests={handleRunTests}
-            onComplete={handleStop}
-          />
-        </div>
+        {!shouldHideChat && !isZenMode && (
+          <div className="app__sidebar" id="chat-panel">
+            <ChatPanel
+              messages={messages}
+              input={input}
+              isLocked={isLocked}
+              isPaused={isPaused}
+              isSending={isSending}
+              onInputChange={handleInputChange}
+              onKeyDown={handleInputKeyDown}
+              onSend={handleSend}
+            />
+            {!shouldHideMetrics && (
+              <SessionMetrics
+                hintsUsed={hintsUsed}
+                testsPassed={testsPassed}
+                testsTotal={testsTotal}
+                testResults={testResults}
+                efficiency={efficiency}
+                efficiencyNote={efficiencyNote}
+                testsNote={testsNote}
+                isLocked={isLocked}
+                onEvaluateEfficiency={handleEvaluateEfficiency}
+                onRunTests={handleRunTests}
+                onComplete={handleStop}
+              />
+            )}
+          </div>
+        )}
       </main>
       <div ref={reportRef}>
         <ScoreReport
@@ -1703,6 +1754,9 @@ export default function App() {
           currentCode={code}
         />
       )}
+      
+      {/* Focus Mode Panel */}
+      <FocusModePanel />
     </div>
   );
 }
