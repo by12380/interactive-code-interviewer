@@ -132,6 +132,261 @@ html[data-keyboard-nav="true"] a:focus {
   min-height: 100vh;
 }
 
+.app--focus {
+  /* Default values overridden inline from prefs */
+  --focus-backdrop-opacity: 0.28;
+  --focus-backdrop-blur: 14px;
+  --focus-overlay-reserved: 64px;
+}
+
+.focus-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: rgba(2, 6, 23, var(--focus-backdrop-opacity));
+  backdrop-filter: blur(var(--focus-backdrop-blur));
+}
+
+.app--focus .app__shell {
+  position: relative;
+  z-index: 3;
+  grid-template-columns: 1fr;
+}
+
+.app--focus .app__sidebar {
+  display: none;
+}
+
+/* Hide everything except editor + problem panels */
+.app--focus .panel--console,
+.app--focus .panel--roadmap,
+.app--focus .panel--voice,
+.app--focus .panel--chat {
+  display: none;
+}
+
+.app--focus .app__main {
+  padding: calc(18px + var(--focus-overlay-reserved)) 20px 20px;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+}
+
+.app--focus-zen body,
+.app--focus-zen {
+  background: transparent;
+}
+
+.app--focus-zen .panel {
+  box-shadow: none;
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(10px);
+}
+
+html[data-theme="dark"] .app--focus-zen .panel {
+  background: rgba(15, 23, 42, 0.72);
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+.app--focus-zen .panel__header {
+  background: rgba(241, 245, 249, 0.75);
+}
+
+html[data-theme="dark"] .app--focus-zen .panel__header {
+  background: rgba(17, 24, 39, 0.75);
+}
+
+/* Focus overlay controls */
+.focus-overlay {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 5;
+  width: min(520px, calc(100vw - 24px));
+  color: #e5e7eb;
+  font-family: "Inter", system-ui, sans-serif;
+}
+
+.focus-overlay__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(2, 6, 23, 0.78);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+}
+
+.focus-overlay__left,
+.focus-overlay__right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.focus-overlay__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.focus-overlay__btn {
+  border-radius: 12px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-weight: 900;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e5e7eb;
+}
+
+.focus-overlay__btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.focus-overlay__btn--primary {
+  border: none;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.95) 0%, rgba(79, 70, 229, 0.95) 100%);
+  color: #ffffff;
+}
+
+.focus-overlay__panel {
+  display: none;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(2, 6, 23, 0.72);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+}
+
+.focus-overlay.is-expanded .focus-overlay__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.focus-overlay__section {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.focus-overlay__section-title {
+  font-weight: 950;
+  letter-spacing: -0.01em;
+  margin-bottom: 8px;
+}
+
+.focus-overlay__row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+@media (max-width: 520px) {
+  .focus-overlay__row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.focus-overlay__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.focus-overlay__field span {
+  color: rgba(226, 232, 240, 0.9);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+
+.focus-overlay__field select {
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: rgba(15, 23, 42, 0.6);
+  color: #e5e7eb;
+  font: inherit;
+}
+
+.focus-overlay__toggle {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-weight: 900;
+}
+
+.focus-overlay__toggle input {
+  width: 18px;
+  height: 18px;
+}
+
+.focus-overlay__hint {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  color: rgba(226, 232, 240, 0.85);
+  line-height: 1.35;
+}
+
+.focus-overlay__breath {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.focus-overlay__breath-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.focus-overlay__breath-phase {
+  font-weight: 950;
+}
+
+.focus-overlay__breath-time {
+  font-weight: 950;
+  font-variant-numeric: tabular-nums;
+  color: rgba(199, 210, 254, 0.95);
+}
+
+.focus-overlay__breath-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.focus-overlay__btn.is-on {
+  border-color: rgba(34, 197, 94, 0.4);
+  background: rgba(34, 197, 94, 0.12);
+}
+
 .app__shell {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);

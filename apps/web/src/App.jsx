@@ -4,6 +4,7 @@ import { sendChat, translateCode } from "./api.js";
 import TutorialOverlay from "./TutorialOverlay.jsx";
 import VoicePanel from "./VoicePanel.jsx";
 import RoadmapPanel from "./RoadmapPanel.jsx";
+import FocusModeOverlay from "./FocusModeOverlay.jsx";
 import PromptTemplatesModal from "./PromptTemplatesModal.jsx";
 import { getCurrentUserId, getUserById, loadUsers, logIn, logOut, signUp } from "./auth.js";
 import { loadUserJson, loadUserState, saveUserJson } from "./userData.js";
@@ -405,7 +406,14 @@ const UI_PREFS_DEFAULTS = Object.freeze({
   accent: "indigo", // indigo | emerald | rose | amber | cyan
   contrast: "normal", // normal | high
   keyboardNav: false,
-  tourSeen: false
+  tourSeen: false,
+
+  // Focus mode (distraction-free UI)
+  focusMode: false,
+  focusZen: true,
+  focusBackdropOpacity: 0.28, // 0..0.7
+  focusBackdropBlur: 14, // px
+  focusBreathingPattern: "box" // box | 478
 });
 
 function normalizeUiPrefs(raw) {
@@ -415,12 +423,26 @@ function normalizeUiPrefs(raw) {
     ? r.accent
     : UI_PREFS_DEFAULTS.accent;
   const contrast = ["normal", "high"].includes(r.contrast) ? r.contrast : UI_PREFS_DEFAULTS.contrast;
+  const focusBackdropOpacity = Number(r.focusBackdropOpacity);
+  const focusBackdropBlur = Number(r.focusBackdropBlur);
   return {
     theme,
     accent,
     contrast,
     keyboardNav: Boolean(r.keyboardNav),
-    tourSeen: Boolean(r.tourSeen)
+    tourSeen: Boolean(r.tourSeen),
+
+    focusMode: Boolean(r.focusMode),
+    focusZen: r.focusZen == null ? UI_PREFS_DEFAULTS.focusZen : Boolean(r.focusZen),
+    focusBackdropOpacity: Number.isFinite(focusBackdropOpacity)
+      ? Math.max(0, Math.min(0.7, focusBackdropOpacity))
+      : UI_PREFS_DEFAULTS.focusBackdropOpacity,
+    focusBackdropBlur: Number.isFinite(focusBackdropBlur)
+      ? Math.max(0, Math.min(28, Math.round(focusBackdropBlur)))
+      : UI_PREFS_DEFAULTS.focusBackdropBlur,
+    focusBreathingPattern: ["box", "478"].includes(r.focusBreathingPattern)
+      ? r.focusBreathingPattern
+      : UI_PREFS_DEFAULTS.focusBreathingPattern
   };
 }
 
@@ -3190,7 +3212,17 @@ function __ici_isEqual(problemId, actual, expected) {
   }, [code, activeProblem, difficulty]);
 
   return (
-    <div className="app">
+    <div
+      className={`app ${uiPrefs.focusMode ? `app--focus ${uiPrefs.focusZen ? "app--focus-zen" : ""}` : ""}`}
+      style={
+        uiPrefs.focusMode
+          ? {
+              "--focus-backdrop-opacity": String(uiPrefs.focusBackdropOpacity),
+              "--focus-backdrop-blur": `${uiPrefs.focusBackdropBlur}px`
+            }
+          : undefined
+      }
+    >
       {toast ? (
         <div className={`toast toast--${toast.kind || "info"}`} role="status" aria-live="polite">
           <div className="toast__main">
@@ -3285,6 +3317,14 @@ function __ici_isEqual(problemId, actual, expected) {
               />
               <span>Keyboard navigation mode</span>
             </label>
+            <label className="prefs__toggle">
+              <input
+                type="checkbox"
+                checked={Boolean(uiPrefs.focusMode)}
+                onChange={(e) => setUiPrefs((prev) => ({ ...prev, focusMode: e.target.checked }))}
+              />
+              <span>Focus Mode (distraction-free)</span>
+            </label>
           </div>
 
           <div className="prefs__actions">
@@ -3314,6 +3354,20 @@ function __ici_isEqual(problemId, actual, expected) {
           </div>
         </div>
       </Modal>
+
+      <FocusModeOverlay
+        isEnabled={uiPrefs.focusMode}
+        zenEnabled={uiPrefs.focusZen}
+        backdropOpacity={uiPrefs.focusBackdropOpacity}
+        backdropBlur={uiPrefs.focusBackdropBlur}
+        onExit={() => setUiPrefs((prev) => ({ ...prev, focusMode: false }))}
+        onChangePrefs={(patch) =>
+          setUiPrefs((prev) => ({
+            ...prev,
+            ...patch
+          }))
+        }
+      />
       <PromptTemplatesModal
         isOpen={isTemplatesOpen}
         onClose={() => setIsTemplatesOpen(false)}
@@ -3620,6 +3674,15 @@ function __ici_isEqual(problemId, actual, expected) {
               aria-label="Open appearance and accessibility settings"
             >
               Preferences
+            </button>
+            <button
+              type="button"
+              className="tutorial-trigger"
+              onClick={() => setUiPrefs((prev) => ({ ...prev, focusMode: !prev.focusMode }))}
+              aria-label="Toggle Focus Mode"
+              title="Focus Mode"
+            >
+              {uiPrefs.focusMode ? "Exit Focus Mode" : "Focus Mode"}
             </button>
             <button
               type="button"
