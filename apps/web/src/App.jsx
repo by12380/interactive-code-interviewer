@@ -23,6 +23,7 @@ import UnlockToast from "./components/UnlockToast.jsx";
 import PrepRoadmap from "./components/PrepRoadmap.jsx";
 import CodeReplayPanel from "./components/CodeReplayPanel.jsx";
 import CodeTranslatorPanel from "./components/CodeTranslatorPanel.jsx";
+import PromptTemplatesPanel from "./components/PromptTemplatesPanel.jsx";
 import { useTheme } from "./contexts/ThemeContext.jsx";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
 import { 
@@ -317,6 +318,9 @@ export default function App() {
   // Code Translator state
   const [isTranslatorVisible, setIsTranslatorVisible] = useState(false);
 
+  // Prompt Templates state
+  const [isTemplatesVisible, setIsTemplatesVisible] = useState(false);
+
   const TOTAL_SECONDS = currentProblem?.timeLimit || 30 * 60;
   const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
   const isTimeUp = elapsedSeconds >= TOTAL_SECONDS;
@@ -380,6 +384,15 @@ export default function App() {
 
   const handleCloseTranslator = useCallback(() => {
     setIsTranslatorVisible(false);
+  }, []);
+
+  // Prompt Templates handlers
+  const handleOpenTemplates = useCallback(() => {
+    setIsTemplatesVisible(true);
+  }, []);
+
+  const handleCloseTemplates = useCallback(() => {
+    setIsTemplatesVisible(false);
   }, []);
 
   const editorOptions = useMemo(
@@ -568,6 +581,51 @@ export default function App() {
     lastCodeSentRef.current = nextCode;
     return [...messageList, buildCodeMessage(nextCode)];
   }, [buildCodeMessage]);
+
+  // Execute a prompt from templates - sends it to the chat
+  const handleExecuteTemplatePrompt = useCallback(async (prompt) => {
+    if (!prompt || isSending) {
+      return;
+    }
+
+    // Track hint usage if "hint" is mentioned in the prompt
+    if (/\bhint\b/i.test(prompt)) {
+      setHintsUsed((prev) => prev + 1);
+    }
+
+    const nextMessages = [...messages, { role: "user", content: prompt }];
+    setMessages(nextMessages);
+    setIsSending(true);
+
+    try {
+      const withCode = appendCodeUpdateIfNeeded(
+        code,
+        llmMessagesRef.current
+      );
+      const llmMessages = [...withCode, { role: "user", content: prompt }];
+      llmMessagesRef.current = llmMessages;
+
+      const data = await sendChat({ messages: llmMessages, mode: "chat" });
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: data.reply }
+      ]);
+      llmMessagesRef.current = [
+        ...llmMessagesRef.current,
+        { role: "assistant", content: data.reply }
+      ];
+    } catch (error) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `Error: ${error.message || "Unable to reach the server."}`
+        }
+      ]);
+    } finally {
+      setIsSending(false);
+    }
+  }, [appendCodeUpdateIfNeeded, code, isSending, messages]);
 
   const updateUndoRedoState = useCallback(() => {
     const editor = editorRef.current;
@@ -1386,6 +1444,7 @@ export default function App() {
         onOpenRoadmap={handleOpenRoadmap}
         onStartTutorial={handleStartTutorial}
         onOpenTranslator={handleOpenTranslator}
+        onOpenTemplates={handleOpenTemplates}
         problemSelector={
           <ProblemSelector
             problems={PROBLEMS}
@@ -1633,6 +1692,15 @@ export default function App() {
           onClose={handleCloseTranslator}
           initialCode={code}
           initialLanguage="javascript"
+        />
+      )}
+      
+      {/* AI Prompt Templates Panel */}
+      {isTemplatesVisible && (
+        <PromptTemplatesPanel
+          onClose={handleCloseTemplates}
+          onExecutePrompt={handleExecuteTemplatePrompt}
+          currentCode={code}
         />
       )}
     </div>

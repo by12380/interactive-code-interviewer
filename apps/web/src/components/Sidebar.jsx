@@ -13,6 +13,7 @@ function Sidebar({
   onOpenRoadmap,
   onStartTutorial,
   onOpenTranslator,
+  onOpenTemplates,
   problemSelector,
 }) {
   const { theme, toggleTheme, openSettings } = useTheme();
@@ -228,6 +229,16 @@ function Sidebar({
         >
           <span className="sidebar__nav-icon">🔄</span>
           {!isCollapsed && <span className="sidebar__nav-text">Code Translator</span>}
+        </button>
+
+        <button
+          type="button"
+          className="sidebar__nav-item"
+          onClick={onOpenTemplates}
+          aria-label="AI Prompt Templates"
+        >
+          <span className="sidebar__nav-icon">📝</span>
+          {!isCollapsed && <span className="sidebar__nav-text">Prompt Templates</span>}
         </button>
 
         <button
