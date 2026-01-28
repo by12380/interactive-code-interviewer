@@ -15,6 +15,7 @@ function Sidebar({
   onStartTutorial,
   onOpenTranslator,
   onOpenTemplates,
+  onOpenSplitScreen,
   problemSelector,
 }) {
   const { theme, toggleTheme, openSettings } = useTheme();
@@ -231,6 +232,16 @@ function Sidebar({
         >
           <span className="sidebar__nav-icon">🔄</span>
           {!isCollapsed && <span className="sidebar__nav-text">Code Translator</span>}
+        </button>
+
+        <button
+          type="button"
+          className="sidebar__nav-item"
+          onClick={onOpenSplitScreen}
+          aria-label="Multi-Problem Practice"
+        >
+          <span className="sidebar__nav-icon">📊</span>
+          {!isCollapsed && <span className="sidebar__nav-text">Multi-Problem</span>}
         </button>
 
         <button

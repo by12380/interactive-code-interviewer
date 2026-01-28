@@ -25,6 +25,7 @@ import CodeReplayPanel from "./components/CodeReplayPanel.jsx";
 import CodeTranslatorPanel from "./components/CodeTranslatorPanel.jsx";
 import PromptTemplatesPanel from "./components/PromptTemplatesPanel.jsx";
 import FocusModePanel from "./components/FocusModePanel.jsx";
+import SplitScreenPanel from "./components/SplitScreenPanel.jsx";
 import { useTheme } from "./contexts/ThemeContext.jsx";
 import { useFocusMode } from "./contexts/FocusModeContext.jsx";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
@@ -324,6 +325,9 @@ export default function App() {
   // Prompt Templates state
   const [isTemplatesVisible, setIsTemplatesVisible] = useState(false);
 
+  // Split Screen Multi-Problem state
+  const [isSplitScreenVisible, setIsSplitScreenVisible] = useState(false);
+
   const TOTAL_SECONDS = currentProblem?.timeLimit || 30 * 60;
   const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
   const isTimeUp = elapsedSeconds >= TOTAL_SECONDS;
@@ -396,6 +400,15 @@ export default function App() {
 
   const handleCloseTemplates = useCallback(() => {
     setIsTemplatesVisible(false);
+  }, []);
+
+  // Split Screen handlers
+  const handleOpenSplitScreen = useCallback(() => {
+    setIsSplitScreenVisible(true);
+  }, []);
+
+  const handleCloseSplitScreen = useCallback(() => {
+    setIsSplitScreenVisible(false);
   }, []);
 
   const editorOptions = useMemo(
@@ -1485,6 +1498,7 @@ export default function App() {
           onStartTutorial={handleStartTutorial}
           onOpenTranslator={handleOpenTranslator}
           onOpenTemplates={handleOpenTemplates}
+          onOpenSplitScreen={handleOpenSplitScreen}
           problemSelector={
             <ProblemSelector
               problems={PROBLEMS}
@@ -1757,6 +1771,16 @@ export default function App() {
       
       {/* Focus Mode Panel */}
       <FocusModePanel />
+      
+      {/* Split Screen Multi-Problem Panel */}
+      {isSplitScreenVisible && (
+        <SplitScreenPanel
+          onClose={handleCloseSplitScreen}
+          problems={PROBLEMS}
+          user={user}
+          onSelectProblem={handleSelectProblem}
+        />
+      )}
     </div>
   );
 }
