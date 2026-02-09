@@ -2001,7 +2001,7 @@ html[data-theme="dark"] .multi__hint {
 .ici-interrupt {
   position: absolute;
   z-index: 10;
-  top: 56px;
+  bottom: 16px;
   right: 16px;
   max-width: 420px;
   background: rgba(18, 18, 20, 0.92);

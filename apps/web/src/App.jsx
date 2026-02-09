@@ -1625,6 +1625,7 @@ export default function App() {
     return "";
   }, [activeProblem, codeByProblemId]);
   const setCode = (nextCode) => {
+    lastEditAtRef.current = Date.now();
     setCodeByProblemId((prev) => {
       const next = { ...(prev || {}), [activeProblem.id]: nextCode };
       return next;
@@ -1666,6 +1667,7 @@ export default function App() {
   const [isVoiceHold, setIsVoiceHold] = useState(false);
   const [toast, setToast] = useState(null); // { id, kind, title, message }
   const toastTimerRef = useRef(null);
+  const liveInterruptionTimerRef = useRef(null);
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -1679,6 +1681,8 @@ export default function App() {
   const lastProactiveAtRef = useRef(0);
   const lastInterruptByIdRef = useRef(new Map()); // id -> last timestamp
   const lastInterruptTextRef = useRef("");
+  const lastInterruptAtRef = useRef(0);
+  const lastEditAtRef = useRef(0);
   const hasUserExplainedApproachRef = useRef(false);
   const lastCodeSentRef = useRef("");
   const llmMessagesRef = useRef([]);
@@ -2849,8 +2853,18 @@ export default function App() {
     if (isLocked) return;
     if (!activeProblem) return;
 
-    const debounceMs = 450;
+    const debounceMs = 1400;
     const timeout = setTimeout(() => {
+      if (liveInterruption?.message) return;
+
+      const now = Date.now();
+      const idleMs = now - lastEditAtRef.current;
+      const MIN_IDLE_MS = 1100;
+      if (idleMs < MIN_IDLE_MS) return;
+
+      const GLOBAL_COOLDOWN_MS = 20_000;
+      if (now - lastInterruptAtRef.current < GLOBAL_COOLDOWN_MS) return;
+
       const suggestions = analyzeCodeForInterruptions({
         code,
         problem: activeProblem,
@@ -2858,7 +2872,6 @@ export default function App() {
       });
       if (!suggestions.length) return;
 
-      const now = Date.now();
       const COOLDOWN_PER_RULE_MS = 12_000;
 
       for (const s of suggestions) {
@@ -2868,6 +2881,7 @@ export default function App() {
 
         lastInterruptByIdRef.current.set(s.id, now);
         lastInterruptTextRef.current = s.message;
+        lastInterruptAtRef.current = now;
 
         setMessages((prev) => [...prev, { role: "assistant", content: s.message }]);
         setLiveInterruption({ message: s.message, ts: now });
@@ -2880,7 +2894,22 @@ export default function App() {
     }, debounceMs);
 
     return () => clearTimeout(timeout);
-  }, [code, activeProblem, isLocked]);
+  }, [code, activeProblem, isLocked, liveInterruption?.message]);
+
+  useEffect(() => {
+    if (!liveInterruption?.message) return undefined;
+    if (liveInterruptionTimerRef.current) {
+      clearTimeout(liveInterruptionTimerRef.current);
+    }
+    liveInterruptionTimerRef.current = setTimeout(() => {
+      setLiveInterruption(null);
+    }, 7000);
+    return () => {
+      if (liveInterruptionTimerRef.current) {
+        clearTimeout(liveInterruptionTimerRef.current);
+      }
+    };
+  }, [liveInterruption?.ts]);
 
   useEffect(() => {
     const debounceMs = 1500;
@@ -3777,6 +3806,8 @@ function __ici_isEqual(problemId, actual, expected) {
                 lastProactiveHintRef.current = "";
                 lastInterruptByIdRef.current = new Map();
                 lastInterruptTextRef.current = "";
+                lastInterruptAtRef.current = 0;
+                lastEditAtRef.current = 0;
                 hasUserExplainedApproachRef.current = false;
 
                 setIsInterviewSetupOpen(false);
