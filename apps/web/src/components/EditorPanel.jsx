@@ -1,6 +1,8 @@
-import { memo, useEffect, useRef, useCallback } from "react";
+import { memo, useEffect, useRef, useCallback, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { useTheme } from "../contexts/ThemeContext.jsx";
+
+const HINT_AUTO_DISMISS_MS = 15000; // auto-dismiss after 15 seconds
 
 function EditorPanel({
   canUndo,
@@ -23,11 +25,12 @@ function EditorPanel({
 }) {
   const { theme } = useTheme();
   const editorContainerRef = useRef(null);
-  const widgetRef = useRef(null);
   const editorInstanceRef = useRef(null);
   const monacoInstanceRef = useRef(null);
   const cursorListenerRef = useRef(null);
   const selectionListenerRef = useRef(null);
+  const autoDismissTimerRef = useRef(null);
+  const [hintVisible, setHintVisible] = useState(false);
 
   // Handle editor mount - store references
   const handleEditorMount = useCallback((editor, monaco) => {
@@ -36,13 +39,6 @@ function EditorPanel({
     
     // Call the parent's onEditorMount
     onEditorMount(editor, monaco);
-
-    // Dismiss hint when user starts typing
-    editor.onDidChangeModelContent(() => {
-      if (onDismissHint) {
-        onDismissHint();
-      }
-    });
 
     // Set up cursor position tracking for replay recording
     if (onRecordCursorMove) {
@@ -69,7 +65,7 @@ function EditorPanel({
         }
       });
     }
-  }, [onEditorMount, onDismissHint, onRecordCursorMove, onRecordSelection, isRecording]);
+  }, [onEditorMount, onRecordCursorMove, onRecordSelection, isRecording]);
 
   // Cleanup cursor and selection listeners
   useEffect(() => {
@@ -80,71 +76,32 @@ function EditorPanel({
       if (selectionListenerRef.current) {
         selectionListenerRef.current.dispose();
       }
+      if (autoDismissTimerRef.current) {
+        clearTimeout(autoDismissTimerRef.current);
+      }
     };
   }, []);
 
-  // Show/hide the interviewer hint widget
+  // Auto-dismiss hint after timeout
   useEffect(() => {
-    const editor = editorInstanceRef.current;
-    const monaco = monacoInstanceRef.current;
-    
-    if (!editor || !monaco) return;
-
-    // Remove existing widget if any
-    if (widgetRef.current) {
-      editor.removeContentWidget(widgetRef.current);
-      widgetRef.current = null;
+    if (autoDismissTimerRef.current) {
+      clearTimeout(autoDismissTimerRef.current);
+      autoDismissTimerRef.current = null;
     }
 
-    // If there's a hint to show, create the widget
     if (interviewerHint) {
-      const position = editor.getPosition();
-      
-      const widget = {
-        getId: () => "interviewer-hint-widget",
-        getDomNode: () => {
-          const node = document.createElement("div");
-          node.className = "interviewer-hint-widget";
-          node.innerHTML = `
-            <div class="interviewer-hint-widget__header">
-              <span class="interviewer-hint-widget__icon">💬</span>
-              <span class="interviewer-hint-widget__title">Interviewer</span>
-              <button class="interviewer-hint-widget__close" title="Dismiss (or just keep typing)">×</button>
-            </div>
-            <div class="interviewer-hint-widget__content">${interviewerHint}</div>
-            <div class="interviewer-hint-widget__footer">Keep typing to dismiss</div>
-          `;
-          
-          // Add close button handler
-          const closeBtn = node.querySelector(".interviewer-hint-widget__close");
-          closeBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (onDismissHint) onDismissHint();
-          });
-          
-          return node;
-        },
-        getPosition: () => ({
-          position: position || { lineNumber: 1, column: 1 },
-          preference: [
-            monaco.editor.ContentWidgetPositionPreference.ABOVE,
-            monaco.editor.ContentWidgetPositionPreference.BELOW
-          ]
-        })
-      };
-
-      editor.addContentWidget(widget);
-      widgetRef.current = widget;
+      setHintVisible(true);
+      autoDismissTimerRef.current = setTimeout(() => {
+        if (onDismissHint) onDismissHint();
+      }, HINT_AUTO_DISMISS_MS);
+    } else {
+      setHintVisible(false);
     }
 
     return () => {
-      if (widgetRef.current && editor) {
-        try {
-          editor.removeContentWidget(widgetRef.current);
-        } catch (e) {
-          // Editor might be disposed
-        }
-        widgetRef.current = null;
+      if (autoDismissTimerRef.current) {
+        clearTimeout(autoDismissTimerRef.current);
+        autoDismissTimerRef.current = null;
       }
     };
   }, [interviewerHint, onDismissHint]);
@@ -193,6 +150,32 @@ function EditorPanel({
           </button>
         </div>
       </div>
+
+      {/* Interviewer hint - absolutely positioned over the editor, top-right */}
+      {hintVisible && interviewerHint && (
+        <div
+          className="interviewer-hint-widget"
+          onMouseDown={(e) => e.preventDefault()} // Don't steal editor focus
+        >
+          <div className="interviewer-hint-widget__header">
+            <span className="interviewer-hint-widget__icon">💬</span>
+            <span className="interviewer-hint-widget__title">Interviewer</span>
+            <button
+              className="interviewer-hint-widget__close"
+              title="Dismiss"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onDismissHint) onDismissHint();
+              }}
+            >
+              ×
+            </button>
+          </div>
+          <div className="interviewer-hint-widget__content">{interviewerHint}</div>
+          <div className="interviewer-hint-widget__footer">Auto-dismisses in a few seconds</div>
+        </div>
+      )}
+
       <Editor
         height="100%"
         defaultLanguage="javascript"

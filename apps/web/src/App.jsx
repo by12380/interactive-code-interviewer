@@ -309,6 +309,8 @@ export default function App() {
   const analyzerStateRef = useRef(createAnalyzerState());
   const interruptInFlightRef = useRef(false);
   const lastAnalyzedCodeRef = useRef("");
+  const lastInterruptShownAtRef = useRef(0);
+  const INTERRUPT_COOLDOWN_MS = 45000; // 45 seconds between interrupts
   
   // Inline editor hint state (shows above cursor like IDE suggestions)
   const [editorHint, setEditorHint] = useState(null);
@@ -701,8 +703,13 @@ export default function App() {
     const analysisDelay = 1500;
 
     const analysisTimeout = setTimeout(async () => {
-      // Skip if code hasn't changed or interrupt is already in flight
+      // Skip if code hasn't changed, interrupt is in flight, or cooldown hasn't elapsed
       if (code === lastAnalyzedCodeRef.current || interruptInFlightRef.current) {
+        return;
+      }
+
+      const timeSinceLastInterrupt = Date.now() - lastInterruptShownAtRef.current;
+      if (timeSinceLastInterrupt < INTERRUPT_COOLDOWN_MS) {
         return;
       }
 
@@ -743,8 +750,9 @@ export default function App() {
           });
 
           if (data?.reply) {
-            // Show hint as inline widget in editor (like IDE suggestions)
+            // Show hint as overlay widget in editor
             setEditorHint(data.reply);
+            lastInterruptShownAtRef.current = Date.now();
             
             // Also add to chat history for reference
             const interruptMessage = {
@@ -886,15 +894,11 @@ export default function App() {
   const handleEditorChange = useCallback((value) => {
     const newCode = value ?? "";
     setCode(newCode);
-    // Dismiss editor hint when user types (handled in EditorPanel too, but this is backup)
-    if (editorHint) {
-      setEditorHint(null);
-    }
     // Record the code change for replay (inline to avoid hoisting issues)
     if (replaySession && !isLocked) {
       setReplaySession(prev => recordCodeChange(prev, newCode));
     }
-  }, [editorHint, replaySession, isLocked]);
+  }, [replaySession, isLocked]);
 
   const handleDismissEditorHint = useCallback(() => {
     setEditorHint(null);

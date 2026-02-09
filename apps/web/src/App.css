@@ -282,6 +282,15 @@ textarea {
 
 .panel--editor {
   min-height: 540px;
+  position: relative;
+  overflow: visible; /* Allow the interviewer hint widget to float above */
+}
+
+/* Re-clip the editor content itself so it respects the rounded corners */
+.panel--editor > .monaco-editor-wrapper,
+.panel--editor > div:last-child {
+  overflow: hidden;
+  border-radius: 0 0 16px 16px;
 }
 
 .panel--metrics {
@@ -479,29 +488,39 @@ textarea {
   margin-right: 6px;
 }
 
-/* ===== Interviewer Hint Widget (inline in editor) ===== */
+/* ===== Interviewer Hint Widget (floating in top-right of editor panel) ===== */
 .interviewer-hint-widget {
+  position: absolute;
+  top: 48px; /* below the editor header bar */
+  right: 24px;
   background: #ffffff;
   border: 1px solid #fcd34d;
   border-radius: 10px;
   box-shadow: 
     0 8px 24px rgba(15, 23, 42, 0.15),
     0 0 0 1px rgba(245, 158, 11, 0.2);
-  max-width: 400px;
-  min-width: 280px;
+  width: 320px;
+  max-width: calc(100% - 48px);
   font-family: "Inter", system-ui, sans-serif;
-  z-index: 1000;
-  animation: hintSlideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  z-index: 50;
+  animation: hintSlideIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
   overflow: hidden;
+  pointer-events: auto;
+  opacity: 0.95;
+  transition: opacity 0.2s ease;
+}
+
+.interviewer-hint-widget:hover {
+  opacity: 1;
 }
 
 @keyframes hintSlideIn {
   0% {
     opacity: 0;
-    transform: translateY(8px) scale(0.95);
+    transform: translateY(-10px) scale(0.95);
   }
   100% {
-    opacity: 1;
+    opacity: 0.95;
     transform: translateY(0) scale(1);
   }
 }
@@ -510,20 +529,20 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   background: linear-gradient(135deg, #fef3c7 0%, #fef9c3 100%);
   border-bottom: 1px solid #fcd34d;
 }
 
 .interviewer-hint-widget__icon {
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1;
 }
 
 .interviewer-hint-widget__title {
   flex: 1;
   font-weight: 700;
-  font-size: 12px;
+  font-size: 11px;
   color: #92400e;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -550,14 +569,16 @@ textarea {
 }
 
 .interviewer-hint-widget__content {
-  padding: 12px 14px;
-  font-size: 13px;
-  line-height: 1.55;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  line-height: 1.5;
   color: #1e293b;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 .interviewer-hint-widget__footer {
-  padding: 8px 12px;
+  padding: 6px 10px;
   background: #f8fafc;
   border-top: 1px solid #e2e8f0;
   font-size: 10px;
@@ -6078,6 +6099,44 @@ body.theme-dark .panel--editor .monaco-editor,
 body.theme-dark .panel--editor .monaco-editor-background,
 body.theme-dark .panel--editor .monaco-editor .margin {
   background: #0f172a !important;
+}
+
+/* Interviewer Hint Widget - Dark Theme */
+body.theme-dark .interviewer-hint-widget {
+  background: #1e293b;
+  border-color: #854d0e;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(245, 158, 11, 0.25);
+}
+
+body.theme-dark .interviewer-hint-widget__header {
+  background: linear-gradient(135deg, #422006 0%, #451a03 100%);
+  border-bottom-color: #854d0e;
+}
+
+body.theme-dark .interviewer-hint-widget__title {
+  color: #fbbf24;
+}
+
+body.theme-dark .interviewer-hint-widget__close {
+  background: rgba(251, 191, 36, 0.15);
+  color: #fbbf24;
+}
+
+body.theme-dark .interviewer-hint-widget__close:hover {
+  background: rgba(251, 191, 36, 0.3);
+  color: #fde68a;
+}
+
+body.theme-dark .interviewer-hint-widget__content {
+  color: #e2e8f0;
+}
+
+body.theme-dark .interviewer-hint-widget__footer {
+  background: #0f172a;
+  border-top-color: #334155;
+  color: #64748b;
 }
 
 /* ===================================
