@@ -5,7 +5,8 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+// Default to 3002 to avoid common collisions (e.g. other local APIs on 3001).
+const PORT = process.env.PORT || 3002;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 app.use(cors());
@@ -76,12 +77,20 @@ app.post("/api/chat", async (req, res) => {
           "- If no interruption is needed, output an empty string.",
           ctxText ? `\n${ctxText}\n` : ""
         ].join("\n")
-      : [
-          "You are a coding interview coach. Focus on guiding the candidate.",
-          "Be concise, point out likely mistakes, and ask clarifying questions.",
-          "Do not solve the problem end-to-end unless asked.",
-          ctxText ? `\n${ctxText}\n` : ""
-        ].join("\n");
+      : mode === "summary"
+        ? [
+            "You are a coding interview coach generating concise multi-problem session summaries.",
+            "Prioritize: patterns, tradeoffs, and actionable next steps.",
+            "Use clear headings and bullet points when helpful.",
+            "Do not output full solutions unless asked.",
+            ctxText ? `\n${ctxText}\n` : ""
+          ].join("\n")
+        : [
+            "You are a coding interview coach. Focus on guiding the candidate.",
+            "Be concise, point out likely mistakes, and ask clarifying questions.",
+            "Do not solve the problem end-to-end unless asked.",
+            ctxText ? `\n${ctxText}\n` : ""
+          ].join("\n");
 
   const payload = {
     model: "gpt-4o-mini",
@@ -90,7 +99,7 @@ app.post("/api/chat", async (req, res) => {
       ...messages
     ],
     temperature: 0.3,
-    max_tokens: 300
+    max_tokens: mode === "summary" ? 900 : 300
   };
 
   try {

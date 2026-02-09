@@ -19,6 +19,8 @@ export function loadUserState(userId) {
   const testRunByProblemId = loadUserJson(userId, "testRunByProblemId", {});
   const attemptStartedAtByProblemId = loadUserJson(userId, "attemptStartedAtByProblemId", {});
   const bestTimeSecondsByProblemId = loadUserJson(userId, "bestTimeSecondsByProblemId", {});
+  const approachNotesByProblemId = loadUserJson(userId, "approachNotesByProblemId", {});
+  const multiPracticeSession = loadUserJson(userId, "multiPracticeSession", null);
   const history = loadUserJson(userId, "history", []);
   const replayIndex = loadUserJson(userId, "replayIndex", []);
 
@@ -36,6 +38,11 @@ export function loadUserState(userId) {
       bestTimeSecondsByProblemId && typeof bestTimeSecondsByProblemId === "object"
         ? bestTimeSecondsByProblemId
         : {},
+    approachNotesByProblemId:
+      approachNotesByProblemId && typeof approachNotesByProblemId === "object"
+        ? approachNotesByProblemId
+        : {},
+    multiPracticeSession: multiPracticeSession && typeof multiPracticeSession === "object" ? multiPracticeSession : null,
     history: Array.isArray(history) ? history : [],
     replayIndex: Array.isArray(replayIndex) ? replayIndex : []
   };

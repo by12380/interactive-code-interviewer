@@ -407,6 +407,7 @@ const UI_PREFS_DEFAULTS = Object.freeze({
   contrast: "normal", // normal | high
   keyboardNav: false,
   tourSeen: false,
+  multiPractice: false, // split-screen multi-problem practice mode
 
   // Focus mode (distraction-free UI)
   focusMode: false,
@@ -431,6 +432,7 @@ function normalizeUiPrefs(raw) {
     contrast,
     keyboardNav: Boolean(r.keyboardNav),
     tourSeen: Boolean(r.tourSeen),
+    multiPractice: Boolean(r.multiPractice),
 
     focusMode: Boolean(r.focusMode),
     focusZen: r.focusZen == null ? UI_PREFS_DEFAULTS.focusZen : Boolean(r.focusZen),
@@ -495,6 +497,35 @@ function Modal({ isOpen, title, children, onClose }) {
       </div>
     </div>
   );
+}
+
+const MULTI_PRACTICE_MAX = 3;
+
+function normalizeMultiPracticeSession(raw, fallbackProblemId) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  const idsRaw = Array.isArray(r.problemIds) ? r.problemIds : [];
+  const ids = Array.from(new Set(idsRaw.map((x) => String(x || "")).filter(Boolean))).slice(0, MULTI_PRACTICE_MAX);
+  const fallback = String(fallbackProblemId || "");
+  if (ids.length === 0 && fallback) ids.push(fallback);
+  const activeIndexRaw = Number(r.activeIndex);
+  const activeIndex = Number.isFinite(activeIndexRaw)
+    ? Math.max(0, Math.min(ids.length - 1, Math.floor(activeIndexRaw)))
+    : 0;
+  return {
+    problemIds: ids,
+    activeIndex,
+    createdAt: typeof r.createdAt === "number" ? r.createdAt : Date.now()
+  };
+}
+
+function pickNextUnlockedProblemId({ excludeIds, unlocks, problems }) {
+  const exclude = new Set((Array.isArray(excludeIds) ? excludeIds : []).map(String));
+  for (const p of Array.isArray(problems) ? problems : []) {
+    if (!p?.id) continue;
+    if (exclude.has(p.id)) continue;
+    if (isProblemUnlocked(p, unlocks)) return p.id;
+  }
+  return null;
 }
 
 function CodeTranslationModal({ isOpen, onClose, problem, code, onApplyCode }) {
@@ -1368,6 +1399,13 @@ export default function App() {
   const [bestTimeSecondsByProblemId, setBestTimeSecondsByProblemId] = useState(() => {
     return loadUserState(storageUserId).bestTimeSecondsByProblemId;
   });
+  const [approachNotesByProblemId, setApproachNotesByProblemId] = useState(() => {
+    return loadUserState(storageUserId).approachNotesByProblemId;
+  });
+  const [multiPracticeSession, setMultiPracticeSession] = useState(() => {
+    const raw = loadUserState(storageUserId).multiPracticeSession;
+    return normalizeMultiPracticeSession(raw, DEFAULT_PROBLEM_ID);
+  });
   const [history, setHistory] = useState(() => {
     return loadUserState(storageUserId).history;
   });
@@ -1397,6 +1435,10 @@ export default function App() {
     setTestRunByProblemId(next.testRunByProblemId);
     setAttemptStartedAtByProblemId(next.attemptStartedAtByProblemId);
     setBestTimeSecondsByProblemId(next.bestTimeSecondsByProblemId);
+    setApproachNotesByProblemId(next.approachNotesByProblemId);
+    setMultiPracticeSession(
+      normalizeMultiPracticeSession(next.multiPracticeSession, activeProblemId || DEFAULT_PROBLEM_ID)
+    );
     setHistory(next.history);
     setReplayIndex(next.replayIndex);
     setRoadmap(normalizeRoadmapState(loadUserJson(storageUserId, "roadmap", ROADMAP_DEFAULTS)));
@@ -1494,6 +1536,44 @@ export default function App() {
     };
   }, []);
 
+  const isMultiPractice = Boolean(uiPrefs.multiPractice);
+
+  // Multi-problem quick switching shortcuts.
+  useEffect(() => {
+    if (!isMultiPractice) return;
+    const onKeyDown = (e) => {
+      const useMod = Boolean(e.metaKey || e.ctrlKey);
+      if (!useMod || e.altKey) return;
+
+      const ids = (multiPracticeSession?.problemIds || []).map(String).filter(Boolean);
+      if (!ids.length) return;
+
+      // Ctrl/⌘ + 1/2/3
+      const n = Number(e.key);
+      if (Number.isFinite(n) && n >= 1 && n <= MULTI_PRACTICE_MAX) {
+        const pid = ids[n - 1] || null;
+        if (pid) {
+          e.preventDefault();
+          setActiveProblemId(pid);
+        }
+        return;
+      }
+
+      // Ctrl/⌘ + Shift + ArrowLeft/ArrowRight
+      if (e.shiftKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+        e.preventDefault();
+        const dir = e.key === "ArrowRight" ? 1 : -1;
+        const idx = ids.indexOf(String(activeProblemId || ""));
+        const base = idx >= 0 ? idx : 0;
+        const nextIdx = (base + dir + ids.length) % ids.length;
+        const pid = ids[nextIdx] || null;
+        if (pid) setActiveProblemId(pid);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [isMultiPractice, multiPracticeSession?.problemIds, activeProblemId]);
+
   useEffect(() => {
     // Backwards compat: migrate old non-user-scoped keys into the guest profile once.
     if (storageUserId !== "guest") return;
@@ -1549,6 +1629,12 @@ export default function App() {
       const next = { ...(prev || {}), [activeProblem.id]: nextCode };
       return next;
     });
+  };
+
+  const setApproachNoteForProblem = (problemId, note) => {
+    const pid = String(problemId || "");
+    if (!pid) return;
+    setApproachNotesByProblemId((prev) => ({ ...(prev || {}), [pid]: String(note || "") }));
   };
 
   const [problemTab, setProblemTab] = useState("Description");
@@ -1686,6 +1772,7 @@ export default function App() {
   }, [toast]);
 
   const isInterviewMode = mode === "interview";
+  const isMultiPracticeEffective = !isInterviewMode && isMultiPractice;
   const remainingSeconds = Math.max(timeLimitSeconds - elapsedSeconds, 0);
   const isTimeUp = elapsedSeconds >= timeLimitSeconds;
   const levelInfo = useMemo(() => getLevelInfo(gamification.xp), [gamification.xp]);
@@ -2633,6 +2720,14 @@ export default function App() {
   }, [storageUserId, bestTimeSecondsByProblemId]);
 
   useEffect(() => {
+    saveUserJson(storageUserId, "approachNotesByProblemId", approachNotesByProblemId || {});
+  }, [storageUserId, approachNotesByProblemId]);
+
+  useEffect(() => {
+    saveUserJson(storageUserId, "multiPracticeSession", multiPracticeSession || null);
+  }, [storageUserId, multiPracticeSession]);
+
+  useEffect(() => {
     saveUserJson(storageUserId, "history", history || []);
   }, [storageUserId, history]);
 
@@ -2644,6 +2739,30 @@ export default function App() {
     setProblemTab("Description");
     setIsSolutionVisible(false);
   }, [activeProblemId]);
+
+  // Keep the multi-practice session aligned to the active editor problem.
+  useEffect(() => {
+    if (!isMultiPracticeEffective) return;
+    const pid = String(activeProblemId || "");
+    if (!pid) return;
+    setMultiPracticeSession((prev) => {
+      const cur = normalizeMultiPracticeSession(prev, pid);
+      const idx = cur.problemIds.indexOf(pid);
+      if (idx !== -1) {
+        if (cur.activeIndex === idx) return cur;
+        return { ...cur, activeIndex: idx };
+      }
+      if (cur.problemIds.length < MULTI_PRACTICE_MAX) {
+        const nextIds = [...cur.problemIds, pid];
+        return { ...cur, problemIds: nextIds, activeIndex: nextIds.indexOf(pid) };
+      }
+      const nextIds = [...cur.problemIds];
+      nextIds[cur.activeIndex] = pid;
+      const unique = Array.from(new Set(nextIds)).slice(0, MULTI_PRACTICE_MAX);
+      const nextIndex = unique.indexOf(pid);
+      return { ...cur, problemIds: unique, activeIndex: Math.max(0, nextIndex) };
+    });
+  }, [activeProblemId, isMultiPracticeEffective]);
 
   // Keep IndexedDB payloads in sync with the local replay index cap.
   useEffect(() => {
@@ -3043,7 +3162,7 @@ function __ici_isEqual(problemId, actual, expected) {
 `;
   };
 
-  const handleRunTests = () => {
+  const handleRunTests = (problemIdOverride = null) => {
     const iframeWindow = runnerIframeRef.current?.contentWindow;
     if (!iframeWindow) {
       setConsoleEntries((prev) => [
@@ -3059,6 +3178,16 @@ function __ici_isEqual(problemId, actual, expected) {
       return;
     }
 
+    const pid = String(problemIdOverride || activeProblem?.id || "");
+    const problem = PROBLEMS.find((p) => p.id === pid) || activeProblem;
+    if (!problem) return;
+    const effectiveCode =
+      pid === String(activeProblem?.id || "")
+        ? String(code || "")
+        : typeof codeByProblemId?.[pid] === "string"
+          ? String(codeByProblemId?.[pid] || "")
+          : buildStarterCode(problem);
+
     const nextRunId = runIdRef.current + 1;
     runIdRef.current = nextRunId;
     setConsoleEntries((prev) => [
@@ -3068,15 +3197,129 @@ function __ici_isEqual(problemId, actual, expected) {
         ts: Date.now(),
         runId: nextRunId,
         level: "system",
-        text: `Tests: ${activeProblem.title}`
+        text: `Tests: ${problem.title}`
       }
     ]);
 
-    const testCode = `${code}\n\n${buildTestHarness(activeProblem, nextRunId)}`;
+    const testCode = `${effectiveCode}\n\n${buildTestHarness(problem, nextRunId)}`;
     iframeWindow.postMessage(
       { __ICIRunner__: true, type: "RUN", runId: nextRunId, code: testCode },
       "*"
     );
+  };
+
+  const addProblemToMultiSession = () => {
+    if (!isMultiPracticeEffective) return;
+    setMultiPracticeSession((prev) => {
+      const cur = normalizeMultiPracticeSession(prev, activeProblemId || DEFAULT_PROBLEM_ID);
+      if (cur.problemIds.length >= MULTI_PRACTICE_MAX) return cur;
+      const nextId = pickNextUnlockedProblemId({ excludeIds: cur.problemIds, unlocks, problems: PROBLEMS });
+      if (!nextId) {
+        pushToast("info", "Multi practice", "No unlocked problems available to add.");
+        return cur;
+      }
+      return { ...cur, problemIds: [...cur.problemIds, nextId] };
+    });
+  };
+
+  const removeProblemFromMultiSession = (problemId) => {
+    const pid = String(problemId || "");
+    if (!pid) return;
+    setMultiPracticeSession((prev) => {
+      const cur = normalizeMultiPracticeSession(prev, activeProblemId || DEFAULT_PROBLEM_ID);
+      if (cur.problemIds.length <= 1) return cur;
+      const nextIds = cur.problemIds.filter((x) => x !== pid);
+      const wasActive = pid === String(activeProblemId || "");
+      const nextActiveIndex = Math.max(0, Math.min(nextIds.length - 1, cur.activeIndex));
+      const next = { ...cur, problemIds: nextIds, activeIndex: nextActiveIndex };
+      if (wasActive) {
+        const nextPid = next.problemIds[next.activeIndex] || next.problemIds[0] || null;
+        if (nextPid) setActiveProblemId(nextPid);
+      }
+      return next;
+    });
+  };
+
+  const replaceMultiSessionSlot = (slotIndex, nextProblemId) => {
+    const pid = String(nextProblemId || "");
+    if (!pid) return;
+    setMultiPracticeSession((prev) => {
+      const cur = normalizeMultiPracticeSession(prev, activeProblemId || DEFAULT_PROBLEM_ID);
+      const i = Math.max(0, Math.min(cur.problemIds.length - 1, Number(slotIndex) || 0));
+      const nextIds = [...cur.problemIds];
+      nextIds[i] = pid;
+      const unique = Array.from(new Set(nextIds)).slice(0, MULTI_PRACTICE_MAX);
+      const nextActiveIndex = Math.max(0, Math.min(unique.length - 1, cur.activeIndex));
+      const next = { ...cur, problemIds: unique, activeIndex: nextActiveIndex };
+      if (i === cur.activeIndex) setActiveProblemId(pid);
+      return next;
+    });
+  };
+
+  const [multiSummaryModal, setMultiSummaryModal] = useState({
+    isOpen: false,
+    isWorking: false,
+    text: "",
+    error: ""
+  });
+
+  const openMultiSummary = () => {
+    setMultiSummaryModal({ isOpen: true, isWorking: false, text: "", error: "" });
+  };
+
+  const generateMultiSummary = async () => {
+    const ids = (multiPracticeSession?.problemIds || []).map(String).filter(Boolean).slice(0, MULTI_PRACTICE_MAX);
+    const problems = ids.map((pid) => PROBLEMS.find((p) => p.id === pid)).filter(Boolean);
+    if (problems.length === 0) return;
+
+    setMultiSummaryModal((prev) => ({ ...prev, isWorking: true, error: "" }));
+    try {
+      const payload = problems.map((p) => {
+        const pid = String(p.id || "");
+        const summary = testRunByProblemId?.[pid]?.summary || null;
+        return {
+          id: pid,
+          title: p.title,
+          difficulty: p.difficulty,
+          signature: p.signature,
+          approachNotes: String(approachNotesByProblemId?.[pid] || ""),
+          testsPassed: Number(summary?.passed || 0),
+          testsTotal: Number(summary?.total || 0),
+          solved: Boolean(solvedByProblemId?.[pid]),
+          code: String(codeByProblemId?.[pid] || buildStarterCode(p))
+        };
+      });
+
+      const prompt = [
+        "Create a multi-problem practice session summary and pattern analysis.",
+        "",
+        "Output format (use headings):",
+        "## Session summary",
+        "- One short paragraph",
+        "## Per-problem notes",
+        "- For each problem: approach + what to improve",
+        "## Patterns across problems",
+        "- Identify recurring techniques (e.g. hash map, two pointers, sliding window, stack, BFS/DFS, DP)",
+        "- Common pitfalls you noticed and how to avoid them",
+        "- A short “pattern recognition checklist” I can apply next time",
+        "",
+        "Here are the problems and my current work (JSON):",
+        safeStringify(payload)
+      ].join("\n");
+
+      const data = await sendChat({
+        mode: "summary",
+        messages: [{ role: "user", content: prompt }],
+        context: { title: "Multi-problem practice session summary" }
+      });
+      setMultiSummaryModal((prev) => ({ ...prev, text: String(data?.reply || ""), isWorking: false }));
+    } catch (e) {
+      setMultiSummaryModal((prev) => ({
+        ...prev,
+        error: e?.message || "Unable to generate summary right now.",
+        isWorking: false
+      }));
+    }
   };
 
   const handleSend = async (overrideText = null) => {
@@ -3325,6 +3568,22 @@ function __ici_isEqual(problemId, actual, expected) {
               />
               <span>Focus Mode (distraction-free)</span>
             </label>
+            <label className="prefs__toggle">
+              <input
+                type="checkbox"
+                checked={Boolean(uiPrefs.multiPractice)}
+                onChange={(e) => {
+                  const next = Boolean(e.target.checked);
+                  setUiPrefs((prev) => ({ ...prev, multiPractice: next }));
+                  if (next) {
+                    setMultiPracticeSession((prev) =>
+                      normalizeMultiPracticeSession(prev, activeProblemId || DEFAULT_PROBLEM_ID)
+                    );
+                  }
+                }}
+              />
+              <span>Multi-problem split practice (2–3 problems)</span>
+            </label>
           </div>
 
           <div className="prefs__actions">
@@ -3352,6 +3611,34 @@ function __ici_isEqual(problemId, actual, expected) {
           <div className="prefs__note">
             Tip: press <kbd>Tab</kbd> to move focus; <kbd>Esc</kbd> closes dialogs.
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={multiSummaryModal.isOpen}
+        title="Multi-problem session summary"
+        onClose={() => setMultiSummaryModal({ isOpen: false, isWorking: false, text: "", error: "" })}
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <button
+              type="button"
+              className="prefs__btn"
+              onClick={generateMultiSummary}
+              disabled={multiSummaryModal.isWorking}
+            >
+              {multiSummaryModal.isWorking ? "Generating..." : "Generate summary"}
+            </button>
+            <div className="prefs__note" style={{ margin: 0 }}>
+              Includes a cross-problem “patterns” section.
+            </div>
+          </div>
+          {multiSummaryModal.error ? (
+            <div className="templates__error">{multiSummaryModal.error}</div>
+          ) : null}
+          <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontWeight: 700 }}>
+            {multiSummaryModal.text || "Click “Generate summary” to create a multi-problem session summary."}
+          </pre>
         </div>
       </Modal>
 
@@ -3731,47 +4018,99 @@ function __ici_isEqual(problemId, actual, expected) {
           <main id="main-content" className="app__main">
         <div className="app__left">
           <section className="panel panel--editor" data-tutorial="editor">
-            <div className="panel__header">Editor</div>
-            {liveInterruption?.message ? (
-              <div
-                className="ici-interrupt"
-                role="status"
-                aria-live="polite"
-                onClick={() => {
-                  // Clicking it just clears it for now (simple UX).
-                  setLiveInterruption(null);
-                }}
-                title="Click to dismiss"
-              >
-                <div className="ici-interrupt__label">Interviewer interruption</div>
-                <div className="ici-interrupt__text">{liveInterruption.message}</div>
+            <div className="panel__header panel__header--editor">
+              <span>Editor</span>
+              {isMultiPracticeEffective ? (
+                <span className="multi__kbd-hint" title="Quick switching shortcuts">
+                  Ctrl/⌘+1..3 · Ctrl/⌘+Shift+←/→
+                </span>
+              ) : null}
+            </div>
+
+            {isMultiPracticeEffective ? (
+              <div className="multi-tabs" role="tablist" aria-label="Multi-problem tabs">
+                {(multiPracticeSession?.problemIds || []).map((pid) => {
+                  const p = PROBLEMS.find((x) => x.id === pid) || null;
+                  const isActive = pid === activeProblemId;
+                  return (
+                    <div key={pid} className={`multi-tabs__tabwrap ${isActive ? "is-active" : ""}`}>
+                      <button
+                        type="button"
+                        className={`multi-tabs__tab ${isActive ? "is-active" : ""}`}
+                        onClick={() => setActiveProblemId(pid)}
+                        role="tab"
+                        aria-selected={isActive}
+                      >
+                        {p?.title || pid}
+                      </button>
+                      <button
+                        type="button"
+                        className="multi-tabs__close"
+                        onClick={() => removeProblemFromMultiSession(pid)}
+                        aria-label={`Remove ${(p?.title || pid)} from session`}
+                        title="Remove from session"
+                        disabled={(multiPracticeSession?.problemIds || []).length <= 1}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
                 <button
                   type="button"
-                  className="ici-interrupt__close"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setLiveInterruption(null);
-                  }}
-                  aria-label="Dismiss interruption"
+                  className="multi-tabs__add"
+                  onClick={addProblemToMultiSession}
+                  disabled={(multiPracticeSession?.problemIds || []).length >= MULTI_PRACTICE_MAX}
+                  aria-label="Add problem to session"
+                  title="Add problem"
                 >
-                  ×
+                  + Add
                 </button>
               </div>
             ) : null}
-            <Editor
-              height="100%"
-              defaultLanguage="javascript"
-              theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
-              value={code}
-              onMount={(editor, monaco) => {
-                editorRef.current = editor;
-                monacoRef.current = monaco;
-                setEditorReadyTick((t) => t + 1);
-              }}
-              onChange={(value) => setCode(value ?? "")}
-              options={editorOptions}
-            />
+
+            <div className="editor__body">
+              {liveInterruption?.message ? (
+                <div
+                  className="ici-interrupt"
+                  role="status"
+                  aria-live="polite"
+                  onClick={() => {
+                    // Clicking it just clears it for now (simple UX).
+                    setLiveInterruption(null);
+                  }}
+                  title="Click to dismiss"
+                >
+                  <div className="ici-interrupt__label">Interviewer interruption</div>
+                  <div className="ici-interrupt__text">{liveInterruption.message}</div>
+                  <button
+                    type="button"
+                    className="ici-interrupt__close"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setLiveInterruption(null);
+                    }}
+                    aria-label="Dismiss interruption"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : null}
+              <Editor
+                height="100%"
+                defaultLanguage="javascript"
+                theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
+                value={code}
+                onMount={(editor, monaco) => {
+                  editorRef.current = editor;
+                  monacoRef.current = monaco;
+                  setEditorReadyTick((t) => t + 1);
+                }}
+                onChange={(value) => setCode(value ?? "")}
+                options={editorOptions}
+              />
+            </div>
           </section>
 
           <section className="panel panel--console">
@@ -3841,6 +4180,122 @@ function __ici_isEqual(problemId, actual, expected) {
         </div>
 
         <div className="app__right">
+          {isMultiPracticeEffective ? (
+            <section className="panel panel--multi">
+              <div className="panel__header panel__header--multi">
+                <span>Multi-problem practice</span>
+                <div className="multi__actions">
+                  <button
+                    type="button"
+                    className="chat__header-btn"
+                    onClick={() => {
+                      openMultiSummary();
+                      generateMultiSummary();
+                    }}
+                  >
+                    Session summary
+                  </button>
+                </div>
+              </div>
+              <div className="multi">
+                <div className={`multi__grid multi__grid--${(multiPracticeSession?.problemIds || []).length}`}>
+                  {(multiPracticeSession?.problemIds || []).map((pid, idx) => {
+                    const p = PROBLEMS.find((x) => x.id === pid) || null;
+                    const summary = testRunByProblemId?.[pid]?.summary || null;
+                    const passed = Number(summary?.passed || 0);
+                    const total = Number(summary?.total || 0);
+                    const solved = Boolean(solvedByProblemId?.[pid]);
+                    const note = String(approachNotesByProblemId?.[pid] || "");
+                    const snapshot =
+                      typeof codeByProblemId?.[pid] === "string"
+                        ? String(codeByProblemId?.[pid] || "")
+                        : p
+                          ? buildStarterCode(p)
+                          : "";
+
+                    return (
+                      <div key={pid} className={`multi__card ${pid === activeProblemId ? "is-active" : ""}`}>
+                        <div className="multi__card-top">
+                          <div className="multi__title">{p?.title || pid}</div>
+                          <div className="multi__meta">
+                            <span className={`multi__pill ${solved ? "is-solved" : ""}`}>
+                              {solved ? "Solved" : (p?.difficulty || "—")}
+                            </span>
+                            <span className="multi__pill">
+                              Tests: {passed}/{total}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="multi__controls">
+                          <button
+                            type="button"
+                            className="multi__btn"
+                            onClick={() => setActiveProblemId(pid)}
+                          >
+                            Open
+                          </button>
+                          <button
+                            type="button"
+                            className="multi__btn multi__btn--primary"
+                            onClick={() => handleRunTests(pid)}
+                            disabled={isLocked || isRunning}
+                          >
+                            Run tests
+                          </button>
+                        </div>
+
+                        <label className="multi__field">
+                          <span>Swap problem</span>
+                          <select
+                            value={pid}
+                            onChange={(e) => replaceMultiSessionSlot(idx, e.target.value)}
+                            disabled={isLocked}
+                          >
+                            {PROBLEMS.map((cand) => {
+                              const unlocked = isProblemUnlocked(cand, unlocks);
+                              const inUse = (multiPracticeSession?.problemIds || []).includes(cand.id) && cand.id !== pid;
+                              const label = !unlocked
+                                ? `${cand.title} (Locked)`
+                                : inUse
+                                  ? `${cand.title} (In session)`
+                                  : cand.title;
+                              return (
+                                <option key={cand.id} value={cand.id} disabled={!unlocked || inUse}>
+                                  {label}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </label>
+
+                        <label className="multi__field">
+                          <span>Approach notes</span>
+                          <textarea
+                            value={note}
+                            onChange={(e) => setApproachNoteForProblem(pid, e.target.value)}
+                            placeholder="Write the approach (DS/algorithm, complexity, pitfalls)."
+                            rows={6}
+                            disabled={isLocked}
+                          />
+                        </label>
+
+                        <div className="multi__codeblock">
+                          <div className="multi__code-title">Code snapshot</div>
+                          <pre className="multi__code">{snapshot || "// No code yet"}</pre>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="multi__hint">
+                  Tip: keep short notes per problem, then generate a session summary to spot patterns.
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           <section className="panel panel--problem">
             <div className="panel__header panel__header--problem">
               <div className="problem__title">
