@@ -441,6 +441,23 @@ textarea {
   border-color: #86efac;
 }
 
+/* ===== Latest message highlight (newest-first chat order) ===== */
+.chat__message--latest {
+  border-left: 3px solid #6366f1;
+  animation: latestMessageFadeIn 0.3s ease-out;
+}
+
+@keyframes latestMessageFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ===== Interviewer Interruption Messages ===== */
 .chat__message--interruption {
   background: linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%);
@@ -5848,6 +5865,10 @@ body.theme-dark .chat__message--assistant {
 body.theme-dark .chat__message--user {
   background: #1e3a5f;
   border-color: #3b82f6;
+}
+
+body.theme-dark .chat__message--latest {
+  border-left-color: #818cf8;
 }
 
 body.theme-dark .chat__content {

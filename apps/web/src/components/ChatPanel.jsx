@@ -12,7 +12,6 @@ function ChatPanel({
   onSend,
   showVoiceControls = true
 }) {
-  const messagesEndRef = useRef(null);
   const messagesContainerRef = useRef(null);
   const textareaRef = useRef(null);
   
@@ -49,11 +48,10 @@ function ChatPanel({
     }
   }, [isSpeaking]);
 
-  // Scroll to bottom only within the chat panel (not the whole page)
+  // Scroll to top so the newest message (displayed first) is always visible
   useEffect(() => {
-    if (messagesEndRef.current && messagesContainerRef.current) {
-      // Scroll only the chat messages container, not the page
-      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = 0;
     }
   }, [messages]);
 
@@ -89,19 +87,22 @@ function ChatPanel({
           aria-label="Chat messages"
           tabIndex={0}
         >
-          {messages.map((message, index) => {
+          {[...messages].reverse().map((message, reversedIndex) => {
+            const originalIndex = messages.length - 1 - reversedIndex;
             const isInterruption = message.isInterruption;
-            const isCurrentlySpeaking = isSpeaking && speakingMessageIndex === index;
+            const isCurrentlySpeaking = isSpeaking && speakingMessageIndex === originalIndex;
+            const isLatest = reversedIndex === 0;
             const messageClasses = [
               "chat__message",
               `chat__message--${message.role}`,
               isInterruption ? "chat__message--interruption" : "",
-              isCurrentlySpeaking ? "chat__message--speaking" : ""
+              isCurrentlySpeaking ? "chat__message--speaking" : "",
+              isLatest ? "chat__message--latest" : ""
             ].filter(Boolean).join(" ");
 
             return (
               <article
-                key={`${message.role}-${index}`}
+                key={`${message.role}-${originalIndex}`}
                 className={messageClasses}
                 aria-label={`${message.role === "assistant" ? "Interviewer" : "You"}: ${message.content.substring(0, 50)}...`}
               >
@@ -137,7 +138,7 @@ function ChatPanel({
                     <button
                       type="button"
                       className={`chat__speak-btn ${isCurrentlySpeaking ? 'chat__speak-btn--speaking' : ''}`}
-                      onClick={() => handleSpeakMessage(message.content, index)}
+                      onClick={() => handleSpeakMessage(message.content, originalIndex)}
                       aria-label={isCurrentlySpeaking ? "Stop speaking" : "Speak this message"}
                       title={isCurrentlySpeaking ? "Stop" : "Speak"}
                     >
@@ -148,7 +149,6 @@ function ChatPanel({
               </article>
             );
           })}
-          <div ref={messagesEndRef} aria-hidden="true" />
         </div>
         <div className="chat__input" role="form" aria-label="Send a message">
           <label htmlFor="chat-textarea" className="sr-only">

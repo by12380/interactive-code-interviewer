@@ -699,8 +699,8 @@ export default function App() {
       return;
     }
 
-    // Analyze after user stops typing for 1.5 seconds
-    const analysisDelay = 1500;
+    // Analyze after user stops typing for 18 seconds
+    const analysisDelay = 18000;
 
     const analysisTimeout = setTimeout(async () => {
       // Skip if code hasn't changed, interrupt is in flight, or cooldown hasn't elapsed
@@ -781,8 +781,8 @@ export default function App() {
 
   // Background proactive hints (less aggressive, runs less frequently)
   useEffect(() => {
-    const debounceMs = 5000;
-    const maxWaitMs = 15000;
+    const debounceMs = 18000;
+    const maxWaitMs = 35000;
     const now = Date.now();
     const timeSinceLast = now - lastProactiveAtRef.current;
     const shouldForce = timeSinceLast >= maxWaitMs;
