@@ -1691,6 +1691,7 @@ export default function App() {
   const runnerIframeRef = useRef(null);
   const runIdRef = useRef(0);
   const chatMessagesRef = useRef(null);
+  const hasInitializedChatScrollRef = useRef(false);
   const editorRef = useRef(null);
   const monacoRef = useRef(null);
   const [editorReadyTick, setEditorReadyTick] = useState(0);
@@ -1747,10 +1748,14 @@ export default function App() {
     // Auto-scroll ONLY the chat panel (avoid scrolling the whole page while typing code).
     const el = chatMessagesRef.current;
     if (!el) return;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    const nearBottom = distanceFromBottom < 120;
-    if (!nearBottom) return;
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (!hasInitializedChatScrollRef.current) {
+      el.scrollTop = 0;
+      hasInitializedChatScrollRef.current = true;
+      return;
+    }
+    const nearTop = el.scrollTop < 120;
+    if (!nearTop) return;
+    el.scrollTo({ top: 0, behavior: "smooth" });
   }, [messages.length]);
   useEffect(() => {
     if (!isLocked) {
@@ -2912,12 +2917,7 @@ export default function App() {
   }, [liveInterruption?.ts]);
 
   useEffect(() => {
-    const debounceMs = 1500;
-    const maxWaitMs = 3000;
-    const now = Date.now();
-    const timeSinceLast = now - lastProactiveAtRef.current;
-    const shouldForce = timeSinceLast >= maxWaitMs;
-    const delay = shouldForce ? 0 : debounceMs;
+    const delay = 18_000; // Keep proactive coach calls infrequent while typing.
 
     const timeout = setTimeout(async () => {
       if (proactiveInFlightRef.current) {
@@ -3401,6 +3401,7 @@ function __ici_isEqual(problemId, actual, expected) {
 
   const activeSolved = Boolean(solvedByProblemId?.[activeProblem?.id]);
   const activeTestRun = testRunByProblemId?.[activeProblem?.id] || null;
+  const displayMessages = useMemo(() => [...messages].reverse(), [messages]);
   const revealedCount = Math.min(
     Number(revealedHintCount?.[activeProblem?.id] || 0),
     activeProblem?.hints?.length || 0
@@ -4752,7 +4753,7 @@ function __ici_isEqual(problemId, actual, expected) {
             </div>
             <div className="chat">
               <div className="chat__messages" ref={chatMessagesRef}>
-                {messages.map((message, index) => (
+                {displayMessages.map((message, index) => (
                   <div
                     key={`${message.role}-${index}`}
                     className={`chat__message chat__message--${message.role}`}

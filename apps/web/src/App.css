@@ -866,6 +866,10 @@ html[data-theme="dark"] .auth__field input {
   min-width: 0;
 }
 
+.app__right .panel--chat {
+  order: -1;
+}
+
 .panel {
   background: var(--panel);
   border: 1px solid var(--border);
