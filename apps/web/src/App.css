@@ -58,8 +58,7 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  position: sticky;
-  top: 0;
+  flex-shrink: 0;
   z-index: 10;
   box-shadow: var(--shadow-sm);
 }
@@ -216,12 +215,84 @@ textarea {
   grid-template-columns: 1.3fr 1fr;
   gap: 20px;
   padding: 20px 24px 28px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .app__sidebar {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 0;
+  min-height: 0;
+  overflow: hidden;
+  transition: width 0.25s ease, min-width 0.25s ease;
+  position: relative;
+}
+
+/* === Right Panel Collapse/Expand === */
+.app__sidebar--collapsed {
+  width: 44px;
+  min-width: 44px;
+  overflow: hidden;
+  gap: 0;
+}
+
+.app__sidebar-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+}
+
+.app__sidebar-collapse-btn:hover {
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.app__sidebar--collapsed .app__sidebar-collapse-btn {
+  position: static;
+  align-self: center;
+  margin: 8px auto 4px;
+}
+
+.app__sidebar-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.app__sidebar--collapsed .app__sidebar-content {
+  display: none;
+}
+
+.app__sidebar-collapsed-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 12px 0;
+  text-align: center;
+  user-select: none;
 }
 
 .panel {
@@ -230,9 +301,24 @@ textarea {
   border-radius: 16px;
   display: flex;
   flex-direction: column;
-  min-height: 400px;
+  min-height: 0;
   overflow: hidden;
   box-shadow: var(--shadow-md);
+}
+
+/* Chat panel fills available space and scrolls internally */
+.app__sidebar .panel--chat {
+  flex: 1;
+  min-height: 0;
+  border-radius: 12px;
+}
+
+/* Metrics panel stays compact at the bottom, scrolls if needed */
+.app__sidebar .panel--metrics {
+  flex-shrink: 0;
+  max-height: 35%;
+  overflow-y: auto;
+  border-radius: 12px;
 }
 
 .panel__header {
@@ -241,6 +327,7 @@ textarea {
   font-weight: 600;
   border-bottom: 1px solid var(--border);
   letter-spacing: 0.01em;
+  flex-shrink: 0;
 }
 
 .panel__header--editor {
@@ -281,7 +368,7 @@ textarea {
 }
 
 .panel--editor {
-  min-height: 540px;
+  min-height: 0;
   position: relative;
   overflow: visible; /* Allow the interviewer hint widget to float above */
 }
@@ -401,11 +488,13 @@ textarea {
 .chat {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
 }
 
 .chat__messages {
   flex: 1;
+  min-height: 0;
   padding: 16px;
   overflow-y: auto;
   display: flex;
@@ -626,6 +715,7 @@ textarea {
   gap: 12px;
   background: #ffffff;
   align-items: flex-end;
+  flex-shrink: 0;
 }
 
 .chat__input textarea {
@@ -670,7 +760,38 @@ textarea {
 }
 
 .panel--report {
-  margin: 0 24px 32px;
+  margin: 0;
+}
+
+/* Score Report Overlay */
+.score-report-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.score-report-overlay__content {
+  width: 100%;
+  max-width: 900px;
+  max-height: 90vh;
+  overflow-y: auto;
+  border-radius: 16px;
+}
+
+.score-report-overlay__content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.score-report-overlay__content::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 999px;
 }
 
 .report {
@@ -1053,17 +1174,20 @@ textarea {
   flex-direction: column;
   gap: 16px;
   position: relative; /* For toast positioning */
+  min-height: 0;
+  overflow: hidden;
 }
 
 .app__editor-section .panel--editor {
   flex: 1;
-  min-height: 380px;
+  min-height: 0;
 }
 
 /* Console Panel Styles */
 .panel--console {
-  min-height: 180px;
+  min-height: 150px;
   max-height: 250px;
+  flex-shrink: 0;
 }
 
 .panel__header--console {
@@ -1207,7 +1331,7 @@ textarea {
 
 @media (max-width: 1024px) {
   .app__editor-section .panel--editor {
-    min-height: 300px;
+    min-height: 0;
   }
   
   .panel--console {
@@ -1997,16 +2121,25 @@ textarea {
   grid-template-columns: 1fr 1.2fr 0.9fr;
   gap: 20px;
   padding: 20px 24px 28px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Right panel collapsed: redistribute space to editor */
+.app__main--right-collapsed {
+  grid-template-columns: 1fr 1.5fr auto !important;
 }
 
 .app__problem-section {
   display: flex;
   flex-direction: column;
-  min-height: 600px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .app__problem-section .problem-panel {
   flex: 1;
+  min-height: 0;
 }
 
 @media (max-width: 1280px) {
@@ -2016,7 +2149,19 @@ textarea {
   
   .app__problem-section {
     grid-column: 1 / -1;
-    min-height: 400px;
+    min-height: 0;
+  }
+
+  /* At 2-column, allow vertical scrolling since panels stack */
+  .app__content {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+  }
+
+  .app__main {
+    min-height: auto;
+    overflow: visible;
   }
 }
 
@@ -2026,7 +2171,7 @@ textarea {
   }
   
   .app__problem-section {
-    min-height: 350px;
+    min-height: 0;
   }
   
   .problem-selector__dropdown {
@@ -5852,6 +5997,26 @@ body.theme-dark .panel__header {
   color: #e2e8f0;
 }
 
+body.theme-dark .app__sidebar-collapse-btn {
+  background: #1e293b;
+  border-color: #334155;
+  color: #94a3b8;
+}
+
+body.theme-dark .app__sidebar-collapse-btn:hover {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+  border-color: #6366f1;
+}
+
+body.theme-dark .app__sidebar-collapsed-label {
+  color: #64748b;
+}
+
+body.theme-dark .score-report-overlay {
+  background: rgba(0, 0, 0, 0.7);
+}
+
 body.theme-dark .chat__message {
   background: #0f172a;
   border-color: #334155;
@@ -7036,7 +7201,7 @@ body.theme-dark .onboarding-tour__content {
   }
 
   .panel {
-    min-height: 300px;
+    min-height: 0;
     border-radius: 12px;
   }
 
@@ -10850,15 +11015,16 @@ body.theme-dark .roadmap-trigger:hover {
 .app--with-sidebar {
   display: flex;
   flex-direction: row;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .app__content {
   flex: 1;
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
-  overflow-x: hidden;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* Sidebar Base Styles */
@@ -14772,7 +14938,7 @@ body.theme-dark .templates-import-export__close:hover {
 .app__main--no-chat .app__problem-section {
   max-width: none;
   grid-column: auto !important;
-  min-height: 600px;
+  min-height: 0;
 }
 
 .app__main--no-chat .app__editor-section {
@@ -14806,7 +14972,7 @@ body.theme-dark .templates-import-export__close:hover {
   
   .app__main--no-chat .app__problem-section {
     grid-column: auto !important;
-    min-height: 500px;
+    min-height: 0;
   }
 }
 
@@ -14820,7 +14986,7 @@ body.theme-dark .templates-import-export__close:hover {
   }
   
   .app__main--no-chat .app__problem-section {
-    min-height: 350px;
+    min-height: 0;
   }
   
   .app__main--no-problem.app__main--no-chat {

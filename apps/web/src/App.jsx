@@ -330,6 +330,9 @@ export default function App() {
   // Split Screen Multi-Problem state
   const [isSplitScreenVisible, setIsSplitScreenVisible] = useState(false);
 
+  // Right panel collapse state
+  const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
+
   const TOTAL_SECONDS = currentProblem?.timeLimit || 30 * 60;
   const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
   const isTimeUp = elapsedSeconds >= TOTAL_SECONDS;
@@ -404,6 +407,11 @@ export default function App() {
     setIsTemplatesVisible(false);
   }, []);
 
+  // Right panel collapse toggle
+  const handleToggleRightPanel = useCallback(() => {
+    setIsRightPanelCollapsed(prev => !prev);
+  }, []);
+
   // Split Screen handlers
   const handleOpenSplitScreen = useCallback(() => {
     setIsSplitScreenVisible(true);
@@ -455,11 +463,7 @@ export default function App() {
     }
   }, [isLocked, isTimeUp]);
 
-  useEffect(() => {
-    if (isReportVisible) {
-      reportRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [isReportVisible]);
+  // Report is now a modal overlay, no need for scrollIntoView
 
   // Load personal best on mount and when user changes
   useEffect(() => {
@@ -1531,7 +1535,7 @@ export default function App() {
           />
         )}
 
-        <main className={`app__main ${isZenMode ? "app__main--zen" : ""} ${shouldHideProblem && !isZenMode ? "app__main--no-problem" : ""} ${shouldHideChat && !isZenMode ? "app__main--no-chat" : ""}`} id="main-content" role="main">
+        <main className={`app__main ${isZenMode ? "app__main--zen" : ""} ${shouldHideProblem && !isZenMode ? "app__main--no-problem" : ""} ${shouldHideChat && !isZenMode ? "app__main--no-chat" : ""} ${isRightPanelCollapsed && !shouldHideChat && !isZenMode ? "app__main--right-collapsed" : ""}`} id="main-content" role="main">
         {!isZenMode && !shouldHideProblem && (
           <div className="app__problem-section" id="problem-panel">
             <ProblemPanel
@@ -1572,94 +1576,114 @@ export default function App() {
           )}
         </div>
         {!shouldHideChat && !isZenMode && (
-          <div className="app__sidebar" id="chat-panel">
-            <ChatPanel
-              messages={messages}
-              input={input}
-              isLocked={isLocked}
-              isPaused={isPaused}
-              isSending={isSending}
-              onInputChange={handleInputChange}
-              onKeyDown={handleInputKeyDown}
-              onSend={handleSend}
-            />
-            {!shouldHideMetrics && (
-              <SessionMetrics
-                hintsUsed={hintsUsed}
-                testsPassed={testsPassed}
-                testsTotal={testsTotal}
-                testResults={testResults}
-                efficiency={efficiency}
-                efficiencyNote={efficiencyNote}
-                testsNote={testsNote}
-                isLocked={isLocked}
-                onEvaluateEfficiency={handleEvaluateEfficiency}
-                onRunTests={handleRunTests}
-                onComplete={handleStop}
-              />
+          <div className={`app__sidebar ${isRightPanelCollapsed ? "app__sidebar--collapsed" : ""}`} id="chat-panel">
+            <button
+              type="button"
+              className="app__sidebar-collapse-btn"
+              onClick={handleToggleRightPanel}
+              aria-label={isRightPanelCollapsed ? "Expand right panel" : "Collapse right panel"}
+              title={isRightPanelCollapsed ? "Expand (AI Interview, Metrics)" : "Collapse right panel"}
+            >
+              {isRightPanelCollapsed ? "◀" : "▶"}
+            </button>
+            {isRightPanelCollapsed && (
+              <span className="app__sidebar-collapsed-label">Chat & Metrics</span>
             )}
+            <div className="app__sidebar-content">
+              <ChatPanel
+                messages={messages}
+                input={input}
+                isLocked={isLocked}
+                isPaused={isPaused}
+                isSending={isSending}
+                onInputChange={handleInputChange}
+                onKeyDown={handleInputKeyDown}
+                onSend={handleSend}
+              />
+              {!shouldHideMetrics && (
+                <SessionMetrics
+                  hintsUsed={hintsUsed}
+                  testsPassed={testsPassed}
+                  testsTotal={testsTotal}
+                  testResults={testResults}
+                  efficiency={efficiency}
+                  efficiencyNote={efficiencyNote}
+                  testsNote={testsNote}
+                  isLocked={isLocked}
+                  onEvaluateEfficiency={handleEvaluateEfficiency}
+                  onRunTests={handleRunTests}
+                  onComplete={handleStop}
+                />
+              )}
+            </div>
           </div>
         )}
       </main>
-      <div ref={reportRef}>
-        <ScoreReport
-          isVisible={isReportVisible}
-          totalScore={totalScore}
-          grade={grade}
-          timeSummary={{
-            takenSeconds: elapsedSeconds,
-            limitSeconds: TOTAL_SECONDS,
-            score: timeScore,
-            note:
-              timeScore >= 100
-                ? "Completed quickly!"
-                : timeScore >= 80
-                ? "Nice pacing throughout."
-                : timeScore >= 60
-                ? "Used the full time window."
-                : "Went beyond the time limit."
-          }}
-          efficiencySummary={{
-            label: efficiency,
-            score: efficiencyScore,
-            note:
-              efficiencyScore >= 100
-                ? "Optimal solution!"
-                : efficiencyScore >= 50
-                ? "A solid brute-force baseline."
-                : "Consider optimizing for speed."
-          }}
-          hintsSummary={{
-            count: hintsUsed,
-            score: hintsScore,
-            note:
-              hintsScore >= 100
-                ? "Solved without hints."
-                : hintsScore >= 60
-                ? "Try solving with fewer hints."
-                : "Leverage hints more strategically."
-          }}
-          testsSummary={{
-            passed: testsPassed,
-            score: testsScore,
-            note:
-              testsScore >= 100
-                ? "All tests passed!"
-                : testsScore >= 80
-                ? "Almost there—one test failed."
-                : testsScore >= 60
-                ? "A few tests still need attention."
-                : "Revisit the failing test cases."
-          }}
-          breakdown={reportBreakdown}
-          history={historyData}
-          onToggleDetails={() => setIsDetailsVisible((prev) => !prev)}
-          isDetailsVisible={isDetailsVisible}
-          aiFeedback={aiFeedback}
-          detailedAnalysis={detailedAnalysis}
-        />
       </div>
-      </div>
+
+      {/* Score Report Modal Overlay */}
+      {isReportVisible && (
+        <div className="score-report-overlay" ref={reportRef}>
+          <div className="score-report-overlay__content">
+            <ScoreReport
+              isVisible={isReportVisible}
+              totalScore={totalScore}
+              grade={grade}
+              timeSummary={{
+                takenSeconds: elapsedSeconds,
+                limitSeconds: TOTAL_SECONDS,
+                score: timeScore,
+                note:
+                  timeScore >= 100
+                    ? "Completed quickly!"
+                    : timeScore >= 80
+                    ? "Nice pacing throughout."
+                    : timeScore >= 60
+                    ? "Used the full time window."
+                    : "Went beyond the time limit."
+              }}
+              efficiencySummary={{
+                label: efficiency,
+                score: efficiencyScore,
+                note:
+                  efficiencyScore >= 100
+                    ? "Optimal solution!"
+                    : efficiencyScore >= 50
+                    ? "A solid brute-force baseline."
+                    : "Consider optimizing for speed."
+              }}
+              hintsSummary={{
+                count: hintsUsed,
+                score: hintsScore,
+                note:
+                  hintsScore >= 100
+                    ? "Solved without hints."
+                    : hintsScore >= 60
+                    ? "Try solving with fewer hints."
+                    : "Leverage hints more strategically."
+              }}
+              testsSummary={{
+                passed: testsPassed,
+                score: testsScore,
+                note:
+                  testsScore >= 100
+                    ? "All tests passed!"
+                    : testsScore >= 80
+                    ? "Almost there—one test failed."
+                    : testsScore >= 60
+                    ? "A few tests still need attention."
+                    : "Revisit the failing test cases."
+              }}
+              breakdown={reportBreakdown}
+              history={historyData}
+              onToggleDetails={() => setIsDetailsVisible((prev) => !prev)}
+              isDetailsVisible={isDetailsVisible}
+              aiFeedback={aiFeedback}
+              detailedAnalysis={detailedAnalysis}
+            />
+          </div>
+        </div>
+      )}
 
       <Tutorial isVisible={isTutorialVisible} onClose={handleCloseTutorial} />
       
@@ -1785,6 +1809,7 @@ export default function App() {
           onSelectProblem={handleSelectProblem}
         />
       )}
+
     </div>
   );
 }
