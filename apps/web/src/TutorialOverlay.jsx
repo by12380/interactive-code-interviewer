@@ -76,7 +76,11 @@ export default function TutorialOverlay({
       if (!el) {
         return;
       }
-      el.scrollIntoView({ block: "center", inline: "nearest" });
+      const rect = el.getBoundingClientRect();
+      const viewportHeight = window.innerHeight || 0;
+      const isFullyVisible = rect.top >= 0 && rect.bottom <= viewportHeight;
+      if (isFullyVisible) return;
+      el.scrollIntoView({ block: "nearest", inline: "nearest" });
     };
 
     maybeScrollIntoView();

@@ -128,7 +128,7 @@ export default function VoicePanel({
   const enabledRef = useRef(Boolean(settings.enabled));
 
   const lastSpokenAssistantIdxRef = useRef(-1);
-  const transcriptEndRef = useRef(null);
+  const transcriptContainerRef = useRef(null);
 
   const sttSupported = isSpeechRecognitionSupported();
   const ttsSupported = Boolean(globalThis.speechSynthesis && globalThis.SpeechSynthesisUtterance);
@@ -163,9 +163,9 @@ export default function VoicePanel({
 
   // Keep transcript view pinned to bottom.
   useEffect(() => {
-    const el = transcriptEndRef.current;
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "end" });
+    const container = transcriptContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [transcript.length, interimUserText]);
 
   // Load TTS voices list (async in many browsers).
@@ -693,7 +693,7 @@ export default function VoicePanel({
 
           <div className="voice__field voice__field--wide">
             <div className="voice__label">Live transcript</div>
-            <div className="voice__transcript" role="log" aria-label="Voice transcript">
+            <div className="voice__transcript" role="log" aria-label="Voice transcript" ref={transcriptContainerRef}>
               {transcript.map((t) => (
                 <div key={t.id} className={`voice__line voice__line--${t.role}`}>
                   <span className="voice__who">{t.role}</span>
@@ -706,7 +706,6 @@ export default function VoicePanel({
                   <span className="voice__text">{interimUserText}</span>
                 </div>
               ) : null}
-              <div ref={transcriptEndRef} />
             </div>
             <div className="voice__transcript-actions">
               <button
