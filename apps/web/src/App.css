@@ -132,6 +132,13 @@ html[data-keyboard-nav="true"] a:focus {
   min-height: 100vh;
 }
 
+@media (min-width: 1025px) {
+  .app {
+    height: 100vh;
+    overflow: hidden;
+  }
+}
+
 .app--focus {
   /* Default values overridden inline from prefs */
   --focus-backdrop-opacity: 0.28;
@@ -393,6 +400,13 @@ html[data-theme="dark"] .app--focus-zen .panel__header {
   min-height: 100vh;
 }
 
+@media (min-width: 1025px) {
+  .app__shell {
+    height: 100%;
+    min-height: 0;
+  }
+}
+
 .app__sidebar {
   grid-column: 1;
   grid-row: 1;
@@ -468,6 +482,13 @@ html[data-theme="dark"] .app__sidebar-section {
   grid-column: 2;
   grid-row: 1;
   min-width: 0;
+}
+
+@media (min-width: 1025px) {
+  .app__content {
+    min-height: 0;
+    overflow: hidden;
+  }
 }
 
 .app__sidebar .difficulty-card,
@@ -852,6 +873,18 @@ html[data-theme="dark"] .auth__field input {
   padding: 20px 24px 28px;
 }
 
+@media (min-width: 1025px) {
+  .app__main {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
+.app__main--right-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .app__left {
   display: flex;
   flex-direction: column;
@@ -859,11 +892,36 @@ html[data-theme="dark"] .auth__field input {
   min-width: 0;
 }
 
+@media (min-width: 1025px) {
+  .app__left {
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
 .app__right {
   display: flex;
   flex-direction: column;
   gap: 20px;
   min-width: 0;
+}
+
+@media (min-width: 1025px) {
+  .app__right {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 2px;
+    align-items: stretch;
+  }
+}
+
+.app__right.is-collapsed {
+  display: none;
+}
+
+.app__right > .panel {
+  flex: 0 0 auto;
 }
 
 .app__right .panel--chat {
@@ -1670,6 +1728,47 @@ html[data-theme="dark"] .chat__message--user {
   gap: 12px;
 }
 
+.panel__header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.panel__collapse-btn {
+  border: 1px solid rgba(203, 213, 225, 0.95);
+  background: rgba(255, 255, 255, 0.9);
+  color: #0f172a;
+  padding: 7px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 900;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.panel__collapse-btn:hover {
+  background: rgba(241, 245, 249, 0.95);
+}
+
+html[data-theme="dark"] .panel__collapse-btn {
+  background: rgba(15, 23, 42, 0.7);
+  border-color: rgba(148, 163, 184, 0.3);
+  color: #e5e7eb;
+}
+
+@media (max-width: 560px) {
+  .panel__header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .panel__collapse-btn {
+    font-size: 11px;
+    padding: 6px 8px;
+  }
+}
+
 .multi__kbd-hint {
   font-size: 12px;
   font-weight: 900;
@@ -2050,6 +2149,18 @@ html[data-theme="dark"] .multi__hint {
   min-height: 200px;
 }
 
+@media (min-width: 1025px) {
+  .panel--editor {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .panel--console {
+    flex: 0 0 240px;
+    min-height: 180px;
+  }
+}
+
 .panel__header--console {
   display: flex;
   align-items: center;
@@ -2344,6 +2455,7 @@ html[data-theme="dark"] .panel--editor .monaco-editor .margin {
   flex-direction: column;
   gap: 12px;
   min-height: 0;
+  overflow: auto;
 }
 
 .voice__title {
@@ -4246,6 +4358,8 @@ html[data-theme="dark"] .toast__close:hover {
   flex-direction: column;
   gap: 14px;
   padding: 12px;
+  min-height: 0;
+  overflow: auto;
 }
 
 .roadmap__section {

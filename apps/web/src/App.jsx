@@ -1654,6 +1654,7 @@ export default function App() {
   const [tutorialStepIndex, setTutorialStepIndex] = useState(0);
   const [consoleEntries, setConsoleEntries] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
   const [liveInterruption, setLiveInterruption] = useState(null); // { message, ts }
   const [interviewSession, setInterviewSession] = useState(null);
   const [behavioralAnswer, setBehavioralAnswer] = useState("");
@@ -4047,16 +4048,27 @@ function __ici_isEqual(problemId, actual, expected) {
         </aside>
 
         <div className="app__content">
-          <main id="main-content" className="app__main">
+          <main id="main-content" className={`app__main ${isRightPanelCollapsed ? "app__main--right-collapsed" : ""}`}>
         <div className="app__left">
           <section className="panel panel--editor" data-tutorial="editor">
             <div className="panel__header panel__header--editor">
               <span>Editor</span>
-              {isMultiPracticeEffective ? (
-                <span className="multi__kbd-hint" title="Quick switching shortcuts">
-                  Ctrl/⌘+1..3 · Ctrl/⌘+Shift+←/→
-                </span>
-              ) : null}
+              <div className="panel__header-actions">
+                {isMultiPracticeEffective ? (
+                  <span className="multi__kbd-hint" title="Quick switching shortcuts">
+                    Ctrl/⌘+1..3 · Ctrl/⌘+Shift+←/→
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  className="panel__collapse-btn"
+                  onClick={() => setIsRightPanelCollapsed((prev) => !prev)}
+                  aria-expanded={!isRightPanelCollapsed}
+                  aria-label={isRightPanelCollapsed ? "Expand right panel" : "Collapse right panel"}
+                >
+                  {isRightPanelCollapsed ? "Show right panel" : "Hide right panel"}
+                </button>
+              </div>
             </div>
 
             {isMultiPracticeEffective ? (
@@ -4211,7 +4223,9 @@ function __ici_isEqual(problemId, actual, expected) {
           </section>
         </div>
 
-        <div className="app__right">
+        <div className={`app__right ${isRightPanelCollapsed ? "is-collapsed" : ""}`} aria-hidden={isRightPanelCollapsed}>
+          {!isRightPanelCollapsed ? (
+            <>
           {isMultiPracticeEffective ? (
             <section className="panel panel--multi">
               <div className="panel__header panel__header--multi">
@@ -4787,6 +4801,8 @@ function __ici_isEqual(problemId, actual, expected) {
               </div>
             </div>
           </section>
+            </>
+          ) : null}
         </div>
           </main>
         </div>
