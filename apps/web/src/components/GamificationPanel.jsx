@@ -12,7 +12,8 @@ import { addFriend, removeFriend } from "../services/userService.js";
 function GamificationPanel({ 
   user, 
   onClose,
-  onUserUpdate
+  onUserUpdate,
+  inline = false
 }) {
   const [activeTab, setActiveTab] = useState("overview");
   const [friendCode, setFriendCode] = useState("");
@@ -85,24 +86,16 @@ function GamificationPanel({
     legendary: "#f59e0b"
   };
 
-  return (
-    <div className="gamification-modal">
-      <div className="gamification-modal__backdrop" onClick={onClose} />
-      <div className="gamification-modal__content">
-        <button 
-          className="gamification-modal__close" 
-          onClick={onClose}
-          aria-label="Close gamification panel"
-        >
-          ×
-        </button>
-
+  const content = (
+    <>
+      {!inline && (
         <div className="gamification__header">
           <h2 className="gamification__title">Your Progress</h2>
           <div className="gamification__level-badge">
             <span className="gamification__level-number">Lv.{level}</span>
           </div>
         </div>
+      )}
 
         <div className="gamification__tabs">
           <button
@@ -347,7 +340,26 @@ function GamificationPanel({
               )}
             </div>
           )}
-        </div>
+      </div>
+    </>
+  );
+
+  if (inline) {
+    return <div className="gamification-inline">{content}</div>;
+  }
+
+  return (
+    <div className="gamification-modal">
+      <div className="gamification-modal__backdrop" onClick={onClose} />
+      <div className="gamification-modal__content">
+        <button 
+          className="gamification-modal__close" 
+          onClick={onClose}
+          aria-label="Close gamification panel"
+        >
+          &times;
+        </button>
+        {content}
       </div>
     </div>
   );

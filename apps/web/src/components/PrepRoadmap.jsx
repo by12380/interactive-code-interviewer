@@ -18,7 +18,8 @@ function PrepRoadmap({
   onClose,
   onUserUpdate,
   onSelectProblem,
-  problems
+  problems,
+  inline = false
 }) {
   // State management
   const [activeView, setActiveView] = useState("overview"); // overview, assessment, plan, recommendations
@@ -238,31 +239,23 @@ function PrepRoadmap({
     return SKILL_CATEGORIES.find(s => s.id === skillId) || { name: skillId, icon: '📊' };
   };
 
-  return (
-    <div className="roadmap-modal">
-      <div className="roadmap-modal__backdrop" onClick={onClose} />
-      <div className="roadmap-modal__content">
-        <button 
-          className="roadmap-modal__close" 
-          onClick={onClose}
-          aria-label="Close roadmap"
-        >
-          ×
-        </button>
+  const content = (
+    <>
+      {/* Milestone Celebration */}
+      {celebrationMilestone && (
+        <div className="roadmap-celebration">
+          <span className="roadmap-celebration__icon">{celebrationMilestone.icon}</span>
+          <h3 className="roadmap-celebration__title">{celebrationMilestone.name}</h3>
+          <p className="roadmap-celebration__message">{celebrationMilestone.message}</p>
+        </div>
+      )}
 
-        {/* Milestone Celebration */}
-        {celebrationMilestone && (
-          <div className="roadmap-celebration">
-            <span className="roadmap-celebration__icon">{celebrationMilestone.icon}</span>
-            <h3 className="roadmap-celebration__title">{celebrationMilestone.name}</h3>
-            <p className="roadmap-celebration__message">{celebrationMilestone.message}</p>
-          </div>
-        )}
-
+      {!inline && (
         <div className="roadmap__header">
           <h2 className="roadmap__title">Interview Prep Roadmap</h2>
           <p className="roadmap__subtitle">AI-powered personalized study plan</p>
         </div>
+      )}
 
         {/* Navigation Tabs */}
         <div className="roadmap__tabs">
@@ -749,7 +742,26 @@ function PrepRoadmap({
               )}
             </div>
           )}
-        </div>
+      </div>
+    </>
+  );
+
+  if (inline) {
+    return <div className="roadmap-inline">{content}</div>;
+  }
+
+  return (
+    <div className="roadmap-modal">
+      <div className="roadmap-modal__backdrop" onClick={onClose} />
+      <div className="roadmap-modal__content">
+        <button 
+          className="roadmap-modal__close" 
+          onClick={onClose}
+          aria-label="Close roadmap"
+        >
+          &times;
+        </button>
+        {content}
       </div>
     </div>
   );

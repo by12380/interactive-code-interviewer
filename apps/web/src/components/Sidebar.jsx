@@ -5,21 +5,16 @@ import { calculateLevel, getLevelProgress } from "../services/gamificationServic
 
 function Sidebar({
   user,
+  activeScreen,
+  onNavigate,
   onOpenAuth,
   onOpenProfile,
   onLogout,
-  onOpenLeaderboard,
   onStartInterviewSim,
-  onOpenGamification,
-  onOpenRoadmap,
-  onStartTutorial,
-  onOpenTranslator,
-  onOpenTemplates,
-  onOpenSplitScreen,
   problemSelector,
 }) {
-  const { theme, toggleTheme, openSettings } = useTheme();
-  const { settings: focusSettings, toggleFocusMode, openPanel: openFocusPanel } = useFocusMode();
+  const { theme, toggleTheme } = useTheme();
+  const { settings: focusSettings } = useFocusMode();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
@@ -48,6 +43,10 @@ function Sidebar({
     onLogout();
   }, [onLogout]);
 
+  const handleNav = useCallback((screen) => {
+    onNavigate(screen);
+  }, [onNavigate]);
+
   return (
     <aside 
       className={`sidebar ${isCollapsed ? 'sidebar--collapsed' : ''}`}
@@ -55,8 +54,8 @@ function Sidebar({
     >
       {/* Logo/Brand */}
       <div className="sidebar__brand">
-        <div className="sidebar__logo">
-          <span className="sidebar__logo-icon">💻</span>
+        <div className="sidebar__logo" onClick={() => handleNav("interview")} role="button" tabIndex={0}>
+          <span className="sidebar__logo-icon">&#x1F4BB;</span>
           {!isCollapsed && <span className="sidebar__logo-text">AI Interviewer</span>}
         </div>
         <button
@@ -65,7 +64,7 @@ function Sidebar({
           onClick={toggleCollapse}
           aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          <span className="sidebar__toggle-icon">{isCollapsed ? '→' : '←'}</span>
+          <span className="sidebar__toggle-icon">{isCollapsed ? '\u2192' : '\u2190'}</span>
         </button>
       </div>
 
@@ -99,7 +98,7 @@ function Sidebar({
                   className="sidebar__user-menu-item"
                   onClick={handleProfileClick}
                 >
-                  <span className="sidebar__menu-icon">👤</span>
+                  <span className="sidebar__menu-icon">&#x1F464;</span>
                   View Profile
                 </button>
                 <button
@@ -107,7 +106,7 @@ function Sidebar({
                   className="sidebar__user-menu-item sidebar__user-menu-item--danger"
                   onClick={handleLogoutClick}
                 >
-                  <span className="sidebar__menu-icon">🚪</span>
+                  <span className="sidebar__menu-icon">&#x1F6AA;</span>
                   Sign Out
                 </button>
               </div>
@@ -118,7 +117,7 @@ function Sidebar({
               <button
                 type="button"
                 className="sidebar__xp-section"
-                onClick={onOpenGamification}
+                onClick={() => handleNav("achievements")}
                 aria-label={`${xp} XP, click to view progress`}
               >
                 <div className="sidebar__xp-header">
@@ -138,10 +137,10 @@ function Sidebar({
             <button
               type="button"
               className={`sidebar__streak ${streak > 0 ? 'sidebar__streak--active' : ''}`}
-              onClick={onOpenGamification}
+              onClick={() => handleNav("achievements")}
               aria-label={`${streak} day streak`}
             >
-              <span className="sidebar__streak-icon">🔥</span>
+              <span className="sidebar__streak-icon">&#x1F525;</span>
               {!isCollapsed && (
                 <span className="sidebar__streak-text">
                   {streak > 0 ? `${streak} Day Streak` : 'Start a streak!'}
@@ -159,15 +158,15 @@ function Sidebar({
               className="sidebar__login-btn"
               onClick={onOpenAuth}
             >
-              <span className="sidebar__login-icon">🔑</span>
+              <span className="sidebar__login-icon">&#x1F511;</span>
               {!isCollapsed && <span>Sign In</span>}
             </button>
           </div>
         )}
       </div>
 
-      {/* Problem Selector */}
-      {!isCollapsed && (
+      {/* Problem Selector - only on interview screen */}
+      {!isCollapsed && activeScreen === "interview" && (
         <div className="sidebar__problem-selector">
           <span className="sidebar__section-label">Current Problem</span>
           {problemSelector}
@@ -177,8 +176,19 @@ function Sidebar({
       {/* Navigation Items */}
       <nav className="sidebar__nav">
         <span className="sidebar__section-label">
-          {!isCollapsed && 'Quick Actions'}
+          {!isCollapsed && 'Navigation'}
         </span>
+
+        <button
+          type="button"
+          className={`sidebar__nav-item ${activeScreen === "interview" ? "sidebar__nav-item--active" : ""}`}
+          onClick={() => handleNav("interview")}
+          aria-label="Interview workspace"
+          aria-current={activeScreen === "interview" ? "page" : undefined}
+        >
+          <span className="sidebar__nav-icon">&#x1F4BB;</span>
+          {!isCollapsed && <span className="sidebar__nav-text">Interview</span>}
+        </button>
         
         <button
           type="button"
@@ -186,98 +196,58 @@ function Sidebar({
           onClick={onStartInterviewSim}
           aria-label="Start mock interview"
         >
-          <span className="sidebar__nav-icon">🎯</span>
+          <span className="sidebar__nav-icon">&#x1F3AF;</span>
           {!isCollapsed && <span className="sidebar__nav-text">Mock Interview</span>}
         </button>
 
-        {user && (
-          <button
-            type="button"
-            className="sidebar__nav-item"
-            onClick={onOpenRoadmap}
-            aria-label="Open prep roadmap"
-          >
-            <span className="sidebar__nav-icon">🗺️</span>
-            {!isCollapsed && <span className="sidebar__nav-text">Prep Roadmap</span>}
-          </button>
-        )}
-
         <button
           type="button"
-          className="sidebar__nav-item"
-          onClick={onOpenLeaderboard}
+          className={`sidebar__nav-item ${activeScreen === "leaderboard" ? "sidebar__nav-item--active" : ""}`}
+          onClick={() => handleNav("leaderboard")}
           aria-label="View leaderboard"
+          aria-current={activeScreen === "leaderboard" ? "page" : undefined}
         >
-          <span className="sidebar__nav-icon">🏆</span>
+          <span className="sidebar__nav-icon">&#x1F3C6;</span>
           {!isCollapsed && <span className="sidebar__nav-text">Leaderboard</span>}
         </button>
 
         {user && (
           <button
             type="button"
-            className="sidebar__nav-item"
-            onClick={onOpenGamification}
+            className={`sidebar__nav-item ${activeScreen === "achievements" ? "sidebar__nav-item--active" : ""}`}
+            onClick={() => handleNav("achievements")}
             aria-label="View achievements"
+            aria-current={activeScreen === "achievements" ? "page" : undefined}
           >
-            <span className="sidebar__nav-icon">🎮</span>
+            <span className="sidebar__nav-icon">&#x1F3AE;</span>
             {!isCollapsed && <span className="sidebar__nav-text">Achievements</span>}
           </button>
         )}
 
-        <button
-          type="button"
-          className="sidebar__nav-item"
-          onClick={onOpenTranslator}
-          aria-label="Code translator"
-        >
-          <span className="sidebar__nav-icon">🔄</span>
-          {!isCollapsed && <span className="sidebar__nav-text">Code Translator</span>}
-        </button>
+        {user && (
+          <button
+            type="button"
+            className={`sidebar__nav-item ${activeScreen === "roadmap" ? "sidebar__nav-item--active" : ""}`}
+            onClick={() => handleNav("roadmap")}
+            aria-label="Open prep roadmap"
+            aria-current={activeScreen === "roadmap" ? "page" : undefined}
+          >
+            <span className="sidebar__nav-icon">&#x1F5FA;&#xFE0F;</span>
+            {!isCollapsed && <span className="sidebar__nav-text">Prep Roadmap</span>}
+          </button>
+        )}
 
-        <button
-          type="button"
-          className="sidebar__nav-item"
-          onClick={onOpenSplitScreen}
-          aria-label="Multi-Problem Practice"
-        >
-          <span className="sidebar__nav-icon">📊</span>
-          {!isCollapsed && <span className="sidebar__nav-text">Multi-Problem</span>}
-        </button>
-
-        <button
-          type="button"
-          className="sidebar__nav-item"
-          onClick={onOpenTemplates}
-          aria-label="AI Prompt Templates"
-        >
-          <span className="sidebar__nav-icon">📝</span>
-          {!isCollapsed && <span className="sidebar__nav-text">Prompt Templates</span>}
-        </button>
-
-        <button
-          type="button"
-          className={`sidebar__nav-item ${focusSettings.isEnabled ? "sidebar__nav-item--active" : ""}`}
-          onClick={openFocusPanel}
-          aria-label="Focus Mode settings"
-        >
-          <span className="sidebar__nav-icon">🎯</span>
-          {!isCollapsed && (
-            <span className="sidebar__nav-text">
-              Focus Mode
-              {focusSettings.isEnabled && <span className="sidebar__nav-badge">ON</span>}
-            </span>
-          )}
-        </button>
-
-        <button
-          type="button"
-          className="sidebar__nav-item"
-          onClick={onStartTutorial}
-          aria-label="How it works"
-        >
-          <span className="sidebar__nav-icon">❓</span>
-          {!isCollapsed && <span className="sidebar__nav-text">How It Works</span>}
-        </button>
+        {/* Focus Mode indicator */}
+        {focusSettings.isEnabled && (
+          <div className="sidebar__focus-indicator">
+            <span className="sidebar__nav-icon">&#x1F3AF;</span>
+            {!isCollapsed && (
+              <span className="sidebar__focus-text">
+                Focus Mode <span className="sidebar__nav-badge">ON</span>
+              </span>
+            )}
+          </div>
+        )}
       </nav>
 
       {/* Bottom Actions */}
@@ -288,7 +258,7 @@ function Sidebar({
           onClick={toggleTheme}
           aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
         >
-          <span className="sidebar__nav-icon">{theme === 'light' ? '🌙' : '☀️'}</span>
+          <span className="sidebar__nav-icon">{theme === 'light' ? '\u{1F319}' : '\u2600\uFE0F'}</span>
           {!isCollapsed && (
             <span className="sidebar__nav-text">
               {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
@@ -298,11 +268,12 @@ function Sidebar({
 
         <button
           type="button"
-          className="sidebar__nav-item"
-          onClick={openSettings}
+          className={`sidebar__nav-item ${activeScreen === "settings" ? "sidebar__nav-item--active" : ""}`}
+          onClick={() => handleNav("settings")}
           aria-label="Settings"
+          aria-current={activeScreen === "settings" ? "page" : undefined}
         >
-          <span className="sidebar__nav-icon">⚙️</span>
+          <span className="sidebar__nav-icon">&#x2699;&#xFE0F;</span>
           {!isCollapsed && <span className="sidebar__nav-text">Settings</span>}
         </button>
       </div>

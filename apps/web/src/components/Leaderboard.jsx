@@ -11,7 +11,8 @@ import {
 function Leaderboard({ 
   onClose, 
   problems = [],
-  currentUser
+  currentUser,
+  inline = false
 }) {
   const [activeTab, setActiveTab] = useState("global");
   const [selectedProblemId, setSelectedProblemId] = useState(problems[0]?.id || null);
@@ -56,22 +57,14 @@ function Leaderboard({
     return `leaderboard__difficulty leaderboard__difficulty--${difficulty?.toLowerCase()}`;
   };
 
-  return (
-    <div className="leaderboard-modal">
-      <div className="leaderboard-modal__backdrop" onClick={onClose} />
-      <div className="leaderboard-modal__content">
-        <button 
-          className="leaderboard-modal__close" 
-          onClick={onClose}
-          aria-label="Close leaderboard"
-        >
-          ×
-        </button>
-
+  const content = (
+    <>
+      {!inline && (
         <div className="leaderboard__header">
           <h2 className="leaderboard__title">Leaderboard</h2>
           <p className="leaderboard__subtitle">See how you compare with other interviewers</p>
         </div>
+      )}
 
         <div className="leaderboard__tabs">
           <button
@@ -240,9 +233,28 @@ function Leaderboard({
           )}
         </div>
 
-        <div className="leaderboard__footer">
-          <p>Rankings update when interviews are completed</p>
-        </div>
+      <div className="leaderboard__footer">
+        <p>Rankings update when interviews are completed</p>
+      </div>
+    </>
+  );
+
+  if (inline) {
+    return <div className="leaderboard-inline">{content}</div>;
+  }
+
+  return (
+    <div className="leaderboard-modal">
+      <div className="leaderboard-modal__backdrop" onClick={onClose} />
+      <div className="leaderboard-modal__content">
+        <button 
+          className="leaderboard-modal__close" 
+          onClick={onClose}
+          aria-label="Close leaderboard"
+        >
+          &times;
+        </button>
+        {content}
       </div>
     </div>
   );

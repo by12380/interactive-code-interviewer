@@ -226,20 +226,24 @@ export default function App() {
   const { accessibility } = useTheme();
   const { settings: focusSettings, toggleFocusMode, disableFocusMode } = useFocusMode();
   
+  // Screen-based navigation state
+  // "interview" | "settings" | "leaderboard" | "achievements" | "roadmap"
+  const [activeScreen, setActiveScreen] = useState("interview");
+
+  // Navigation handler
+  const handleNavigate = useCallback((screen) => {
+    setActiveScreen(screen);
+  }, []);
+
   // User authentication state
   const [user, setUser] = useState(() => getCurrentUser());
   const [isAuthModalVisible, setIsAuthModalVisible] = useState(false);
   const [isProfileVisible, setIsProfileVisible] = useState(false);
-  const [isLeaderboardVisible, setIsLeaderboardVisible] = useState(false);
   const [personalBest, setPersonalBest] = useState(null);
   
-  // Gamification state
-  const [isGamificationVisible, setIsGamificationVisible] = useState(false);
+  // Gamification/toast state
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
-  
-  // Roadmap state
-  const [isRoadmapVisible, setIsRoadmapVisible] = useState(false);
   
   // Interview simulation state
   const [isInterviewLauncherVisible, setIsInterviewLauncherVisible] = useState(false);
@@ -1217,38 +1221,8 @@ export default function App() {
     setIsProfileVisible(false);
   }, []);
 
-  // Leaderboard handlers
-  const handleOpenLeaderboard = useCallback(() => {
-    setIsLeaderboardVisible(true);
-  }, []);
-
-  const handleCloseLeaderboard = useCallback(() => {
-    setIsLeaderboardVisible(false);
-  }, []);
-
-  // Gamification handlers
-  const handleOpenGamification = useCallback(() => {
-    setIsGamificationVisible(true);
-  }, []);
-
-  const handleCloseGamification = useCallback(() => {
-    setIsGamificationVisible(false);
-  }, []);
-
-  const handleGamificationUserUpdate = useCallback((updatedUser) => {
-    setUser(updatedUser);
-  }, []);
-
-  // Roadmap handlers
-  const handleOpenRoadmap = useCallback(() => {
-    setIsRoadmapVisible(true);
-  }, []);
-
-  const handleCloseRoadmap = useCallback(() => {
-    setIsRoadmapVisible(false);
-  }, []);
-
-  const handleRoadmapUserUpdate = useCallback((updatedUser) => {
+  // User update handler (shared by gamification, roadmap, etc.)
+  const handleUserUpdate = useCallback((updatedUser) => {
     setUser(updatedUser);
   }, []);
 
@@ -1496,17 +1470,12 @@ export default function App() {
       {!shouldHideSidebar && (
         <Sidebar
           user={user}
+          activeScreen={activeScreen}
+          onNavigate={handleNavigate}
           onOpenAuth={handleOpenAuth}
           onOpenProfile={handleOpenProfile}
           onLogout={handleLogout}
-          onOpenLeaderboard={handleOpenLeaderboard}
           onStartInterviewSim={handleOpenInterviewLauncher}
-          onOpenGamification={handleOpenGamification}
-          onOpenRoadmap={handleOpenRoadmap}
-          onStartTutorial={handleStartTutorial}
-          onOpenTranslator={handleOpenTranslator}
-          onOpenTemplates={handleOpenTemplates}
-          onOpenSplitScreen={handleOpenSplitScreen}
           problemSelector={
             <ProblemSelector
               problems={PROBLEMS}
@@ -1521,104 +1490,203 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className={`app__content ${shouldHideSidebar ? "app__content--full-width" : ""}`}>
-        {!shouldHideHeader && (
-          <Header
-            difficulty={difficulty}
-            isLocked={isLocked}
-            isPaused={isPaused}
-            isTimeUp={isTimeUp}
-            remainingSeconds={remainingSeconds}
-            onDifficultyChange={handleDifficultyChange}
-            onPauseToggle={handlePauseToggle}
-            onStop={handleStop}
-            currentProblemTitle={currentProblem?.title}
+
+        {/* === INTERVIEW SCREEN (default) === */}
+        {activeScreen === "interview" && (
+          <>
+            {!shouldHideHeader && (
+              <Header
+                difficulty={difficulty}
+                isLocked={isLocked}
+                isPaused={isPaused}
+                isTimeUp={isTimeUp}
+                remainingSeconds={remainingSeconds}
+                onDifficultyChange={handleDifficultyChange}
+                onPauseToggle={handlePauseToggle}
+                onStop={handleStop}
+                currentProblemTitle={currentProblem?.title}
+              />
+            )}
+
+            <main className={`app__main ${isZenMode ? "app__main--zen" : ""} ${shouldHideProblem && !isZenMode ? "app__main--no-problem" : ""} ${shouldHideChat && !isZenMode ? "app__main--no-chat" : ""} ${isRightPanelCollapsed && !shouldHideChat && !isZenMode ? "app__main--right-collapsed" : ""}`} id="main-content" role="main">
+              {!isZenMode && !shouldHideProblem && (
+                <div className="app__problem-section" id="problem-panel">
+                  <ProblemPanel
+                    problem={currentProblem}
+                    hintsRevealed={hintsRevealed}
+                    onRevealHint={handleRevealHint}
+                    showSolution={showSolution}
+                    onShowSolution={handleShowSolution}
+                    isCompleted={isCompleted}
+                  />
+                </div>
+              )}
+              <div className={`app__editor-section ${isZenMode ? "app__editor-section--zen" : ""}`} id="editor-panel">
+                <EditorPanel
+                  canUndo={canUndo}
+                  canRedo={canRedo}
+                  isEditorDisabled={isEditorDisabled}
+                  isRunning={isRunning}
+                  onUndo={handleUndo}
+                  onRedo={handleRedo}
+                  onRun={handleRunCode}
+                  onEditorMount={handleEditorMount}
+                  onCodeChange={handleEditorChange}
+                  editorOptions={editorOptions}
+                  code={code}
+                  interviewerHint={editorHint}
+                  onDismissHint={handleDismissEditorHint}
+                  onRecordCursorMove={handleRecordCursorMove}
+                  onRecordSelection={handleRecordSelection}
+                  isRecording={!!replaySession && !isLocked}
+                />
+                {!isZenMode && (
+                  <ConsolePanel
+                    logs={consoleLogs}
+                    onClear={handleClearConsole}
+                    isRunning={isRunning}
+                  />
+                )}
+              </div>
+              {!shouldHideChat && !isZenMode && (
+                <div className={`app__sidebar ${isRightPanelCollapsed ? "app__sidebar--collapsed" : ""}`} id="chat-panel">
+                  <button
+                    type="button"
+                    className="app__sidebar-collapse-btn"
+                    onClick={handleToggleRightPanel}
+                    aria-label={isRightPanelCollapsed ? "Expand right panel" : "Collapse right panel"}
+                    title={isRightPanelCollapsed ? "Expand (AI Interview, Metrics)" : "Collapse right panel"}
+                  >
+                    {isRightPanelCollapsed ? "\u25C0" : "\u25B6"}
+                  </button>
+                  {isRightPanelCollapsed && (
+                    <span className="app__sidebar-collapsed-label">Chat &amp; Metrics</span>
+                  )}
+                  <div className="app__sidebar-content">
+                    <ChatPanel
+                      messages={messages}
+                      input={input}
+                      isLocked={isLocked}
+                      isPaused={isPaused}
+                      isSending={isSending}
+                      onInputChange={handleInputChange}
+                      onKeyDown={handleInputKeyDown}
+                      onSend={handleSend}
+                    />
+                    {!shouldHideMetrics && (
+                      <SessionMetrics
+                        hintsUsed={hintsUsed}
+                        testsPassed={testsPassed}
+                        testsTotal={testsTotal}
+                        testResults={testResults}
+                        efficiency={efficiency}
+                        efficiencyNote={efficiencyNote}
+                        testsNote={testsNote}
+                        isLocked={isLocked}
+                        onEvaluateEfficiency={handleEvaluateEfficiency}
+                        onRunTests={handleRunTests}
+                        onComplete={handleStop}
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
+            </main>
+          </>
+        )}
+
+        {/* === SETTINGS SCREEN === */}
+        {activeScreen === "settings" && (
+          <SettingsPanel
+            onNavigate={handleNavigate}
+            onOpenTranslator={handleOpenTranslator}
+            onOpenTemplates={handleOpenTemplates}
+            onOpenSplitScreen={handleOpenSplitScreen}
+            onStartTutorial={handleStartTutorial}
+            user={user}
           />
         )}
 
-        <main className={`app__main ${isZenMode ? "app__main--zen" : ""} ${shouldHideProblem && !isZenMode ? "app__main--no-problem" : ""} ${shouldHideChat && !isZenMode ? "app__main--no-chat" : ""} ${isRightPanelCollapsed && !shouldHideChat && !isZenMode ? "app__main--right-collapsed" : ""}`} id="main-content" role="main">
-        {!isZenMode && !shouldHideProblem && (
-          <div className="app__problem-section" id="problem-panel">
-            <ProblemPanel
-              problem={currentProblem}
-              hintsRevealed={hintsRevealed}
-              onRevealHint={handleRevealHint}
-              showSolution={showSolution}
-              onShowSolution={handleShowSolution}
-              isCompleted={isCompleted}
-            />
-          </div>
-        )}
-        <div className={`app__editor-section ${isZenMode ? "app__editor-section--zen" : ""}`} id="editor-panel">
-          <EditorPanel
-            canUndo={canUndo}
-            canRedo={canRedo}
-            isEditorDisabled={isEditorDisabled}
-            isRunning={isRunning}
-            onUndo={handleUndo}
-            onRedo={handleRedo}
-            onRun={handleRunCode}
-            onEditorMount={handleEditorMount}
-            onCodeChange={handleEditorChange}
-            editorOptions={editorOptions}
-            code={code}
-            interviewerHint={editorHint}
-            onDismissHint={handleDismissEditorHint}
-            onRecordCursorMove={handleRecordCursorMove}
-            onRecordSelection={handleRecordSelection}
-            isRecording={!!replaySession && !isLocked}
-          />
-          {!isZenMode && (
-            <ConsolePanel
-              logs={consoleLogs}
-              onClear={handleClearConsole}
-              isRunning={isRunning}
-            />
-          )}
-        </div>
-        {!shouldHideChat && !isZenMode && (
-          <div className={`app__sidebar ${isRightPanelCollapsed ? "app__sidebar--collapsed" : ""}`} id="chat-panel">
-            <button
-              type="button"
-              className="app__sidebar-collapse-btn"
-              onClick={handleToggleRightPanel}
-              aria-label={isRightPanelCollapsed ? "Expand right panel" : "Collapse right panel"}
-              title={isRightPanelCollapsed ? "Expand (AI Interview, Metrics)" : "Collapse right panel"}
-            >
-              {isRightPanelCollapsed ? "◀" : "▶"}
-            </button>
-            {isRightPanelCollapsed && (
-              <span className="app__sidebar-collapsed-label">Chat & Metrics</span>
-            )}
-            <div className="app__sidebar-content">
-              <ChatPanel
-                messages={messages}
-                input={input}
-                isLocked={isLocked}
-                isPaused={isPaused}
-                isSending={isSending}
-                onInputChange={handleInputChange}
-                onKeyDown={handleInputKeyDown}
-                onSend={handleSend}
+        {/* === LEADERBOARD SCREEN === */}
+        {activeScreen === "leaderboard" && (
+          <div className="screen screen--leaderboard">
+            <div className="screen__header">
+              <button
+                type="button"
+                className="screen__back-btn"
+                onClick={() => handleNavigate("interview")}
+                aria-label="Back to interview"
+              >
+                <span className="screen__back-arrow">&larr;</span>
+                Back
+              </button>
+              <h1 className="screen__title">Leaderboard</h1>
+            </div>
+            <div className="screen__body">
+              <Leaderboard
+                inline
+                problems={PROBLEMS}
+                currentUser={user}
               />
-              {!shouldHideMetrics && (
-                <SessionMetrics
-                  hintsUsed={hintsUsed}
-                  testsPassed={testsPassed}
-                  testsTotal={testsTotal}
-                  testResults={testResults}
-                  efficiency={efficiency}
-                  efficiencyNote={efficiencyNote}
-                  testsNote={testsNote}
-                  isLocked={isLocked}
-                  onEvaluateEfficiency={handleEvaluateEfficiency}
-                  onRunTests={handleRunTests}
-                  onComplete={handleStop}
-                />
-              )}
             </div>
           </div>
         )}
-      </main>
+
+        {/* === ACHIEVEMENTS SCREEN === */}
+        {activeScreen === "achievements" && user && (
+          <div className="screen screen--achievements">
+            <div className="screen__header">
+              <button
+                type="button"
+                className="screen__back-btn"
+                onClick={() => handleNavigate("interview")}
+                aria-label="Back to interview"
+              >
+                <span className="screen__back-arrow">&larr;</span>
+                Back
+              </button>
+              <h1 className="screen__title">Achievements</h1>
+            </div>
+            <div className="screen__body">
+              <GamificationPanel
+                inline
+                user={user}
+                onUserUpdate={handleUserUpdate}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* === ROADMAP SCREEN === */}
+        {activeScreen === "roadmap" && user && (
+          <div className="screen screen--roadmap">
+            <div className="screen__header">
+              <button
+                type="button"
+                className="screen__back-btn"
+                onClick={() => handleNavigate("interview")}
+                aria-label="Back to interview"
+              >
+                <span className="screen__back-arrow">&larr;</span>
+                Back
+              </button>
+              <h1 className="screen__title">Prep Roadmap</h1>
+            </div>
+            <div className="screen__body">
+              <PrepRoadmap
+                inline
+                user={user}
+                onUserUpdate={handleUserUpdate}
+                onSelectProblem={(problemId) => {
+                  handleSelectProblem(problemId);
+                  handleNavigate("interview");
+                }}
+                problems={PROBLEMS}
+              />
+            </div>
+          </div>
+        )}
+
       </div>
 
       {/* Score Report Modal Overlay */}
@@ -1687,8 +1755,7 @@ export default function App() {
 
       <Tutorial isVisible={isTutorialVisible} onClose={handleCloseTutorial} />
       
-      {/* Settings Panel */}
-      <SettingsPanel />
+      {/* Settings Panel is now an inline screen, rendered in main content above */}
       
       {/* Onboarding Tour */}
       <OnboardingTour 
@@ -1716,14 +1783,7 @@ export default function App() {
         />
       )}
       
-      {/* Leaderboard Modal */}
-      {isLeaderboardVisible && (
-        <Leaderboard
-          onClose={handleCloseLeaderboard}
-          problems={PROBLEMS}
-          currentUser={user}
-        />
-      )}
+      {/* Leaderboard is now an inline screen, rendered in main content above */}
       
       {/* Interview Simulation Launcher */}
       {isInterviewLauncherVisible && (
@@ -1746,25 +1806,7 @@ export default function App() {
         />
       )}
       
-      {/* Gamification Panel */}
-      {isGamificationVisible && user && (
-        <GamificationPanel
-          user={user}
-          onClose={handleCloseGamification}
-          onUserUpdate={handleGamificationUserUpdate}
-        />
-      )}
-      
-      {/* Prep Roadmap Panel */}
-      {isRoadmapVisible && user && (
-        <PrepRoadmap
-          user={user}
-          onClose={handleCloseRoadmap}
-          onUserUpdate={handleRoadmapUserUpdate}
-          onSelectProblem={handleSelectProblem}
-          problems={PROBLEMS}
-        />
-      )}
+      {/* Gamification & Roadmap are now inline screens, rendered in main content above */}
       
       {/* Unlock Toasts */}
       <UnlockToast toasts={toasts} onDismiss={dismissToast} />
