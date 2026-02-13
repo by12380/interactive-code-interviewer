@@ -41,6 +41,7 @@ import {
 } from "./services/userService.js";
 import { 
   analyzeCode, 
+  analyzeTestResults,
   createAnalyzerState 
 } from "./services/codeAnalyzer.js";
 import {
@@ -295,10 +296,6 @@ export default function App() {
         "Hi! I'm your interviewer today. Before you start coding, can you walk me through your approach to this problem?"
     }
   ]);
-  const lastProactiveHintRef = useRef("");
-  const proactiveInFlightRef = useRef(false);
-  const lastProactiveCodeRef = useRef("");
-  const lastProactiveAtRef = useRef(0);
   const lastCodeSentRef = useRef("");
   const llmMessagesRef = useRef([]);
   const startAtRef = useRef(Date.now());
@@ -309,12 +306,12 @@ export default function App() {
   const undoRedoListenerRef = useRef(null);
   const reportRef = useRef(null);
   
-  // Code analyzer state for real-time interruptions
+  // Code analyzer state for real-time interruptions (uses progressive cooldowns internally)
   const analyzerStateRef = useRef(createAnalyzerState());
   const interruptInFlightRef = useRef(false);
   const lastAnalyzedCodeRef = useRef("");
-  const lastInterruptShownAtRef = useRef(0);
-  const INTERRUPT_COOLDOWN_MS = 45000; // 45 seconds between interrupts
+  const lastIdleCodeRef = useRef("");
+  const hasUserExplainedRef = useRef(false);
   
   // Inline editor hint state (shows above cursor like IDE suggestions)
   const [editorHint, setEditorHint] = useState(null);
@@ -700,113 +697,123 @@ export default function App() {
     };
   }, []);
 
-  // Real-time code analysis for proactive AI interruptions
+  // Track whether user has explained their approach (via chat).
+  // Stored in a ref so the analysis effects don't depend on `messages`,
+  // which would reset timers every time a chat message is added.
   useEffect(() => {
-    // Don't analyze if locked, paused, or code hasn't changed meaningfully
-    if (isLocked || isPaused || !currentProblem) {
-      return;
-    }
+    hasUserExplainedRef.current = messages.some(m => m.role === "user");
+  }, [messages]);
 
-    // Analyze after user stops typing for 18 seconds
-    const analysisDelay = 18000;
+  // ── EFFECT A: Local pattern analysis (8s debounce) ─────────────────
+  // Runs entirely on the client — zero API cost. Detects wrong approaches,
+  // inefficient patterns, coding without explaining, no progress, and
+  // spinning-wheels. Fires quickly (8s) so the user gets fast feedback.
+  useEffect(() => {
+    if (isLocked || isPaused || !currentProblem) return;
 
-    const analysisTimeout = setTimeout(async () => {
-      // Skip if code hasn't changed, interrupt is in flight, or cooldown hasn't elapsed
-      if (code === lastAnalyzedCodeRef.current || interruptInFlightRef.current) {
-        return;
-      }
-
-      const timeSinceLastInterrupt = Date.now() - lastInterruptShownAtRef.current;
-      if (timeSinceLastInterrupt < INTERRUPT_COOLDOWN_MS) {
-        return;
-      }
+    const localTimer = setTimeout(() => {
+      if (code === lastAnalyzedCodeRef.current) return;
 
       lastAnalyzedCodeRef.current = code;
 
-      // Check if user has explained their approach (sent any message in chat)
-      const hasUserExplained = messages.some(m => m.role === "user");
-
-      // Run local code analysis to detect patterns
       const analysisResult = analyzeCode(
         code,
         currentProblem.id,
         currentProblem.starterCode,
         analyzerStateRef.current,
-        hasUserExplained
+        hasUserExplainedRef.current
       );
 
-      // If we detected an issue, send to AI for a natural interruption
-      if (analysisResult) {
+      if (!analysisResult) return;
+
+      if (analysisResult.tier === "local") {
+        // LOCAL TIER: use the predefined message directly — free
+        const interruptMessage = {
+          role: "assistant",
+          content: analysisResult.message,
+          isInterruption: true
+        };
+
+        setEditorHint(analysisResult.message);
+
+        // Add to LLM history so AI has context if user responds in chat
+        llmMessagesRef.current = [
+          ...appendCodeUpdateIfNeeded(code, llmMessagesRef.current),
+          interruptMessage
+        ];
+        setMessages((prev) => [...prev, interruptMessage]);
+
+      } else if (analysisResult.tier === "api") {
+        // API TIER: spinning-wheels or complex stuck detection
+        if (!analyzerStateRef.current.canAffordAPICall()) return;
+        if (interruptInFlightRef.current) return;
+
         interruptInFlightRef.current = true;
 
-        try {
-          const nextMessages = appendCodeUpdateIfNeeded(
-            code,
-            llmMessagesRef.current
-          );
-          llmMessagesRef.current = nextMessages;
+        (async () => {
+          try {
+            const nextMessages = appendCodeUpdateIfNeeded(
+              code,
+              llmMessagesRef.current
+            );
+            llmMessagesRef.current = nextMessages;
 
-          const data = await sendChat({
-            messages: nextMessages,
-            mode: "interrupt",
-            interruptContext: {
-              detectedIssue: analysisResult.message,
-              severity: analysisResult.severity,
-              problemId: currentProblem.id,
-              problemTitle: currentProblem.title
+            const data = await sendChat({
+              messages: nextMessages,
+              mode: "interrupt",
+              interruptContext: {
+                detectedIssue: analysisResult.message,
+                severity: analysisResult.severity,
+                problemId: currentProblem.id,
+                problemTitle: currentProblem.title
+              }
+            });
+
+            if (data?.reply) {
+              setEditorHint(data.reply);
+
+              const interruptMessage = {
+                role: "assistant",
+                content: data.reply,
+                isInterruption: true
+              };
+              llmMessagesRef.current = [
+                ...llmMessagesRef.current,
+                interruptMessage
+              ];
+              setMessages((prev) => [...prev, interruptMessage]);
             }
-          });
-
-          if (data?.reply) {
-            // Show hint as overlay widget in editor
-            setEditorHint(data.reply);
-            lastInterruptShownAtRef.current = Date.now();
-            
-            // Also add to chat history for reference
-            const interruptMessage = {
-              role: "assistant",
-              content: data.reply,
-              isInterruption: true
-            };
-            
-            llmMessagesRef.current = [
-              ...llmMessagesRef.current,
-              interruptMessage
-            ];
-            setMessages((prev) => [...prev, interruptMessage]);
+          } catch (error) {
+            console.error("Interrupt failed:", error);
+          } finally {
+            interruptInFlightRef.current = false;
           }
-        } catch (error) {
-          // Silently fail for interruptions - don't spam error messages
-          console.error("Interrupt failed:", error);
-        } finally {
-          interruptInFlightRef.current = false;
-        }
+        })();
       }
-    }, analysisDelay);
+    }, 8000); // 8 seconds — fast enough to feel responsive
 
-    return () => clearTimeout(analysisTimeout);
-  }, [code, currentProblem, isLocked, isPaused, appendCodeUpdateIfNeeded, messages]);
+    return () => clearTimeout(localTimer);
+  }, [code, currentProblem, isLocked, isPaused, appendCodeUpdateIfNeeded]);
 
-  // Background proactive hints (less aggressive, runs less frequently)
+  // ── EFFECT B: Idle AI feedback (20s debounce) ──────────────────────
+  // Fires when the user stops typing for 20s AND the local analysis above
+  // didn't already show something (checked via progressive cooldown).
+  // This is the "idle interviewer" the user expects — the AI reviews the
+  // code and gives contextual feedback. Budget-limited to ~5 API calls.
   useEffect(() => {
-    const debounceMs = 18000;
-    const maxWaitMs = 35000;
-    const now = Date.now();
-    const timeSinceLast = now - lastProactiveAtRef.current;
-    const shouldForce = timeSinceLast >= maxWaitMs;
-    const delay = shouldForce ? 0 : debounceMs;
+    if (isLocked || isPaused || !currentProblem) return;
 
-    const timeout = setTimeout(async () => {
-      if (proactiveInFlightRef.current || interruptInFlightRef.current) {
-        return;
-      }
+    const idleTimer = setTimeout(async () => {
+      // Skip if code hasn't changed since last idle check
+      if (code === lastIdleCodeRef.current) return;
+      // Skip if a local interrupt just fired (cooldown prevents overlap)
+      if (!analyzerStateRef.current.canInterrupt()) return;
+      // Skip if no API budget left or another call is in flight
+      if (!analyzerStateRef.current.canAffordAPICall()) return;
+      if (interruptInFlightRef.current) return;
 
-      if (code === lastProactiveCodeRef.current) {
-        return;
-      }
-
-      proactiveInFlightRef.current = true;
-      lastProactiveCodeRef.current = code;
+      lastIdleCodeRef.current = code;
+      interruptInFlightRef.current = true;
 
       try {
         const nextMessages = appendCodeUpdateIfNeeded(
@@ -819,40 +826,34 @@ export default function App() {
           messages: nextMessages,
           mode: "proactive"
         });
-        lastProactiveAtRef.current = Date.now();
 
         if (!data?.reply) {
+          // AI had nothing to say — that's fine, no cost beyond the call
           return;
         }
 
-        if (lastProactiveHintRef.current === data.reply) {
-          return;
-        }
+        // Mark this as an interrupt so cooldown kicks in
+        analyzerStateRef.current.markInterrupted("idle-feedback-" + Date.now());
 
-        lastProactiveHintRef.current = data.reply;
+        const interruptMessage = {
+          role: "assistant",
+          content: data.reply
+        };
+
         llmMessagesRef.current = [
           ...llmMessagesRef.current,
-          { role: "assistant", content: data.reply }
+          interruptMessage
         ];
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: data.reply }
-        ]);
+        setMessages((prev) => [...prev, interruptMessage]);
       } catch (error) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "assistant",
-            content: `Error: ${error.message || "Unable to reach the server."}`
-          }
-        ]);
+        console.error("Idle feedback failed:", error);
       } finally {
-        proactiveInFlightRef.current = false;
+        interruptInFlightRef.current = false;
       }
-    }, delay);
+    }, 20000); // 20 seconds — matches original idle timing
 
-    return () => clearTimeout(timeout);
-  }, [code, appendCodeUpdateIfNeeded]);
+    return () => clearTimeout(idleTimer);
+  }, [code, currentProblem, isLocked, isPaused, appendCodeUpdateIfNeeded]);
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
@@ -1118,10 +1119,31 @@ export default function App() {
   const handleRunTests = useCallback(() => {
     if (!currentProblem) return;
     const result = runTestCases(code, currentProblem.testCases, currentProblem);
+
+    // Check for test regression BEFORE updating state (compare against previous run)
+    const testFeedback = analyzeTestResults(result, analyzerStateRef.current, code);
+
     setTestsPassed(result.passed);
     setTestsTotal(result.total);
     setTestResults(result.results);
     setTestsNote(result.note);
+
+    // Update test results in analyzer state for future regression tracking
+    analyzerStateRef.current.updateTestResults(result, code);
+
+    // Show test regression or no-improvement feedback if detected and cooldown allows
+    if (testFeedback && analyzerStateRef.current.canInterrupt()) {
+      analyzerStateRef.current.markLocalInterrupt("test-feedback-" + Date.now());
+      setEditorHint(testFeedback.message);
+
+      const interruptMessage = {
+        role: "assistant",
+        content: testFeedback.message,
+        isInterruption: true
+      };
+      llmMessagesRef.current = [...llmMessagesRef.current, interruptMessage];
+      setMessages((prev) => [...prev, interruptMessage]);
+    }
   }, [code, currentProblem]);
 
   const handleSelectProblem = useCallback((problemId) => {
@@ -1156,11 +1178,12 @@ export default function App() {
     // Reset LLM context
     llmMessagesRef.current = [];
     lastCodeSentRef.current = "";
-    lastProactiveCodeRef.current = "";
     
     // Reset code analyzer state for new problem
     analyzerStateRef.current = createAnalyzerState();
     lastAnalyzedCodeRef.current = "";
+    lastIdleCodeRef.current = "";
+    hasUserExplainedRef.current = false;
     
     // Initialize replay recording for the new problem
     initializeReplayRecording(problemId, problem.starterCode);

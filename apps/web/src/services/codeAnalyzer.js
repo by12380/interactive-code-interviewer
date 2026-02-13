@@ -277,15 +277,22 @@ const GENERIC_PATTERNS = {
 };
 
 // Tracks analysis state to avoid spamming the same messages
+// Uses progressive cooldowns and an API budget to balance helpfulness vs. cost
 class CodeAnalyzerState {
   constructor() {
     this.lastInterruptionTime = 0;
-    this.interruptionCooldown = 30000; // 30 seconds between interruptions
     this.triggeredMessages = new Set();
     this.codeSnapshots = [];
     this.typingStartTime = null;
     this.hasExplainedApproach = false;
     this.lineCountAtLastCheck = 0;
+    // Interrupt budget: limits AI-powered (API) interrupts per session
+    this.aiInterruptCount = 0;
+    this.localInterruptCount = 0;
+    this.maxAIInterrupts = 5;
+    // Test tracking for regression detection
+    this.lastTestResults = null;
+    this.codeAtLastTestRun = null;
   }
 
   reset() {
@@ -295,16 +302,45 @@ class CodeAnalyzerState {
     this.typingStartTime = null;
     this.hasExplainedApproach = false;
     this.lineCountAtLastCheck = 0;
+    this.aiInterruptCount = 0;
+    this.localInterruptCount = 0;
+    this.lastTestResults = null;
+    this.codeAtLastTestRun = null;
+  }
+
+  // Progressive cooldown: increases after each interrupt to avoid overwhelming
+  // the user. Starts at 45s and escalates to 3 minutes.
+  getProgressiveCooldown() {
+    const totalInterrupts = this.aiInterruptCount + this.localInterruptCount;
+    if (totalInterrupts <= 1) return 45000;   // 45s
+    if (totalInterrupts <= 3) return 60000;   // 1 min
+    if (totalInterrupts <= 5) return 90000;   // 1.5 min
+    if (totalInterrupts <= 7) return 120000;  // 2 min
+    return 180000;                             // 3 min
   }
 
   canInterrupt() {
     const now = Date.now();
-    return now - this.lastInterruptionTime >= this.interruptionCooldown;
+    return now - this.lastInterruptionTime >= this.getProgressiveCooldown();
   }
 
+  // Check if we still have API budget remaining
+  canAffordAPICall() {
+    return this.aiInterruptCount < this.maxAIInterrupts;
+  }
+
+  // Mark an AI-powered interrupt (costs an API call)
   markInterrupted(messageKey) {
     this.lastInterruptionTime = Date.now();
     this.triggeredMessages.add(messageKey);
+    this.aiInterruptCount++;
+  }
+
+  // Mark a local-only interrupt (free, no API call)
+  markLocalInterrupt(messageKey) {
+    this.lastInterruptionTime = Date.now();
+    this.triggeredMessages.add(messageKey);
+    this.localInterruptCount++;
   }
 
   hasTriggered(messageKey) {
@@ -326,6 +362,43 @@ class CodeAnalyzerState {
     if (this.codeSnapshots.length === 0) return 0;
     return Date.now() - this.codeSnapshots[0].timestamp;
   }
+
+  // Detect when user is writing and deleting code repeatedly (going in circles).
+  // Looks at recent code snapshots for oscillating length patterns with minimal
+  // net progress — a strong signal the user is stuck.
+  detectSpinningWheels() {
+    if (this.codeSnapshots.length < 5) return false;
+
+    const recent = this.codeSnapshots.slice(-5);
+    let directionChanges = 0;
+    let lastDirection = 0;
+
+    for (let i = 1; i < recent.length; i++) {
+      const delta = recent[i].code.length - recent[i - 1].code.length;
+      const direction = Math.sign(delta);
+      if (direction !== 0 && lastDirection !== 0 && direction !== lastDirection) {
+        directionChanges++;
+      }
+      if (direction !== 0) lastDirection = direction;
+    }
+
+    // Net progress is minimal — they're not actually advancing
+    const netChange = Math.abs(
+      recent[recent.length - 1].code.length - recent[0].code.length
+    );
+
+    return directionChanges >= 2 && netChange < 30;
+  }
+
+  // Update test results for regression tracking
+  updateTestResults(results, code) {
+    const previous = this.lastTestResults;
+    this.lastTestResults = results
+      ? { passed: results.passed, total: results.total }
+      : null;
+    this.codeAtLastTestRun = code;
+    return previous;
+  }
 }
 
 // Main analysis function
@@ -334,10 +407,9 @@ export function analyzeCode(code, problemId, starterCode, analyzerState, hasUser
     return null;
   }
 
+  // problemPatterns may be null for problems not in the predefined list —
+  // that's fine, generic checks (approach, progress, spinning wheels) still run.
   const problemPatterns = PROBLEM_PATTERNS[problemId];
-  if (!problemPatterns) {
-    return null;
-  }
 
   // Calculate meaningful code written
   const userCode = code.replace(starterCode, "").trim();
@@ -350,16 +422,19 @@ export function analyzeCode(code, problemId, starterCode, analyzerState, hasUser
   analyzerState.recordSnapshot(code);
   const timeCoding = analyzerState.getTimeSinceFirstCode();
 
+  // ── GENERIC CHECKS (run for ALL problems) ──────────────────────────
+
   // PRIORITY 1: Check if user is coding without explaining approach first
   // This is the most important check - real interviewers always ask for approach first
   for (const warning of GENERIC_PATTERNS.codingWithoutApproach) {
     if (warning.check && !analyzerState.hasTriggered("coding-without-approach")) {
       if (warning.check(code, starterCode, timeCoding / 1000, hasUserExplained)) {
-        analyzerState.markInterrupted("coding-without-approach");
+        analyzerState.markLocalInterrupt("coding-without-approach");
         return {
           message: warning.message,
           severity: warning.severity,
-          type: "interruption"
+          type: "interruption",
+          tier: "local"
         };
       }
     }
@@ -369,50 +444,74 @@ export function analyzeCode(code, problemId, starterCode, analyzerState, hasUser
   for (const warning of GENERIC_PATTERNS.noProgress) {
     if (warning.check && !analyzerState.hasTriggered("no-progress")) {
       if (warning.check(code, starterCode, timeCoding / 1000)) {
-        analyzerState.markInterrupted("no-progress");
+        analyzerState.markLocalInterrupt("no-progress");
         return {
           message: warning.message,
           severity: warning.severity,
-          type: "interruption"
+          type: "interruption",
+          tier: "local"
         };
       }
     }
   }
 
-  // Check for inefficient patterns
-  for (let i = 0; i < problemPatterns.inefficientPatterns.length; i++) {
-    const pattern = problemPatterns.inefficientPatterns[i];
-    const patternKey = `inefficient-${i}`;
-    
-    if (!analyzerState.hasTriggered(patternKey) && pattern.pattern.test(code)) {
-      analyzerState.markInterrupted(patternKey);
-      return {
-        message: pattern.message,
-        severity: pattern.severity,
-        type: "interruption"
-      };
-    }
-  }
+  // ── PROBLEM-SPECIFIC CHECKS (only for problems with predefined patterns) ─
 
-  // Check for missing patterns (only after enough code is written)
-  for (let i = 0; i < problemPatterns.missingPatterns.length; i++) {
-    const pattern = problemPatterns.missingPatterns[i];
-    const patternKey = `missing-${i}`;
-    
-    if (!analyzerState.hasTriggered(patternKey) && 
-        meaningfulLines >= (pattern.afterLines || 3) &&
-        pattern.check(code)) {
+  if (problemPatterns) {
+    // Check for inefficient patterns
+    for (let i = 0; i < problemPatterns.inefficientPatterns.length; i++) {
+      const pattern = problemPatterns.inefficientPatterns[i];
+      const patternKey = `inefficient-${i}`;
       
-      // Don't trigger if they're already on the right track
-      const hasGoodPattern = problemPatterns.goodPatterns?.some(gp => gp.test(code));
-      if (!hasGoodPattern) {
-        analyzerState.markInterrupted(patternKey);
+      if (!analyzerState.hasTriggered(patternKey) && pattern.pattern.test(code)) {
+        analyzerState.markLocalInterrupt(patternKey);
         return {
           message: pattern.message,
           severity: pattern.severity,
-          type: "interruption"
+          type: "interruption",
+          tier: "local"
         };
       }
+    }
+
+    // Check for missing patterns (only after enough code is written)
+    for (let i = 0; i < problemPatterns.missingPatterns.length; i++) {
+      const pattern = problemPatterns.missingPatterns[i];
+      const patternKey = `missing-${i}`;
+      
+      if (!analyzerState.hasTriggered(patternKey) && 
+          meaningfulLines >= (pattern.afterLines || 3) &&
+          pattern.check(code)) {
+        
+        // Don't trigger if they're already on the right track
+        const hasGoodPattern = problemPatterns.goodPatterns?.some(gp => gp.test(code));
+        if (!hasGoodPattern) {
+          analyzerState.markLocalInterrupt(patternKey);
+          return {
+            message: pattern.message,
+            severity: pattern.severity,
+            type: "interruption",
+            tier: "local"
+          };
+        }
+      }
+    }
+  }
+
+  // ── STUCK DETECTION (runs for ALL problems) ────────────────────────
+
+  // Check for spinning wheels (user writing and deleting code repeatedly)
+  // This is the only pattern that uses an API call because we need the AI
+  // to look at the full code context and give targeted guidance.
+  if (!analyzerState.hasTriggered("spinning-wheels") && analyzerState.detectSpinningWheels()) {
+    if (analyzerState.canAffordAPICall()) {
+      analyzerState.markInterrupted("spinning-wheels");
+      return {
+        message: "The user seems to be going back and forth with their code — writing, deleting, rewriting. They appear stuck and may need help identifying what specific part they're struggling with.",
+        severity: "process",
+        type: "interruption",
+        tier: "api"
+      };
     }
   }
 
@@ -463,8 +562,48 @@ export function assessCodeQuality(code, problemId) {
   };
 }
 
+// Analyze test results for regression or stalling.
+// Called after the user runs tests. Compares against previous results
+// to detect when code changes broke passing tests or made no improvement.
+export function analyzeTestResults(currentResults, analyzerState, currentCode) {
+  if (!currentResults || !analyzerState.lastTestResults) return null;
+
+  // Only analyze if code changed since the last test run
+  if (analyzerState.codeAtLastTestRun === currentCode) return null;
+
+  const previous = analyzerState.lastTestResults;
+
+  // Detect regression: tests that were passing are now failing
+  if (previous.passed > currentResults.passed && previous.passed > 0) {
+    const regressionCount = previous.passed - currentResults.passed;
+    return {
+      message: `Hmm, ${regressionCount} test${regressionCount > 1 ? "s that were" : " that was"} passing before ${regressionCount > 1 ? "are" : "is"} now failing. Your recent changes might have introduced a bug. Want to walk through what you changed?`,
+      severity: "correctness",
+      tier: "local",
+      type: "test-regression"
+    };
+  }
+
+  // Detect no improvement: user changed code but same tests still fail
+  if (
+    currentResults.passed === previous.passed &&
+    currentResults.passed < currentResults.total &&
+    currentResults.total > 0
+  ) {
+    return {
+      message: "Same tests are still failing after your changes. Would it help to think about what specific input case is causing the failure?",
+      severity: "process",
+      tier: "local",
+      type: "no-test-improvement"
+    };
+  }
+
+  return null;
+}
+
 export default {
   analyzeCode,
+  analyzeTestResults,
   createAnalyzerState,
   isUsingGoodApproach,
   assessCodeQuality
