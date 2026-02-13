@@ -1357,8 +1357,6 @@ export default function App() {
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
-  const [isInterviewSetupOpen, setIsInterviewSetupOpen] = useState(false);
-  const [isPreferencesOpen, setIsPreferencesOpen] = useState(false);
   const [isTranslateOpen, setIsTranslateOpen] = useState(false);
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [replayModal, setReplayModal] = useState({
@@ -1648,6 +1646,7 @@ export default function App() {
   const [isPaused, setIsPaused] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [difficulty, setDifficulty] = useState("Medium");
+  const [sidebarScreen, setSidebarScreen] = useState("session"); // session | interview | settings
   const [mode, setMode] = useState("practice"); // practice | interview
   const [timeLimitSeconds, setTimeLimitSeconds] = useState(30 * 60);
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
@@ -3473,6 +3472,60 @@ function __ici_isEqual(problemId, actual, expected) {
     setIsProfileOpen(false);
   };
 
+  const startInterviewSimulation = async ({ recordVideo = false } = {}) => {
+    if (recordVideo) {
+      const ok = await startRecording();
+      if (!ok) return;
+    }
+
+    const rounds = buildInterviewRounds({ codingRounds: 2, includeSystemDesign: true });
+    const now = Date.now();
+    const first = rounds[0] ? { ...rounds[0], startedAt: now } : null;
+    if (!first) return;
+
+    setMode("interview");
+    setInterviewSession({
+      id: randomId("interview"),
+      startedAt: now,
+      rounds: [first, ...rounds.slice(1)],
+      roundIndex: 0
+    });
+
+    if (first.type === "coding") {
+      setActiveProblemId(String(first.problemId || DEFAULT_PROBLEM_ID));
+      setDifficulty(String(first.difficulty || "Easy"));
+      setIsLocked(false);
+    } else {
+      setIsLocked(true);
+    }
+    setTimeLimitSeconds(Number(first.seconds || 15 * 60));
+    timerStartAtRef.current = Date.now();
+    setElapsedSeconds(0);
+    setIsPaused(false);
+    setIsVoiceHold(false);
+    setBehavioralAnswer("");
+    setSystemDesignAnswer("");
+    setFeedbackText("");
+    setLiveInterruption(null);
+    setConsoleEntries([]);
+    setMessages([
+      {
+        role: "assistant",
+        content:
+          "Welcome to Interview Simulation. As you work, I may interrupt with quick nudges. Explain your approach first."
+      }
+    ]);
+    llmMessagesRef.current = [];
+    lastCodeSentRef.current = "";
+    lastProactiveCodeRef.current = "";
+    lastProactiveHintRef.current = "";
+    lastInterruptByIdRef.current = new Map();
+    lastInterruptTextRef.current = "";
+    lastInterruptAtRef.current = 0;
+    lastEditAtRef.current = 0;
+    hasUserExplainedApproachRef.current = false;
+  };
+
   const templateContextVars = useMemo(() => {
     const hints = Array.isArray(activeProblem?.hints) ? activeProblem.hints : [];
     return {
@@ -3527,124 +3580,6 @@ function __ici_isEqual(problemId, actual, expected) {
           setTutorialStepIndex(0);
         }}
       />
-      <Modal
-        isOpen={isPreferencesOpen}
-        title="Appearance & Accessibility"
-        onClose={() => setIsPreferencesOpen(false)}
-      >
-        <div className="prefs">
-          <div className="prefs__grid">
-            <label className="prefs__field">
-              <span className="prefs__label">Theme</span>
-              <select
-                value={uiPrefs.theme}
-                onChange={(e) =>
-                  setUiPrefs((prev) => ({ ...prev, theme: e.target.value }))
-                }
-                aria-label="Theme"
-              >
-                <option value="system">System</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
-            </label>
-
-            <label className="prefs__field">
-              <span className="prefs__label">Accent color</span>
-              <select
-                value={uiPrefs.accent}
-                onChange={(e) =>
-                  setUiPrefs((prev) => ({ ...prev, accent: e.target.value }))
-                }
-                aria-label="Accent color"
-              >
-                <option value="indigo">Indigo</option>
-                <option value="emerald">Emerald</option>
-                <option value="rose">Rose</option>
-                <option value="amber">Amber</option>
-                <option value="cyan">Cyan</option>
-              </select>
-            </label>
-          </div>
-
-          <div className="prefs__toggles">
-            <label className="prefs__toggle">
-              <input
-                type="checkbox"
-                checked={uiPrefs.contrast === "high"}
-                onChange={(e) =>
-                  setUiPrefs((prev) => ({
-                    ...prev,
-                    contrast: e.target.checked ? "high" : "normal"
-                  }))
-                }
-              />
-              <span>High contrast</span>
-            </label>
-            <label className="prefs__toggle">
-              <input
-                type="checkbox"
-                checked={uiPrefs.keyboardNav}
-                onChange={(e) =>
-                  setUiPrefs((prev) => ({ ...prev, keyboardNav: e.target.checked }))
-                }
-              />
-              <span>Keyboard navigation mode</span>
-            </label>
-            <label className="prefs__toggle">
-              <input
-                type="checkbox"
-                checked={Boolean(uiPrefs.focusMode)}
-                onChange={(e) => setUiPrefs((prev) => ({ ...prev, focusMode: e.target.checked }))}
-              />
-              <span>Focus Mode (distraction-free)</span>
-            </label>
-            <label className="prefs__toggle">
-              <input
-                type="checkbox"
-                checked={Boolean(uiPrefs.multiPractice)}
-                onChange={(e) => {
-                  const next = Boolean(e.target.checked);
-                  setUiPrefs((prev) => ({ ...prev, multiPractice: next }));
-                  if (next) {
-                    setMultiPracticeSession((prev) =>
-                      normalizeMultiPracticeSession(prev, activeProblemId || DEFAULT_PROBLEM_ID)
-                    );
-                  }
-                }}
-              />
-              <span>Multi-problem split practice (2–3 problems)</span>
-            </label>
-          </div>
-
-          <div className="prefs__actions">
-            <button
-              type="button"
-              className="prefs__btn prefs__btn--ghost"
-              onClick={() => {
-                setIsTutorialOpen(true);
-                setTutorialStepIndex(0);
-                setUiPrefs((prev) => ({ ...prev, tourSeen: true }));
-                setIsPreferencesOpen(false);
-              }}
-            >
-              Restart onboarding tour
-            </button>
-            <button
-              type="button"
-              className="prefs__btn prefs__btn--danger"
-              onClick={() => setUiPrefs(UI_PREFS_DEFAULTS)}
-            >
-              Reset preferences
-            </button>
-          </div>
-
-          <div className="prefs__note">
-            Tip: press <kbd>Tab</kbd> to move focus; <kbd>Esc</kbd> closes dialogs.
-          </div>
-        </div>
-      </Modal>
-
       <Modal
         isOpen={multiSummaryModal.isOpen}
         title="Multi-problem session summary"
@@ -3751,304 +3686,85 @@ function __ici_isEqual(problemId, actual, expected) {
         gamification={gamification}
         onUpdateGamification={setGamification}
       />
-      <Modal
-        isOpen={isInterviewSetupOpen}
-        title="Interview Simulation"
-        onClose={() => setIsInterviewSetupOpen(false)}
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ fontWeight: 700, color: "#334155" }}>
-            Multi-round mock interview: coding → behavioral → harder coding → system design → feedback.
-          </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="tutorial-trigger"
-              onClick={async () => {
-                const rounds = buildInterviewRounds({ codingRounds: 2, includeSystemDesign: true });
-                const now = Date.now();
-                const first = rounds[0] ? { ...rounds[0], startedAt: now } : null;
-                if (!first) return;
-
-                setMode("interview");
-                setInterviewSession({
-                  id: randomId("interview"),
-                  startedAt: now,
-                  rounds: [first, ...rounds.slice(1)],
-                  roundIndex: 0
-                });
-
-                if (first.type === "coding") {
-                  setActiveProblemId(String(first.problemId || DEFAULT_PROBLEM_ID));
-                  setDifficulty(String(first.difficulty || "Easy"));
-                  setIsLocked(false);
-                } else {
-                  setIsLocked(true);
-                }
-                setTimeLimitSeconds(Number(first.seconds || 15 * 60));
-                timerStartAtRef.current = Date.now();
-                setElapsedSeconds(0);
-                setIsPaused(false);
-                setIsVoiceHold(false);
-                setBehavioralAnswer("");
-                setSystemDesignAnswer("");
-                setFeedbackText("");
-                setLiveInterruption(null);
-                setConsoleEntries([]);
-                setMessages([
-                  {
-                    role: "assistant",
-                    content:
-                      "Welcome to Interview Simulation. As you work, I may interrupt with quick nudges. Explain your approach first."
-                  }
-                ]);
-                llmMessagesRef.current = [];
-                lastCodeSentRef.current = "";
-                lastProactiveCodeRef.current = "";
-                lastProactiveHintRef.current = "";
-                lastInterruptByIdRef.current = new Map();
-                lastInterruptTextRef.current = "";
-                lastInterruptAtRef.current = 0;
-                lastEditAtRef.current = 0;
-                hasUserExplainedApproachRef.current = false;
-
-                setIsInterviewSetupOpen(false);
-              }}
-            >
-              Start (no video)
-            </button>
-            <button
-              type="button"
-              className="tutorial-trigger"
-              onClick={async () => {
-                const ok = await startRecording();
-                if (!ok) return;
-
-                const rounds = buildInterviewRounds({ codingRounds: 2, includeSystemDesign: true });
-                const now = Date.now();
-                const first = rounds[0] ? { ...rounds[0], startedAt: now } : null;
-                if (!first) return;
-
-                setMode("interview");
-                setInterviewSession({
-                  id: randomId("interview"),
-                  startedAt: now,
-                  rounds: [first, ...rounds.slice(1)],
-                  roundIndex: 0
-                });
-
-                setActiveProblemId(String(first.problemId || DEFAULT_PROBLEM_ID));
-                setDifficulty(String(first.difficulty || "Easy"));
-                setIsLocked(false);
-                setTimeLimitSeconds(Number(first.seconds || 15 * 60));
-                timerStartAtRef.current = Date.now();
-                setElapsedSeconds(0);
-                setIsPaused(false);
-                setIsVoiceHold(false);
-                setBehavioralAnswer("");
-                setSystemDesignAnswer("");
-                setFeedbackText("");
-                setIsInterviewSetupOpen(false);
-              }}
-            >
-              Start (record video)
-            </button>
-            {recordingState.status === "recording" ? (
-              <button type="button" className="tutorial-trigger" onClick={stopRecording}>
-                Stop recording
-              </button>
-            ) : null}
-          </div>
-
-          {recordingState.status === "error" && (
-            <div style={{ color: "#7f1d1d", fontWeight: 700 }}>
-              Recording error: {recordingState.error}
-            </div>
-          )}
-          {recordingState.blobUrl && (
-            <a
-              href={recordingState.blobUrl}
-              download={`interview_${new Date().toISOString().slice(0, 19).replaceAll(":", "-")}.webm`}
-              style={{ fontWeight: 800, color: "#312e81" }}
-            >
-              Download latest recording
-            </a>
-          )}
-
-          <div style={{ fontSize: 12, color: "#64748b" }}>
-            Note: recording is not persisted to localStorage; download it after the session.
-          </div>
-        </div>
-      </Modal>
 
       <div className="app__shell">
         <aside className="app__sidebar" aria-label="Interview controls and navigation">
           <div className="app__brand">
             <div className="app__brand-title">Live AI Coding Interviewer</div>
-            <div className="app__brand-sub">Prototype UI with editor + chat.</div>
+            <div className="app__brand-sub">Practice faster with focused navigation.</div>
           </div>
 
-          <div className="app__sidebar-section" aria-label="Session controls">
-            <div className="difficulty-card" data-tutorial="difficulty">
-              <span className="difficulty-card__label">Difficulty</span>
-              <select
-                className="difficulty-card__select"
-                value={difficulty}
-                onChange={(event) => setDifficulty(event.target.value)}
-                disabled={isLocked || isInterviewMode}
-                aria-label="Select interview difficulty"
+          <div className="app__sidebar-section" aria-label="Sidebar navigation">
+            <div className="app__sidebar-nav" role="tablist" aria-label="Sidebar screens">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={sidebarScreen === "session"}
+                className={`app__sidebar-nav-btn ${sidebarScreen === "session" ? "is-active" : ""}`}
+                onClick={() => setSidebarScreen("session")}
               >
-                <option value="Easy">Easy</option>
-                <option value="Medium">Medium</option>
-                <option value="Hard">Hard</option>
-              </select>
+                Workspace
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={sidebarScreen === "interview"}
+                className={`app__sidebar-nav-btn ${sidebarScreen === "interview" ? "is-active" : ""}`}
+                onClick={() => setSidebarScreen("interview")}
+              >
+                Interview
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={sidebarScreen === "settings"}
+                className={`app__sidebar-nav-btn ${sidebarScreen === "settings" ? "is-active" : ""}`}
+                onClick={() => setSidebarScreen("settings")}
+              >
+                Settings
+              </button>
             </div>
+          </div>
 
+          <div className="app__sidebar-section" aria-label="Quick session info">
             <div className="time-card" data-tutorial="timer">
               <div className="time-tracker">
                 <span className="time-tracker__label">Time left</span>
-                <span className="time-tracker__value">
-                  {isTimeUp ? "00:00" : formatTime(remainingSeconds)}
-                </span>
+                <span className="time-tracker__value">{isTimeUp ? "00:00" : formatTime(remainingSeconds)}</span>
                 {isTimeUp && <span className="time-tracker__status">Time is up</span>}
               </div>
-              <button
-                type="button"
-                className="time-tracker__action"
-                onClick={handleStopOrNext}
-                disabled={!isInterviewMode && isLocked}
-                aria-label="Stop interview"
-              >
-                <span className="time-tracker__icon" aria-hidden="true">
-                  ■
-                </span>
-                {isInterviewMode ? "Next" : "Stop"}
-              </button>
             </div>
-
-            <div className="gami-card" aria-label="Gamification status">
-              <div className="gami-card__top">
-                <div className="gami-card__k">Level</div>
-                <div className="gami-card__v">{levelInfo.level}</div>
-              </div>
-              <div className="gami-card__sub">
-                <span className="gami-card__pill">XP {gamification.xp}</span>
-                <span className="gami-card__pill">Streak {gamification.streak}d</span>
-              </div>
-              <div className="gami-card__bar" aria-hidden="true">
-                <div
-                  className="gami-card__bar-fill"
-                  style={{
-                    width: `${Math.max(
-                      0,
-                      Math.min(100, Math.round((levelInfo.intoLevelXp / Math.max(1, levelInfo.nextLevelXp)) * 100))
-                    )}%`
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="app__sidebar-section" aria-label="Quick actions">
-            <button
-              type="button"
-              className="tutorial-trigger"
-              onClick={() => setIsInterviewSetupOpen(true)}
-              aria-label="Open interview simulation"
-            >
-              Interview Simulation
-            </button>
-            {isInterviewMode ? (
-              <button
-                type="button"
-                className="tutorial-trigger"
-                onClick={() => endInterviewSimulation("ended")}
-                aria-label="End interview simulation"
-              >
-                End session
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="tutorial-trigger"
-              onClick={() => {
-                setIsTutorialOpen(true);
-                setTutorialStepIndex(0);
-              }}
-              aria-label="Start tutorial"
-            >
-              Tutorial
-            </button>
-            <button
-              type="button"
-              className="tutorial-trigger"
-              onClick={() => setIsLeaderboardOpen(true)}
-              aria-label="Open leaderboards"
-            >
-              Leaderboards
-            </button>
-            <button
-              type="button"
-              className="tutorial-trigger"
-              onClick={() => setIsPreferencesOpen(true)}
-              aria-label="Open appearance and accessibility settings"
-            >
-              Preferences
-            </button>
             <button
               type="button"
               className="tutorial-trigger"
               onClick={() => setUiPrefs((prev) => ({ ...prev, focusMode: !prev.focusMode }))}
               aria-label="Toggle Focus Mode"
-              title="Focus Mode"
             >
               {uiPrefs.focusMode ? "Exit Focus Mode" : "Focus Mode"}
-            </button>
-            <button
-              type="button"
-              className="tutorial-trigger"
-              onClick={() => setIsTranslateOpen(true)}
-              aria-label="Open code translation"
-            >
-              Code Translation
             </button>
           </div>
 
           <div className="app__sidebar-section app__sidebar-section--bottom" aria-label="Account">
-            <div className="user-actions">
+            <div className="prefs__note">
+              Signed in as {currentUser ? currentUser.username : "Guest"}.
+              <span>Sidebar actions are now non-modal only.</span>
+            </div>
+            {currentUser ? (
               <button
                 type="button"
-                className="user-actions__btn user-actions__btn--primary"
-                onClick={() => setIsProfileOpen(true)}
-                aria-label="Open profile"
+                className="user-actions__btn"
+                onClick={handleLogOut}
+                aria-label="Log out"
               >
-                {currentUser ? currentUser.username : "Guest"} · Profile
+                Log out
               </button>
-              {currentUser ? (
-                <button
-                  type="button"
-                  className="user-actions__btn"
-                  onClick={handleLogOut}
-                  aria-label="Log out"
-                >
-                  Log out
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="user-actions__btn"
-                  onClick={() => setIsAuthOpen(true)}
-                  aria-label="Log in or sign up"
-                >
-                  Log in / Sign up
-                </button>
-              )}
-            </div>
+            ) : null}
           </div>
         </aside>
 
         <div className="app__content">
-          <main id="main-content" className={`app__main ${isRightPanelCollapsed ? "app__main--right-collapsed" : ""}`}>
+          {sidebarScreen === "session" ? (
+            <main id="main-content" className={`app__main ${isRightPanelCollapsed ? "app__main--right-collapsed" : ""}`}>
         <div className="app__left">
           <section className="panel panel--editor" data-tutorial="editor">
             <div className="panel__header panel__header--editor">
@@ -4804,7 +4520,158 @@ function __ici_isEqual(problemId, actual, expected) {
             </>
           ) : null}
         </div>
-          </main>
+            </main>
+          ) : (
+            <main id="main-content" className="app__main app__main--screen">
+              {sidebarScreen === "interview" ? (
+                <section className="panel">
+                  <div className="panel__header">Interview Simulation</div>
+                  <div className="prefs" style={{ padding: 16 }}>
+                    <div className="prefs__note">
+                      Multi-round flow: coding, behavioral, harder coding, system design, feedback.
+                    </div>
+                    <div className="prefs__actions">
+                      <button type="button" className="prefs__btn" onClick={() => startInterviewSimulation()}>
+                        Start simulation
+                      </button>
+                      <button
+                        type="button"
+                        className="prefs__btn"
+                        onClick={() => startInterviewSimulation({ recordVideo: true })}
+                      >
+                        Start + record video
+                      </button>
+                      {isInterviewMode ? (
+                        <button
+                          type="button"
+                          className="prefs__btn prefs__btn--danger"
+                          onClick={() => endInterviewSimulation("ended")}
+                        >
+                          End session
+                        </button>
+                      ) : null}
+                      {recordingState.status === "recording" ? (
+                        <button type="button" className="prefs__btn" onClick={stopRecording}>
+                          Stop recording
+                        </button>
+                      ) : null}
+                    </div>
+                    {recordingState.status === "error" ? (
+                      <div className="templates__error">Recording error: {recordingState.error}</div>
+                    ) : null}
+                    {recordingState.blobUrl ? (
+                      <a
+                        href={recordingState.blobUrl}
+                        download={`interview_${new Date().toISOString().slice(0, 19).replaceAll(":", "-")}.webm`}
+                        className="prefs__note"
+                        style={{ fontWeight: 900 }}
+                      >
+                        Download latest recording
+                      </a>
+                    ) : null}
+                  </div>
+                </section>
+              ) : null}
+
+              {sidebarScreen === "settings" ? (
+                <section className="panel">
+                  <div className="panel__header">Settings</div>
+                  <div className="prefs" style={{ padding: 16 }}>
+                    <div className="prefs__grid">
+                      <label className="prefs__field">
+                        <span className="prefs__label">Theme</span>
+                        <select
+                          value={uiPrefs.theme}
+                          onChange={(e) => setUiPrefs((prev) => ({ ...prev, theme: e.target.value }))}
+                          aria-label="Theme"
+                        >
+                          <option value="system">System</option>
+                          <option value="light">Light</option>
+                          <option value="dark">Dark</option>
+                        </select>
+                      </label>
+
+                      <label className="prefs__field">
+                        <span className="prefs__label">Accent color</span>
+                        <select
+                          value={uiPrefs.accent}
+                          onChange={(e) => setUiPrefs((prev) => ({ ...prev, accent: e.target.value }))}
+                          aria-label="Accent color"
+                        >
+                          <option value="indigo">Indigo</option>
+                          <option value="emerald">Emerald</option>
+                          <option value="rose">Rose</option>
+                          <option value="amber">Amber</option>
+                          <option value="cyan">Cyan</option>
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="prefs__toggles">
+                      <label className="prefs__toggle">
+                        <input
+                          type="checkbox"
+                          checked={uiPrefs.contrast === "high"}
+                          onChange={(e) =>
+                            setUiPrefs((prev) => ({
+                              ...prev,
+                              contrast: e.target.checked ? "high" : "normal"
+                            }))
+                          }
+                        />
+                        <span>High contrast</span>
+                      </label>
+                      <label className="prefs__toggle">
+                        <input
+                          type="checkbox"
+                          checked={uiPrefs.keyboardNav}
+                          onChange={(e) => setUiPrefs((prev) => ({ ...prev, keyboardNav: e.target.checked }))}
+                        />
+                        <span>Keyboard navigation mode</span>
+                      </label>
+                      <label className="prefs__toggle">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(uiPrefs.multiPractice)}
+                          onChange={(e) => {
+                            const next = Boolean(e.target.checked);
+                            setUiPrefs((prev) => ({ ...prev, multiPractice: next }));
+                            if (next) {
+                              setMultiPracticeSession((prev) =>
+                                normalizeMultiPracticeSession(prev, activeProblemId || DEFAULT_PROBLEM_ID)
+                              );
+                            }
+                          }}
+                        />
+                        <span>Multi-problem split practice (2-3 problems)</span>
+                      </label>
+                    </div>
+
+                    <div className="prefs__actions">
+                      <button
+                        type="button"
+                        className="prefs__btn prefs__btn--ghost"
+                        onClick={() => {
+                          setIsTutorialOpen(true);
+                          setTutorialStepIndex(0);
+                          setUiPrefs((prev) => ({ ...prev, tourSeen: true }));
+                        }}
+                      >
+                        Restart onboarding tour
+                      </button>
+                      <button
+                        type="button"
+                        className="prefs__btn prefs__btn--danger"
+                        onClick={() => setUiPrefs(UI_PREFS_DEFAULTS)}
+                      >
+                        Reset preferences
+                      </button>
+                    </div>
+                  </div>
+                </section>
+              ) : null}
+            </main>
+          )}
         </div>
       </div>
     </div>
