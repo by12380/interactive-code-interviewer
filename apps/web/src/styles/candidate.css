@@ -1,0 +1,95 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Candidate Session & Join Styles
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Join page ───────────────────────────────────────────────────── */
+
+.cs-join {
+  min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #eef2ff 0%, #f0fdf4 100%);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding: 20px;
+}
+
+.cs-join__card {
+  max-width: 440px; width: 100%; background: #fff; border-radius: 16px;
+  padding: 32px; box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+}
+.cs-join__card h1 { margin: 0 0 8px; font-size: 1.5rem; }
+.cs-muted { color: #94a3b8; font-size: 0.88rem; margin-bottom: 16px; }
+
+.cs-label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.88rem; }
+
+.cs-input {
+  display: block; width: 100%; padding: 10px 14px; border-radius: 10px;
+  border: 1px solid #cbd5e1; font-size: 0.95rem; margin-bottom: 12px;
+  box-sizing: border-box;
+}
+.cs-input--lg { font-size: 1.3rem; text-align: center; letter-spacing: 4px; font-weight: 700; }
+
+.cs-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 20px; border-radius: 10px; font-size: 0.92rem; font-weight: 600;
+  border: 1px solid #cbd5e1; background: #fff; color: #334155; cursor: pointer;
+  transition: all 0.15s; width: 100%; margin-top: 8px;
+}
+.cs-btn:hover { background: #f1f5f9; }
+.cs-btn--primary { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+.cs-btn--primary:hover { background: #4338ca; }
+.cs-btn--sm { padding: 6px 14px; font-size: 0.82rem; width: auto; }
+.cs-btn--lg { padding: 14px 28px; font-size: 1.05rem; }
+.cs-btn--ghost { background: transparent; border: none; color: #64748b; font-size: 0.85rem; }
+.cs-btn--ghost:hover { color: #334155; background: transparent; }
+.cs-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.cs-error { color: #dc2626; font-size: 0.85rem; margin: 8px 0; }
+.cs-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.cs-auth-inline { margin: 12px 0; padding: 12px; background: #f8fafc; border-radius: 10px; }
+.cs-auth-form { display: flex; flex-direction: column; gap: 6px; }
+
+/* ── Candidate coding session ────────────────────────────────────── */
+
+.cs-session {
+  height: 100vh; display: flex; flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #1e293b;
+}
+
+.cs-session__header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 20px; background: #1e293b; color: #fff; flex-wrap: wrap; gap: 8px;
+}
+.cs-session__header h2 { margin: 0; font-size: 1.05rem; }
+.cs-session__meta { display: flex; gap: 20px; font-size: 0.85rem; color: #94a3b8; }
+.cs-timer--warn { color: #f87171; font-weight: 700; }
+
+.cs-session__body { display: flex; flex: 1; min-height: 0; }
+
+.cs-session__problem {
+  width: 340px; min-width: 280px; padding: 16px; overflow-y: auto;
+  border-right: 1px solid #e2e8f0; background: #fff;
+}
+.cs-session__problem h3 { margin: 0 0 8px; font-size: 1.1rem; }
+.cs-desc { font-size: 0.9rem; line-height: 1.6; white-space: pre-wrap; margin-top: 12px; }
+
+.cs-tests { margin-top: 16px; }
+.cs-tests h4 { font-size: 0.85rem; margin-bottom: 6px; }
+.cs-test-case {
+  font-size: 0.78rem; background: #f1f5f9; padding: 8px; border-radius: 6px;
+  margin-bottom: 6px; white-space: pre-wrap;
+}
+
+.cs-hints { margin-top: 16px; }
+.cs-hint-box {
+  margin-top: 8px; padding: 10px; background: #fffbeb; border: 1px solid #fde68a;
+  border-radius: 8px; font-size: 0.88rem;
+}
+
+.cs-session__editor { flex: 1; min-width: 0; }
+
+.cs-session__footer {
+  padding: 10px 20px; background: #f8fafc; border-top: 1px solid #e2e8f0;
+  display: flex; justify-content: flex-end;
+}
+.cs-session__footer .cs-btn { width: auto; }

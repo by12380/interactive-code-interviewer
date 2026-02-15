@@ -1,0 +1,225 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Interviewer Dashboard & Live Monitor Styles
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Layout ──────────────────────────────────────────────────────── */
+
+.iv-dashboard {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 24px 24px 100px 24px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #1e293b;
+}
+
+.iv-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.iv-header h1 { font-size: 1.6rem; font-weight: 700; margin: 0; }
+.iv-header__actions { display: flex; gap: 8px; }
+
+.iv-section { margin-bottom: 28px; }
+.iv-section h2 { font-size: 1.15rem; font-weight: 600; margin-bottom: 12px; }
+.iv-section--sticky {
+  position: sticky; bottom: 0; z-index: 5;
+  background: #fff; padding: 16px 0 8px;
+  border-top: 1px solid #e2e8f0;
+  box-shadow: 0 -4px 12px rgba(0,0,0,0.06);
+}
+.iv-muted { color: #94a3b8; font-size: 0.92rem; }
+
+/* ── Buttons ─────────────────────────────────────────────────────── */
+
+.iv-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 8px 16px; border-radius: 8px; font-size: 0.9rem; font-weight: 600;
+  border: 1px solid #cbd5e1; background: #fff; color: #334155; cursor: pointer;
+  transition: all 0.15s;
+}
+.iv-btn:hover { background: #f1f5f9; }
+.iv-btn--primary { background: #4f46e5; color: #fff; border-color: #4f46e5; }
+.iv-btn--primary:hover { background: #4338ca; }
+.iv-btn--danger { color: #dc2626; border-color: #fca5a5; }
+.iv-btn--danger:hover { background: #fef2f2; }
+.iv-btn--sm { padding: 5px 12px; font-size: 0.82rem; }
+.iv-btn--lg { padding: 12px 28px; font-size: 1rem; }
+.iv-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Inputs ──────────────────────────────────────────────────────── */
+
+.iv-input, .iv-select, .iv-textarea {
+  display: block; width: 100%; padding: 8px 12px; border-radius: 8px;
+  border: 1px solid #cbd5e1; font-size: 0.92rem; margin-bottom: 8px;
+  box-sizing: border-box;
+}
+.iv-input--sm { width: 100px; display: inline-block; }
+.iv-textarea { resize: vertical; }
+.iv-label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.88rem; }
+
+/* ── Badge ───────────────────────────────────────────────────────── */
+
+.iv-badge {
+  display: inline-block; padding: 2px 10px; border-radius: 999px;
+  font-size: 0.75rem; font-weight: 700; color: #fff; text-transform: uppercase;
+}
+.iv-badge--joined { background: #3b82f6; }
+.iv-badge--coding { background: #10b981; }
+.iv-badge--idle { background: #f59e0b; }
+.iv-badge--submitted { background: #7c3aed; }
+
+/* ── Sessions grid ───────────────────────────────────────────────── */
+
+.iv-sessions-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.iv-session-card {
+  border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px;
+  background: #fff;
+}
+.iv-session-card__top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.iv-session-card__top h3 { margin: 0; font-size: 1rem; }
+.iv-session-card__meta { display: flex; gap: 16px; font-size: 0.85rem; color: #64748b; margin-bottom: 12px; }
+.iv-session-card__actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.iv-session-card__link { font-size: 0.78rem; color: #64748b; word-break: break-all; }
+.iv-session-card__link code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
+
+/* ── Question bank grid ──────────────────────────────────────────── */
+
+.iv-filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; align-items: center; }
+.iv-filters .iv-input { max-width: 200px; }
+.iv-filters .iv-select { max-width: 180px; }
+
+.iv-question-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 10px; overflow-y: auto; padding: 4px;
+  /* no max-height: the dashboard itself scrolls, sticky footer floats at bottom */
+}
+.iv-question-card {
+  border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 12px;
+  cursor: pointer; position: relative; transition: all 0.15s;
+}
+.iv-question-card:hover { border-color: #a5b4fc; background: #f5f3ff; }
+.iv-question-card--selected { border-color: #4f46e5; background: #eef2ff; }
+.iv-question-card__top { display: flex; gap: 8px; margin-bottom: 4px; }
+.iv-question-card h4 { margin: 0; font-size: 0.9rem; }
+.iv-check { position: absolute; top: 8px; right: 10px; color: #4f46e5; font-weight: 900; font-size: 1.1rem; }
+
+.iv-diff { font-size: 0.72rem; font-weight: 700; padding: 1px 8px; border-radius: 4px; }
+.iv-diff--easy { background: #d1fae5; color: #065f46; }
+.iv-diff--medium { background: #fef3c7; color: #92400e; }
+.iv-diff--hard { background: #fee2e2; color: #991b1b; }
+.iv-cat { font-size: 0.72rem; color: #64748b; }
+
+/* ── Permissions ─────────────────────────────────────────────────── */
+
+.iv-permissions { display: flex; flex-direction: column; gap: 8px; }
+.iv-toggle { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer; }
+.iv-toggle input { width: 18px; height: 18px; }
+
+/* ── Custom question form ────────────────────────────────────────── */
+
+.iv-custom-form {
+  border: 1px solid #c7d2fe; border-radius: 12px; padding: 16px; margin-bottom: 16px;
+  background: #eef2ff;
+}
+.iv-custom-form h3 { margin: 0 0 12px; }
+.iv-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ── Success card ────────────────────────────────────────────────── */
+
+.iv-success-card {
+  max-width: 520px; margin: 80px auto; text-align: center; padding: 32px;
+  border: 1px solid #e2e8f0; border-radius: 16px; background: #fff;
+}
+.iv-share-code {
+  display: block; font-size: 1.3rem; background: #f1f5f9; padding: 12px;
+  border-radius: 8px; margin: 12px 0; word-break: break-all;
+}
+.iv-success-card__actions { display: flex; justify-content: center; gap: 8px; margin-top: 16px; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Live Monitor
+   ═══════════════════════════════════════════════════════════════════ */
+
+.iv-monitor { height: 100vh; display: flex; flex-direction: column; font-family: inherit; }
+
+.iv-monitor__header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 20px; background: #1e293b; color: #fff; flex-wrap: wrap; gap: 8px;
+}
+.iv-monitor__header h2 { margin: 0; font-size: 1.1rem; }
+.iv-monitor__meta { display: flex; gap: 20px; font-size: 0.85rem; color: #94a3b8; }
+.iv-monitor__header-actions { display: flex; gap: 6px; }
+
+.iv-monitor__body { display: flex; flex: 1; min-height: 0; }
+
+.iv-monitor__sidebar {
+  width: 220px; min-width: 180px; background: #f8fafc; border-right: 1px solid #e2e8f0;
+  padding: 12px; overflow-y: auto;
+}
+.iv-monitor__sidebar h3 { font-size: 0.85rem; text-transform: uppercase; color: #64748b; margin: 0 0 8px; }
+
+.iv-cand-list { list-style: none; padding: 0; margin: 0; }
+.iv-cand-item {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer; margin-bottom: 4px;
+  font-size: 0.88rem;
+}
+.iv-cand-item:hover { background: #e2e8f0; }
+.iv-cand-item--active { background: #dbeafe; font-weight: 600; }
+.iv-cand-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.iv-question-list { list-style: none; padding: 0; margin: 0; }
+.iv-q-item {
+  padding: 6px 10px; border-radius: 6px; cursor: pointer; font-size: 0.84rem;
+  margin-bottom: 3px;
+}
+.iv-q-item:hover { background: #e2e8f0; }
+.iv-q-item--active { background: #c7d2fe; font-weight: 600; }
+
+.iv-monitor__editor { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.iv-monitor__editor-bar {
+  display: flex; justify-content: space-between; padding: 6px 12px;
+  background: #0f172a; color: #94a3b8; font-size: 0.82rem;
+}
+
+.iv-monitor__analysis {
+  width: 300px; min-width: 240px; background: #f8fafc; border-left: 1px solid #e2e8f0;
+  padding: 12px; overflow-y: auto;
+}
+.iv-monitor__analysis h3 { font-size: 0.85rem; text-transform: uppercase; color: #64748b; margin: 0 0 8px; }
+
+.iv-analysis-box, .iv-solution-box {
+  margin-top: 12px; padding: 10px; background: #fff; border: 1px solid #e2e8f0;
+  border-radius: 8px; font-size: 0.82rem;
+}
+.iv-analysis-box pre, .iv-solution-box pre { margin: 0; white-space: pre-wrap; font-size: 0.8rem; }
+.iv-solution-box h4 { margin: 0 0 6px; font-size: 0.85rem; }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Results Table
+   ═══════════════════════════════════════════════════════════════════ */
+
+.iv-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.iv-table th, .iv-table td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; }
+.iv-table th { background: #f1f5f9; font-weight: 700; font-size: 0.82rem; text-transform: uppercase; color: #64748b; }
+.iv-row--active td { background: #eef2ff; }
+
+.iv-summary-box {
+  padding: 12px; background: #f1f5f9; border-radius: 8px; font-size: 0.9rem;
+  white-space: pre-wrap; line-height: 1.5;
+}
+
+.iv-eval-detail { display: flex; flex-direction: column; gap: 12px; }
+.iv-eval-card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; }
+.iv-eval-card h4 { margin: 0 0 8px; }
+.iv-eval-scores { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.85rem; }
+.iv-eval-feedback { margin-top: 8px; font-size: 0.88rem; color: #475569; }
