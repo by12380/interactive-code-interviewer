@@ -1,6 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Editor from "@monaco-editor/react";
-import { sendChat, translateCode } from "./api.js";
+import {
+  assignQuestions,
+  compareCandidates,
+  createQuestion,
+  createSession,
+  evaluateCandidate,
+  fetchCandidateCode,
+  fetchLeaderboard,
+  joinSession,
+  listCandidates,
+  listQuestions,
+  openLiveSessionStream,
+  requestHint,
+  sendChat,
+  sendInterviewerChat,
+  syncCandidateCode,
+  translateCode,
+  updateCandidateHintSettings,
+  updateHintSettings
+} from "./api.js";
 import TutorialOverlay from "./TutorialOverlay.jsx";
 import VoicePanel from "./VoicePanel.jsx";
 import RoadmapPanel from "./RoadmapPanel.jsx";
@@ -1681,6 +1700,33 @@ export default function App() {
     error: null,
     blobUrl: null
   });
+  const [hubRole, setHubRole] = useState("interviewer"); // interviewer | candidate
+  const [hubSessionTitle, setHubSessionTitle] = useState("Frontend interview session");
+  const [hubShareCode, setHubShareCode] = useState("");
+  const [hubSession, setHubSession] = useState(null);
+  const [hubQuestions, setHubQuestions] = useState([]);
+  const [hubSelectedQuestionIds, setHubSelectedQuestionIds] = useState([]);
+  const [hubActiveQuestionId, setHubActiveQuestionId] = useState("");
+  const [hubCandidates, setHubCandidates] = useState([]);
+  const [hubSelectedCandidateId, setHubSelectedCandidateId] = useState("");
+  const [hubCandidateCode, setHubCandidateCode] = useState("");
+  const [hubLeaderboard, setHubLeaderboard] = useState([]);
+  const [hubComparison, setHubComparison] = useState(null);
+  const [hubHintsEnabled, setHubHintsEnabled] = useState(true);
+  const [hubHintMode, setHubHintMode] = useState("always");
+  const [hubCandidateAllowHints, setHubCandidateAllowHints] = useState(true);
+  const [hubCandidateHintMode, setHubCandidateHintMode] = useState("always");
+  const [hubBusy, setHubBusy] = useState(false);
+  const [hubError, setHubError] = useState("");
+  const [hubJoinedCandidateId, setHubJoinedCandidateId] = useState("");
+  const [hubCustomTitle, setHubCustomTitle] = useState("");
+  const [hubCustomDescription, setHubCustomDescription] = useState("");
+  const [hubCustomDifficulty, setHubCustomDifficulty] = useState("Medium");
+  const [hubAiInput, setHubAiInput] = useState("");
+  const [hubAiMessages, setHubAiMessages] = useState([]);
+  const hubGuestIdRef = useRef(`guest_${Date.now().toString(36)}`);
+  const hubSyncTimerRef = useRef(null);
+  const hubLiveSourceRef = useRef(null);
   const [isVoiceHold, setIsVoiceHold] = useState(false);
   const [toast, setToast] = useState(null); // { id, kind, title, message }
   const toastTimerRef = useRef(null);
@@ -1805,6 +1851,14 @@ export default function App() {
   const remainingSeconds = Math.max(timeLimitSeconds - elapsedSeconds, 0);
   const isTimeUp = elapsedSeconds >= timeLimitSeconds;
   const levelInfo = useMemo(() => getLevelInfo(gamification.xp), [gamification.xp]);
+  const hubActor = useMemo(
+    () => ({
+      userId: currentUser?.id || currentUserId || hubGuestIdRef.current,
+      role: hubRole,
+      displayName: currentUser?.username || currentUser?.email || "Guest"
+    }),
+    [currentUser?.id, currentUser?.username, currentUser?.email, currentUserId, hubRole]
+  );
   const unlocks = useMemo(
     () => computeUnlocks({ solvedByProblemId, problems: PROBLEMS }),
     [solvedByProblemId]
@@ -2238,6 +2292,108 @@ export default function App() {
       message: message || ""
     });
   };
+
+  const withHubBusy = async (fn) => {
+    setHubBusy(true);
+    setHubError("");
+    try {
+      await fn();
+    } catch (error) {
+      const msg = error?.message || "Interview hub action failed.";
+      setHubError(msg);
+      pushToast("error", "Interview Hub", msg);
+    } finally {
+      setHubBusy(false);
+    }
+  };
+
+  const refreshHubCandidates = async () => {
+    if (!hubSession?.id) return;
+    const rows = await listCandidates(hubSession.id, { ...hubActor, role: "interviewer" });
+    setHubCandidates(Array.isArray(rows) ? rows : []);
+  };
+
+  const refreshHubLeaderboard = async () => {
+    if (!hubSession?.id) return;
+    const result = await fetchLeaderboard(hubSession.id, { ...hubActor, role: "interviewer" });
+    setHubLeaderboard(Array.isArray(result?.leaderboard) ? result.leaderboard : []);
+  };
+
+  useEffect(() => {
+    listQuestions({})
+      .then((rows) => {
+        const next = Array.isArray(rows) ? rows : [];
+        setHubQuestions(next);
+        if (!hubSelectedQuestionIds.length && next.length > 0) {
+          setHubSelectedQuestionIds([next[0].id]);
+          setHubActiveQuestionId(next[0].id);
+        }
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (hubLiveSourceRef.current) {
+      hubLiveSourceRef.current.close();
+      hubLiveSourceRef.current = null;
+    }
+    if (!hubSession?.id) return;
+    const source = openLiveSessionStream(hubSession.id);
+    hubLiveSourceRef.current = source;
+    source.onmessage = (event) => {
+      try {
+        const payload = JSON.parse(event.data || "{}");
+        if (payload.type === "candidate:joined" && hubRole === "interviewer") {
+          refreshHubCandidates().catch(() => {});
+        }
+        if (payload.type === "code:update" && payload.candidateId === hubSelectedCandidateId) {
+          setHubCandidateCode(String(payload.code || ""));
+        }
+      } catch {
+        // ignore malformed payloads
+      }
+    };
+    source.onerror = () => {};
+    return () => {
+      source.close();
+      if (hubLiveSourceRef.current === source) hubLiveSourceRef.current = null;
+    };
+  }, [hubSession?.id, hubRole, hubSelectedCandidateId]);
+
+  useEffect(() => {
+    if (hubRole !== "candidate") return;
+    if (!hubSession?.id || !hubJoinedCandidateId) return;
+    if (hubSyncTimerRef.current) clearTimeout(hubSyncTimerRef.current);
+    hubSyncTimerRef.current = setTimeout(() => {
+      syncCandidateCode(
+        hubSession.id,
+        hubJoinedCandidateId,
+        { code, questionId: activeProblemId },
+        { ...hubActor, role: "candidate" }
+      ).catch(() => {});
+    }, 700);
+    return () => {
+      if (hubSyncTimerRef.current) clearTimeout(hubSyncTimerRef.current);
+    };
+  }, [hubRole, hubSession?.id, hubJoinedCandidateId, code, activeProblemId, hubActor]);
+
+  useEffect(() => {
+    if (hubRole !== "interviewer") return;
+    if (!hubSession?.id || !hubSelectedCandidateId) return;
+    const qid = hubActiveQuestionId || hubSelectedQuestionIds[0] || activeProblemId;
+    if (!qid) return;
+    fetchCandidateCode(hubSession.id, hubSelectedCandidateId, qid, { ...hubActor, role: "interviewer" })
+      .then((payload) => setHubCandidateCode(String(payload?.code || "")))
+      .catch(() => setHubCandidateCode(""));
+  }, [hubRole, hubSession?.id, hubSelectedCandidateId, hubActiveQuestionId, hubSelectedQuestionIds, activeProblemId, hubActor]);
+
+  useEffect(() => {
+    if (hubRole !== "interviewer") return;
+    if (!hubSession?.id) return;
+    refreshHubCandidates().catch(() => {});
+    refreshHubLeaderboard().catch(() => {});
+  }, [hubRole, hubSession?.id]);
 
   const openReplay = ({ replayId, sessionReplayIds }) => {
     const rid = replayId ? String(replayId) : "";
@@ -3517,6 +3673,176 @@ function __ici_isEqual(problemId, actual, expected) {
     }
   };
 
+  const createInterviewHubSession = async () => withHubBusy(async () => {
+    const questionIds = hubSelectedQuestionIds.length ? hubSelectedQuestionIds : [String(activeProblemId)];
+    const created = await createSession(
+      {
+        title: hubSessionTitle || "Interview session",
+        questionIds,
+        settings: {
+          hintsEnabled: hubHintsEnabled,
+          hintMode: hubHintMode,
+          aiInterviewerChatEnabled: true
+        }
+      },
+      { ...hubActor, role: "interviewer" }
+    );
+    setHubSession(created);
+    setHubShareCode(String(created?.shareCode || ""));
+    setHubActiveQuestionId(String(created?.questionIds?.[0] || questionIds[0] || ""));
+    pushToast("success", "Interview Hub", `Session created. Share code: ${created?.shareCode || "N/A"}`);
+  });
+
+  const joinInterviewHubSession = async () => withHubBusy(async () => {
+    const joined = await joinSession(
+      {
+        shareCode: hubShareCode.trim(),
+        userId: hubActor.userId,
+        displayName: hubActor.displayName
+      },
+      { ...hubActor, role: "candidate" }
+    );
+    setHubSession(joined?.session || null);
+    setHubJoinedCandidateId(String(joined?.candidateId || ""));
+    const firstQuestion = String(joined?.session?.questionIds?.[0] || "");
+    if (firstQuestion) {
+      setHubActiveQuestionId(firstQuestion);
+      if (PROBLEMS.some((p) => p.id === firstQuestion)) {
+        setActiveProblemId(firstQuestion);
+      }
+    }
+    setHubAiMessages([
+      { role: "assistant", content: "Connected. Ask for hints or discuss your approach with AI interviewer." }
+    ]);
+    pushToast("success", "Interview Hub", "Joined interview session.");
+  });
+
+  const assignInterviewHubQuestions = async () => withHubBusy(async () => {
+    if (!hubSession?.id) throw new Error("Create a session first.");
+    const questionIds = hubSelectedQuestionIds.length ? hubSelectedQuestionIds : [String(activeProblemId)];
+    await assignQuestions(
+      hubSession.id,
+      {
+        questionIds,
+        activeQuestionId: hubActiveQuestionId || questionIds[0],
+        candidateIds: hubSelectedCandidateId ? [hubSelectedCandidateId] : []
+      },
+      { ...hubActor, role: "interviewer" }
+    );
+    pushToast("success", "Interview Hub", "Questions assigned.");
+    await refreshHubCandidates();
+  });
+
+  const saveHubHintPolicy = async () => withHubBusy(async () => {
+    if (!hubSession?.id) throw new Error("Create a session first.");
+    await updateHintSettings(
+      hubSession.id,
+      {
+        hintsEnabled: hubHintsEnabled,
+        hintMode: hubHintMode,
+        aiInterviewerChatEnabled: true
+      },
+      { ...hubActor, role: "interviewer" }
+    );
+    pushToast("success", "Interview Hub", "Global hint policy updated.");
+  });
+
+  const saveHubCandidateHintPolicy = async () => withHubBusy(async () => {
+    if (!hubSession?.id || !hubSelectedCandidateId) throw new Error("Pick a candidate first.");
+    await updateCandidateHintSettings(
+      hubSession.id,
+      hubSelectedCandidateId,
+      {
+        allowHints: hubCandidateAllowHints,
+        mode: hubCandidateHintMode
+      },
+      { ...hubActor, role: "interviewer" }
+    );
+    pushToast("success", "Interview Hub", "Candidate hint policy updated.");
+    await refreshHubCandidates();
+  });
+
+  const createHubCustomQuestion = async () => withHubBusy(async () => {
+    const title = hubCustomTitle.trim();
+    const description = hubCustomDescription.trim();
+    if (!title || !description) throw new Error("Custom question title and description are required.");
+    const created = await createQuestion(
+      {
+        title,
+        description,
+        difficulty: hubCustomDifficulty,
+        category: "Custom",
+        starterCode: "function solve(input) {\n  // TODO\n  return null;\n}",
+        hints: [],
+        testCases: [],
+        solution: ""
+      },
+      { ...hubActor, role: "interviewer" }
+    );
+    setHubQuestions((prev) => [created, ...(Array.isArray(prev) ? prev : [])]);
+    setHubSelectedQuestionIds((prev) => Array.from(new Set([created.id, ...(prev || [])])));
+    setHubCustomTitle("");
+    setHubCustomDescription("");
+    pushToast("success", "Interview Hub", "Custom question added.");
+  });
+
+  const evaluateHubCandidate = async () => withHubBusy(async () => {
+    if (!hubSession?.id || !hubSelectedCandidateId) throw new Error("Pick a candidate first.");
+    await evaluateCandidate(hubSession.id, hubSelectedCandidateId, { ...hubActor, role: "interviewer" });
+    await refreshHubCandidates();
+    await refreshHubLeaderboard();
+    pushToast("success", "Interview Hub", "Candidate evaluated.");
+  });
+
+  const compareHubCandidates = async () => withHubBusy(async () => {
+    if (!hubSession?.id) throw new Error("Create a session first.");
+    const comparison = await compareCandidates(hubSession.id, { ...hubActor, role: "interviewer" });
+    setHubComparison(comparison || null);
+    await refreshHubLeaderboard();
+  });
+
+  const requestHubHint = async () => withHubBusy(async () => {
+    if (!hubSession?.id || !hubJoinedCandidateId) throw new Error("Join a session as candidate first.");
+    const response = await requestHint(
+      hubSession.id,
+      hubJoinedCandidateId,
+      {
+        questionId: activeProblemId,
+        code,
+        activity: {
+          secondsSinceLastMeaningfulEdit: 200,
+          consecutiveFailedRuns: Number(activeTestRun?.summary?.passed || 0) < Number(activeTestRun?.summary?.total || 0) ? 3 : 0,
+          repeatedRuntimeErrors: false
+        }
+      },
+      { ...hubActor, role: "candidate" }
+    );
+    const hint = String(response?.hint || "No hint available.");
+    setMessages((prev) => [...prev, { role: "assistant", content: `Interview hint: ${hint}` }]);
+    setAiHintByProblemId((prev) => ({ ...(prev || {}), [String(activeProblemId)]: hint }));
+  });
+
+  const sendHubAiMessage = async () => withHubBusy(async () => {
+    const text = hubAiInput.trim();
+    if (!text) return;
+    if (!hubSession?.id || !hubJoinedCandidateId) throw new Error("Join a session first.");
+    const nextMessages = [...hubAiMessages, { role: "user", content: text }];
+    setHubAiMessages(nextMessages);
+    setHubAiInput("");
+    const result = await sendInterviewerChat(
+      hubSession.id,
+      hubJoinedCandidateId,
+      {
+        messages: nextMessages.slice(-12),
+        questionId: activeProblemId,
+        code,
+        isHintRequest: /\bhint\b/i.test(text)
+      },
+      { ...hubActor, role: "candidate" }
+    );
+    setHubAiMessages((prev) => [...prev, { role: "assistant", content: String(result?.reply || "No response.") }]);
+  });
+
   const activeSolved = Boolean(solvedByProblemId?.[activeProblem?.id]);
   const activeTestRun = testRunByProblemId?.[activeProblem?.id] || null;
   const displayMessages = useMemo(() => [...messages].reverse(), [messages]);
@@ -3864,6 +4190,22 @@ function __ici_isEqual(problemId, actual, expected) {
             >
               {uiPrefs.focusMode ? "Exit Focus Mode" : "Focus Mode"}
             </button>
+            <div className="prefs" style={{ marginTop: 10 }}>
+              <label className="prefs__field" style={{ marginBottom: 8 }}>
+                <span className="prefs__label">Interview role</span>
+                <select value={hubRole} onChange={(e) => setHubRole(e.target.value)} aria-label="Interview role">
+                  <option value="interviewer">Interviewer</option>
+                  <option value="candidate">Candidate</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                className="prefs__btn prefs__btn--ghost"
+                onClick={() => setSidebarScreen("interview")}
+              >
+                Open Interview Hub
+              </button>
+            </div>
           </div>
 
           <div className="app__sidebar-section app__sidebar-section--bottom" aria-label="Account">
@@ -4652,53 +4994,363 @@ function __ici_isEqual(problemId, actual, expected) {
           ) : (
             <main id="main-content" className="app__main app__main--screen">
               {sidebarScreen === "interview" ? (
-                <section className="panel">
-                  <div className="panel__header">Interview Simulation</div>
-                  <div className="prefs" style={{ padding: 16 }}>
-                    <div className="prefs__note">
-                      Multi-round flow: coding, behavioral, harder coding, system design, feedback.
-                    </div>
-                    <div className="prefs__actions">
-                      <button type="button" className="prefs__btn" onClick={() => startInterviewSimulation()}>
-                        Start simulation
-                      </button>
-                      <button
-                        type="button"
-                        className="prefs__btn"
-                        onClick={() => startInterviewSimulation({ recordVideo: true })}
-                      >
-                        Start + record video
-                      </button>
-                      {isInterviewMode ? (
+                <>
+                  <section className="panel">
+                    <div className="panel__header">Interviewer Hub</div>
+                    <div className="prefs" style={{ padding: 16 }}>
+                      <div className="prefs__note">
+                        Interviewers can assign questions, monitor live code, control hint policy, and compare candidates.
+                      </div>
+                      <div className="prefs__grid">
+                        <label className="prefs__field">
+                          <span className="prefs__label">Role</span>
+                          <select value={hubRole} onChange={(e) => setHubRole(e.target.value)}>
+                            <option value="interviewer">Interviewer</option>
+                            <option value="candidate">Candidate</option>
+                          </select>
+                        </label>
+                        <label className="prefs__field">
+                          <span className="prefs__label">Session title</span>
+                          <input
+                            value={hubSessionTitle}
+                            onChange={(e) => setHubSessionTitle(e.target.value)}
+                            placeholder="Frontend interview session"
+                          />
+                        </label>
+                        <label className="prefs__field">
+                          <span className="prefs__label">Share code</span>
+                          <input
+                            value={hubShareCode}
+                            onChange={(e) => setHubShareCode(e.target.value.toUpperCase())}
+                            placeholder="ABC123"
+                          />
+                        </label>
+                      </div>
+                      <div className="prefs__actions">
                         <button
                           type="button"
-                          className="prefs__btn prefs__btn--danger"
-                          onClick={() => endInterviewSimulation("ended")}
+                          className="prefs__btn"
+                          disabled={hubBusy || hubRole !== "interviewer"}
+                          onClick={createInterviewHubSession}
                         >
-                          End session
+                          Create session
                         </button>
+                        <button
+                          type="button"
+                          className="prefs__btn"
+                          disabled={hubBusy || hubRole !== "candidate"}
+                          onClick={joinInterviewHubSession}
+                        >
+                          Join by code
+                        </button>
+                        {hubSession?.shareCode ? <span className="prefs__note">Live code: {hubSession.shareCode}</span> : null}
+                      </div>
+
+                      <div className="prefs__grid">
+                        <label className="prefs__field">
+                          <span className="prefs__label">Question bank</span>
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              const qid = String(e.target.value || "");
+                              if (!qid) return;
+                              setHubSelectedQuestionIds((prev) => Array.from(new Set([...(prev || []), qid])));
+                              if (!hubActiveQuestionId) setHubActiveQuestionId(qid);
+                            }}
+                          >
+                            <option value="">Add question…</option>
+                            {hubQuestions.map((q) => (
+                              <option key={q.id} value={q.id}>
+                                {q.title} ({q.difficulty || "?"})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="prefs__field">
+                          <span className="prefs__label">Selected question IDs</span>
+                          <input
+                            value={hubSelectedQuestionIds.join(", ")}
+                            onChange={(e) =>
+                              setHubSelectedQuestionIds(
+                                e.target.value.split(",").map((x) => x.trim()).filter(Boolean)
+                              )
+                            }
+                            placeholder="two-sum, valid-parentheses"
+                          />
+                        </label>
+                        <label className="prefs__field">
+                          <span className="prefs__label">Active question ID</span>
+                          <input
+                            value={hubActiveQuestionId}
+                            onChange={(e) => setHubActiveQuestionId(e.target.value)}
+                            placeholder="question id"
+                          />
+                        </label>
+                      </div>
+                      <div className="prefs__actions">
+                        <button
+                          type="button"
+                          className="prefs__btn"
+                          disabled={hubBusy || hubRole !== "interviewer" || !hubSession?.id}
+                          onClick={assignInterviewHubQuestions}
+                        >
+                          Assign questions
+                        </button>
+                        <button
+                          type="button"
+                          className="prefs__btn"
+                          disabled={hubBusy || hubRole !== "interviewer" || !hubSession?.id}
+                          onClick={() => withHubBusy(refreshHubCandidates)}
+                        >
+                          Refresh candidates
+                        </button>
+                      </div>
+
+                      <div className="prefs__grid">
+                        <label className="prefs__field">
+                          <span className="prefs__label">Hints enabled</span>
+                          <select
+                            value={hubHintsEnabled ? "yes" : "no"}
+                            onChange={(e) => setHubHintsEnabled(e.target.value === "yes")}
+                          >
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                          </select>
+                        </label>
+                        <label className="prefs__field">
+                          <span className="prefs__label">Hint mode</span>
+                          <select value={hubHintMode} onChange={(e) => setHubHintMode(e.target.value)}>
+                            <option value="always">Always</option>
+                            <option value="manual">Manual approval</option>
+                            <option value="auto_when_stuck">Auto when stuck</option>
+                            <option value="disabled">Disabled</option>
+                          </select>
+                        </label>
+                        <label className="prefs__field">
+                          <span className="prefs__label">Selected candidate</span>
+                          <input
+                            value={hubSelectedCandidateId}
+                            onChange={(e) => setHubSelectedCandidateId(e.target.value)}
+                            placeholder="candidate id"
+                          />
+                        </label>
+                      </div>
+                      <div className="prefs__actions">
+                        <button
+                          type="button"
+                          className="prefs__btn"
+                          disabled={hubBusy || hubRole !== "interviewer" || !hubSession?.id}
+                          onClick={saveHubHintPolicy}
+                        >
+                          Save global hint policy
+                        </button>
+                        <label className="prefs__field">
+                          <span className="prefs__label">Candidate allow hints</span>
+                          <select
+                            value={hubCandidateAllowHints ? "yes" : "no"}
+                            onChange={(e) => setHubCandidateAllowHints(e.target.value === "yes")}
+                          >
+                            <option value="yes">Yes</option>
+                            <option value="no">No</option>
+                          </select>
+                        </label>
+                        <label className="prefs__field">
+                          <span className="prefs__label">Candidate mode</span>
+                          <select value={hubCandidateHintMode} onChange={(e) => setHubCandidateHintMode(e.target.value)}>
+                            <option value="always">Always</option>
+                            <option value="manual">Manual</option>
+                            <option value="auto_when_stuck">Auto when stuck</option>
+                            <option value="disabled">Disabled</option>
+                          </select>
+                        </label>
+                        <button
+                          type="button"
+                          className="prefs__btn"
+                          disabled={hubBusy || hubRole !== "interviewer" || !hubSession?.id || !hubSelectedCandidateId}
+                          onClick={saveHubCandidateHintPolicy}
+                        >
+                          Save candidate policy
+                        </button>
+                      </div>
+
+                      <div className="prefs__grid">
+                        <label className="prefs__field">
+                          <span className="prefs__label">Custom question title</span>
+                          <input
+                            value={hubCustomTitle}
+                            onChange={(e) => setHubCustomTitle(e.target.value)}
+                            placeholder="Custom question title"
+                          />
+                        </label>
+                        <label className="prefs__field">
+                          <span className="prefs__label">Custom difficulty</span>
+                          <select value={hubCustomDifficulty} onChange={(e) => setHubCustomDifficulty(e.target.value)}>
+                            <option value="Easy">Easy</option>
+                            <option value="Medium">Medium</option>
+                            <option value="Hard">Hard</option>
+                          </select>
+                        </label>
+                        <label className="prefs__field">
+                          <span className="prefs__label">Custom description</span>
+                          <input
+                            value={hubCustomDescription}
+                            onChange={(e) => setHubCustomDescription(e.target.value)}
+                            placeholder="Problem statement"
+                          />
+                        </label>
+                      </div>
+                      <div className="prefs__actions">
+                        <button
+                          type="button"
+                          className="prefs__btn"
+                          disabled={hubBusy || hubRole !== "interviewer"}
+                          onClick={createHubCustomQuestion}
+                        >
+                          Add custom question
+                        </button>
+                        <button
+                          type="button"
+                          className="prefs__btn"
+                          disabled={hubBusy || hubRole !== "interviewer" || !hubSession?.id || !hubSelectedCandidateId}
+                          onClick={evaluateHubCandidate}
+                        >
+                          Evaluate candidate
+                        </button>
+                        <button
+                          type="button"
+                          className="prefs__btn"
+                          disabled={hubBusy || hubRole !== "interviewer" || !hubSession?.id}
+                          onClick={compareHubCandidates}
+                        >
+                          Compare candidates
+                        </button>
+                        <button
+                          type="button"
+                          className="prefs__btn"
+                          disabled={hubBusy || hubRole !== "candidate" || !hubSession?.id || !hubJoinedCandidateId}
+                          onClick={requestHubHint}
+                        >
+                          Request hint
+                        </button>
+                      </div>
+
+                      {hubRole === "candidate" ? (
+                        <div className="chat">
+                          <div className="chat__messages" style={{ maxHeight: 180 }}>
+                            {(hubAiMessages || []).map((m, i) => (
+                              <div key={`${m.role}-${i}`} className={`chat__message chat__message--${m.role}`}>
+                                <div className="chat__role">{m.role}</div>
+                                <div className="chat__content">{m.content}</div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="chat__input">
+                            <textarea
+                              value={hubAiInput}
+                              rows={2}
+                              placeholder="Ask AI interviewer..."
+                              onChange={(e) => setHubAiInput(e.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" && !event.shiftKey) {
+                                  event.preventDefault();
+                                  sendHubAiMessage();
+                                }
+                              }}
+                            />
+                            <button type="button" onClick={sendHubAiMessage} disabled={hubBusy}>
+                              Send
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="prefs__note">Candidates ({hubCandidates.length})</div>
+                          <div className="prefs__actions">
+                            {hubCandidates.map((c) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                className={`prefs__btn ${hubSelectedCandidateId === c.id ? "prefs__btn--ghost" : ""}`}
+                                onClick={() => setHubSelectedCandidateId(c.id)}
+                              >
+                                {c.displayName || c.id}
+                              </button>
+                            ))}
+                          </div>
+                          {hubSelectedCandidateId ? (
+                            <div className="console" style={{ maxHeight: 220 }}>
+                              <div className="console__line console__line--info">
+                                Live code for {hubSelectedCandidateId}
+                              </div>
+                              <pre style={{ whiteSpace: "pre-wrap", margin: 0 }}>{hubCandidateCode || "// waiting for code..."}</pre>
+                            </div>
+                          ) : null}
+                          {hubLeaderboard.length > 0 ? (
+                            <div className="prefs__note">
+                              Ranking:{" "}
+                              {hubLeaderboard
+                                .map((row, i) => `${i + 1}. ${row.displayName} (${row.totalScore})`)
+                                .join("  |  ")}
+                            </div>
+                          ) : null}
+                          {hubComparison?.summary ? (
+                            <div className="prefs__note">Comparison summary: {hubComparison.summary}</div>
+                          ) : null}
+                        </>
+                      )}
+
+                      {hubError ? <div className="templates__error">{hubError}</div> : null}
+                    </div>
+                  </section>
+
+                  <section className="panel">
+                    <div className="panel__header">Interview Simulation</div>
+                    <div className="prefs" style={{ padding: 16 }}>
+                      <div className="prefs__note">
+                        Multi-round flow: coding, behavioral, harder coding, system design, feedback.
+                      </div>
+                      <div className="prefs__actions">
+                        <button type="button" className="prefs__btn" onClick={() => startInterviewSimulation()}>
+                          Start simulation
+                        </button>
+                        <button
+                          type="button"
+                          className="prefs__btn"
+                          onClick={() => startInterviewSimulation({ recordVideo: true })}
+                        >
+                          Start + record video
+                        </button>
+                        {isInterviewMode ? (
+                          <button
+                            type="button"
+                            className="prefs__btn prefs__btn--danger"
+                            onClick={() => endInterviewSimulation("ended")}
+                          >
+                            End session
+                          </button>
+                        ) : null}
+                        {recordingState.status === "recording" ? (
+                          <button type="button" className="prefs__btn" onClick={stopRecording}>
+                            Stop recording
+                          </button>
+                        ) : null}
+                      </div>
+                      {recordingState.status === "error" ? (
+                        <div className="templates__error">Recording error: {recordingState.error}</div>
                       ) : null}
-                      {recordingState.status === "recording" ? (
-                        <button type="button" className="prefs__btn" onClick={stopRecording}>
-                          Stop recording
-                        </button>
+                      {recordingState.blobUrl ? (
+                        <a
+                          href={recordingState.blobUrl}
+                          download={`interview_${new Date().toISOString().slice(0, 19).replaceAll(":", "-")}.webm`}
+                          className="prefs__note"
+                          style={{ fontWeight: 900 }}
+                        >
+                          Download latest recording
+                        </a>
                       ) : null}
                     </div>
-                    {recordingState.status === "error" ? (
-                      <div className="templates__error">Recording error: {recordingState.error}</div>
-                    ) : null}
-                    {recordingState.blobUrl ? (
-                      <a
-                        href={recordingState.blobUrl}
-                        download={`interview_${new Date().toISOString().slice(0, 19).replaceAll(":", "-")}.webm`}
-                        className="prefs__note"
-                        style={{ fontWeight: 900 }}
-                      >
-                        Download latest recording
-                      </a>
-                    ) : null}
-                  </div>
-                </section>
+                  </section>
+                </>
               ) : null}
 
               {sidebarScreen === "settings" ? (
