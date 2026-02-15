@@ -36,13 +36,35 @@ function includesAny(code, parts) {
   return false;
 }
 
+function hasMeaningfulCode(code) {
+  const trimmed = String(code || "").trim();
+  if (!trimmed) return false;
+  if (/\/\/\s*Your solution here/.test(trimmed) && trimmed.split("\n").length <= 6) return false;
+  return trimmed.length >= 18;
+}
+
 function looksLikeStartedCoding(code) {
   const trimmed = String(code || "").trim();
   if (!trimmed) return false;
   // If they've only left the starter comment, don't treat as "started".
   if (/\/\/\s*Your solution here/.test(trimmed) && trimmed.split("\n").length <= 5) return false;
   // Any structural tokens suggests starting.
-  return includesAny(trimmed, ["for", "while", "if", "return", "Map", "new Map", "set(", "get(", "=>"]);
+  return includesAny(trimmed, [
+    "for",
+    "while",
+    "if",
+    "return",
+    "Map",
+    "new Map",
+    "set(",
+    "get(",
+    "=>",
+    "const ",
+    "let ",
+    "var ",
+    "function ",
+    "console."
+  ]);
 }
 
 function detectNestedLoops(code) {
@@ -80,6 +102,61 @@ function detectOffByOneSlidingWindow(code) {
   return /\bleft\s*=\s*lastSeen\.get\s*\(\s*\w+\s*\)\s*\+\s*1\s*;/.test(code) && !/Math\.max\s*\(/.test(code);
 }
 
+function parseParamNames(signature) {
+  const s = String(signature || "");
+  const m = s.match(/\(([^)]*)\)/);
+  if (!m) return [];
+  return String(m[1] || "")
+    .split(",")
+    .map((x) => String(x || "").trim())
+    .filter(Boolean)
+    .map((name) => name.replace(/[^\w$]/g, ""))
+    .filter(Boolean);
+}
+
+function countReferencedParams(code, params) {
+  let used = 0;
+  for (const p of params) {
+    if (new RegExp(`\\b${escapeRegExp(p)}\\b`).test(code)) used++;
+  }
+  return used;
+}
+
+function detectFrameworkStyleCode(code) {
+  const frameworkTokens = [
+    "useState(",
+    "useEffect(",
+    "<div",
+    "document.",
+    "window.",
+    "fetch(",
+    "express(",
+    "app.get(",
+    "app.post(",
+    "router.",
+    "addEventListener(",
+    "createServer("
+  ];
+  return includesAny(String(code || ""), frameworkTokens);
+}
+
+function detectLikelyOffTrackCode({ code, fnName, signature }) {
+  const c = String(code || "");
+  if (!hasMeaningfulCode(c)) return false;
+  const hasExpectedFn = Boolean(fnName && hasFunctionNamed(c, fnName));
+  const params = parseParamNames(signature);
+  if (!params.length) return detectFrameworkStyleCode(c);
+  const usedCount = countReferencedParams(c, params);
+  const usesVeryFewParams = usedCount <= Math.max(0, Math.floor((params.length - 1) / 2));
+  const hasFrameworkCode = detectFrameworkStyleCode(c);
+  const algoSignals = ["for", "while", "if", "return", "Map", "Set", ".sort(", ".length", "new Map"];
+  const hasAlgoSignal = includesAny(c, algoSignals);
+  if (hasFrameworkCode) return true;
+  if (!hasExpectedFn && hasMeaningfulCode(c)) return true;
+  if (usesVeryFewParams && !hasAlgoSignal) return true;
+  return false;
+}
+
 /**
  * @returns {Array<{id: string, message: string, priority: number}>}
  */
@@ -105,14 +182,19 @@ export function analyzeCodeForInterruptions({
     });
   }
 
-  // Universal: encourage approach before coding (only early in session)
-  if (!hasUserExplainedApproach && looksLikeStartedCoding(c)) {
+  // Universal: likely off-track implementation despite correct function shell.
+  if (detectLikelyOffTrackCode({ code: c, fnName, signature: p.signature })) {
     out.push({
-      id: `explain-first:${problemId}`,
-      priority: 90,
-      message: "Wait, can you explain your approach (and time/space complexity) before you keep coding?"
+      id: `off-track:${problemId}`,
+      priority: 88,
+      message:
+        "Wait, this implementation looks off-track for this algorithm problem. Can you tie the logic directly to the expected inputs/output and walk through one example?"
     });
   }
+
+  // Disabled by default to avoid noisy approach-only interruptions.
+  // Keep hasUserExplainedApproach referenced to preserve call signature.
+  void hasUserExplainedApproach;
 
   if (problemId === "two-sum") {
     if (detectNestedLoops(c) || countMatches(c, /\bfor\s*\(/g) >= 2) {

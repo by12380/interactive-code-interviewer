@@ -10,6 +10,11 @@ import { getCurrentUserId, getUserById, loadUsers, logIn, logOut, signUp } from 
 import { loadUserJson, loadUserState, saveUserJson } from "./userData.js";
 import { randomId } from "./storage.js";
 import { analyzeCodeForInterruptions } from "./codeAnalysis.js";
+import {
+  buildProactivePrompt,
+  canEmitLocalInterruption,
+  shouldRequestProactiveInterruption
+} from "./interruptionPolicy.js";
 import { createReplayRecorder } from "./replay.js";
 import { putReplay, pruneOldReplays } from "./replayStore.js";
 import CodeReplayModal from "./CodeReplayModal.jsx";
@@ -1623,7 +1628,18 @@ export default function App() {
     return "";
   }, [activeProblem, codeByProblemId]);
   const setCode = (nextCode) => {
-    lastEditAtRef.current = Date.now();
+    const now = Date.now();
+    lastEditAtRef.current = now;
+    const pid = String(activeProblem?.id || "");
+    const pending = pendingInterruptionRef.current;
+    if (pending && pending.problemId === pid) {
+      pending.editCount = Number(pending.editCount || 0) + 1;
+      if (pending.editCount >= 3) {
+        const stats = getProblemInterruptionStats(pid);
+        stats.ignoredStreak = Math.min(4, Number(stats.ignoredStreak || 0) + 1);
+        pendingInterruptionRef.current = null;
+      }
+    }
     setCodeByProblemId((prev) => {
       const next = { ...(prev || {}), [activeProblem.id]: nextCode };
       return next;
@@ -1638,6 +1654,7 @@ export default function App() {
 
   const [problemTab, setProblemTab] = useState("Description");
   const [revealedHintCount, setRevealedHintCount] = useState(() => ({}));
+  const [aiHintByProblemId, setAiHintByProblemId] = useState(() => ({}));
   const [isSolutionVisible, setIsSolutionVisible] = useState(false);
 
   const [input, setInput] = useState("");
@@ -1683,6 +1700,9 @@ export default function App() {
   const lastInterruptTextRef = useRef("");
   const lastInterruptAtRef = useRef(0);
   const lastEditAtRef = useRef(0);
+  const lastUserMessageRef = useRef("");
+  const interruptionStatsByProblemRef = useRef(new Map());
+  const pendingInterruptionRef = useRef(null); // { problemId, ruleId, editCount }
   const hasUserExplainedApproachRef = useRef(false);
   const lastCodeSentRef = useRef("");
   const llmMessagesRef = useRef([]);
@@ -1964,6 +1984,7 @@ export default function App() {
         const payload = data.payload || {};
         const problemId = String(payload.problemId || "");
         if (!problemId) return;
+        const prevSummary = testRunByProblemIdRef.current?.[problemId]?.summary || null;
 
         setTestRunByProblemId((prev) => {
           const next = { ...(prev || {}), [problemId]: payload };
@@ -1973,6 +1994,15 @@ export default function App() {
         const passed = Number(payload?.summary?.passed || 0);
         const total = Number(payload?.summary?.total || 0);
         const isPassing = total > 0 && passed === total;
+        const prevPassed = Number(prevSummary?.passed || 0);
+        if (passed > prevPassed || isPassing) {
+          const stats = getProblemInterruptionStats(problemId);
+          stats.lastProgressAt = Date.now();
+          stats.ignoredStreak = 0;
+          if (pendingInterruptionRef.current?.problemId === problemId) {
+            pendingInterruptionRef.current = null;
+          }
+        }
 
         if (isPassing) {
           const wasSolved = Boolean(solvedByProblemIdRef.current?.[problemId]);
@@ -2749,6 +2779,15 @@ export default function App() {
     setIsSolutionVisible(false);
   }, [activeProblemId]);
 
+  useEffect(() => {
+    const pid = String(activeProblemId || "");
+    if (!pid) return;
+    getProblemInterruptionStats(pid);
+    if (pendingInterruptionRef.current && pendingInterruptionRef.current.problemId !== pid) {
+      pendingInterruptionRef.current = null;
+    }
+  }, [activeProblemId]);
+
   // Keep the multi-practice session aligned to the active editor problem.
   useEffect(() => {
     if (!isMultiPracticeEffective) return;
@@ -2853,6 +2892,38 @@ export default function App() {
     return [...messageList, buildCodeMessage(nextCode)];
   };
 
+  const pushAiHintForProblem = (problemId, message) => {
+    const pid = String(problemId || "");
+    const text = String(message || "").trim();
+    if (!pid || !text) return;
+    setAiHintByProblemId((prev) => ({ ...(prev || {}), [pid]: text }));
+    setProblemTab("Hints");
+  };
+
+  function getProblemInterruptionStats(problemId) {
+    const pid = String(problemId || "");
+    if (!pid) {
+      return {
+        interruptionsSent: 0,
+        proactiveCalls: 0,
+        ignoredStreak: 0,
+        lastProgressAt: Date.now(),
+        lastProactiveAt: 0
+      };
+    }
+    const m = interruptionStatsByProblemRef.current;
+    if (!m.has(pid)) {
+      m.set(pid, {
+        interruptionsSent: 0,
+        proactiveCalls: 0,
+        ignoredStreak: 0,
+        lastProgressAt: Date.now(),
+        lastProactiveAt: 0
+      });
+    }
+    return m.get(pid);
+  }
+
   // Fast, local interruptions (no API call). Runs frequently with a tight debounce.
   useEffect(() => {
     if (isLocked) return;
@@ -2864,12 +2935,8 @@ export default function App() {
 
       const now = Date.now();
       const idleMs = now - lastEditAtRef.current;
-      const MIN_IDLE_MS = 1100;
-      if (idleMs < MIN_IDLE_MS) return;
-
-      const GLOBAL_COOLDOWN_MS = 20_000;
-      if (now - lastInterruptAtRef.current < GLOBAL_COOLDOWN_MS) return;
-
+      const problemId = String(activeProblem?.id || "");
+      const stats = getProblemInterruptionStats(problemId);
       const suggestions = analyzeCodeForInterruptions({
         code,
         problem: activeProblem,
@@ -2877,23 +2944,32 @@ export default function App() {
       });
       if (!suggestions.length) return;
 
-      const COOLDOWN_PER_RULE_MS = 12_000;
-
       for (const s of suggestions) {
         const lastTs = lastInterruptByIdRef.current.get(s.id) || 0;
-        if (now - lastTs < COOLDOWN_PER_RULE_MS) continue;
-        if (lastInterruptTextRef.current === s.message) continue;
+        const okToEmit = canEmitLocalInterruption({
+          now,
+          idleMs,
+          suggestion: s,
+          lastGlobalInterruptAt: lastInterruptAtRef.current,
+          lastRuleInterruptAt: lastTs,
+          lastInterruptText: lastInterruptTextRef.current,
+          interruptionsSentForProblem: stats.interruptionsSent,
+          ignoredStreak: stats.ignoredStreak
+        });
+        if (!okToEmit) continue;
 
         lastInterruptByIdRef.current.set(s.id, now);
         lastInterruptTextRef.current = s.message;
         lastInterruptAtRef.current = now;
+        stats.interruptionsSent = Number(stats.interruptionsSent || 0) + 1;
 
-        setMessages((prev) => [...prev, { role: "assistant", content: s.message }]);
         setLiveInterruption({ message: s.message, ts: now });
+        pushAiHintForProblem(problemId, s.message);
         llmMessagesRef.current = [
           ...llmMessagesRef.current,
           { role: "assistant", content: s.message }
         ];
+        pendingInterruptionRef.current = { problemId, ruleId: s.id, editCount: 0 };
         break;
       }
     }, debounceMs);
@@ -2917,29 +2993,57 @@ export default function App() {
   }, [liveInterruption?.ts]);
 
   useEffect(() => {
-    const delay = 18_000; // Keep proactive coach calls infrequent while typing.
+    if (isLocked) return undefined;
+    if (!activeProblem) return undefined;
+    const delay = 16_000; // Keep proactive coach checks infrequent while typing.
 
     const timeout = setTimeout(async () => {
       if (proactiveInFlightRef.current) {
         return;
       }
-
-      if (code === lastProactiveCodeRef.current) {
+      if (liveInterruption?.message) {
         return;
       }
+      const now = Date.now();
+      const problemId = String(activeProblem?.id || activeProblemId || "");
+      if (!problemId) return;
+      const stats = getProblemInterruptionStats(problemId);
+      const localSuggestions = analyzeCodeForInterruptions({
+        code,
+        problem: activeProblem,
+        hasUserExplainedApproach: hasUserExplainedApproachRef.current
+      });
+      const shouldCall = shouldRequestProactiveInterruption({
+        now,
+        codeChanged: code !== lastProactiveCodeRef.current,
+        idleMs: now - lastEditAtRef.current,
+        localSuggestions,
+        ignoredStreak: stats.ignoredStreak,
+        interruptionsSentForProblem: stats.interruptionsSent,
+        proactiveCallsForProblem: stats.proactiveCalls,
+        lastGlobalInterruptAt: lastInterruptAtRef.current,
+        lastProactiveAt: stats.lastProactiveAt || lastProactiveAtRef.current,
+        lastProgressAt: stats.lastProgressAt
+      });
+      if (!shouldCall) return;
 
       proactiveInFlightRef.current = true;
+      stats.proactiveCalls = Number(stats.proactiveCalls || 0) + 1;
+      stats.lastProactiveAt = now;
       lastProactiveCodeRef.current = code;
 
       try {
-        const nextMessages = appendCodeUpdateIfNeeded(
+        const testSummary = testRunByProblemIdRef.current?.[problemId]?.summary || null;
+        const prompt = buildProactivePrompt({
+          problem: activeProblem,
           code,
-          llmMessagesRef.current
-        );
-        llmMessagesRef.current = nextMessages;
-
+          localSuggestions,
+          testSummary,
+          lastUserMessage: lastUserMessageRef.current,
+          stuckForMs: now - Number(stats.lastProgressAt || now)
+        });
         const data = await sendChat({
-          messages: nextMessages,
+          messages: [{ role: "user", content: prompt }],
           mode: "proactive",
           context: {
             problemId: activeProblem?.id,
@@ -2952,25 +3056,31 @@ export default function App() {
         });
         lastProactiveAtRef.current = Date.now();
 
-        if (!data?.reply) {
+        const reply = String(data?.reply || "").trim();
+        if (!reply) {
+          return;
+        }
+        if (lastProactiveHintRef.current === reply) {
           return;
         }
 
-        if (lastProactiveHintRef.current === data.reply) {
+        const emitAt = Date.now();
+        if (emitAt - lastInterruptAtRef.current < 10_000) {
           return;
         }
 
-        lastProactiveHintRef.current = data.reply;
+        lastProactiveHintRef.current = reply;
+        lastInterruptTextRef.current = reply;
+        lastInterruptAtRef.current = emitAt;
+        stats.interruptionsSent = Number(stats.interruptionsSent || 0) + 1;
         llmMessagesRef.current = [
           ...llmMessagesRef.current,
-          { role: "assistant", content: data.reply }
+          { role: "assistant", content: reply }
         ];
-        setMessages((prev) => [
-          ...prev,
-          { role: "assistant", content: data.reply }
-        ]);
         // Also surface in the editor area so it's obvious.
-        setLiveInterruption({ message: data.reply, ts: Date.now() });
+        setLiveInterruption({ message: reply, ts: emitAt });
+        pushAiHintForProblem(problemId, reply);
+        pendingInterruptionRef.current = { problemId, ruleId: "proactive", editCount: 0 };
       } catch (error) {
         setMessages((prev) => [
           ...prev,
@@ -2985,7 +3095,7 @@ export default function App() {
     }, delay);
 
     return () => clearTimeout(timeout);
-  }, [code, activeProblemId]);
+  }, [code, activeProblem, activeProblemId, isLocked, liveInterruption?.message]);
 
   const handleRunCode = () => {
     const iframeWindow = runnerIframeRef.current?.contentWindow;
@@ -3363,6 +3473,14 @@ function __ici_isEqual(problemId, actual, expected) {
     if (trimmed.length >= 20) {
       hasUserExplainedApproachRef.current = true;
     }
+    lastUserMessageRef.current = trimmed;
+    if (activeProblem?.id) {
+      const stats = getProblemInterruptionStats(activeProblem.id);
+      stats.ignoredStreak = 0;
+      if (pendingInterruptionRef.current?.problemId === String(activeProblem.id)) {
+        pendingInterruptionRef.current = null;
+      }
+    }
 
     const nextMessages = [...messages, { role: "user", content: trimmed }];
     setMessages(nextMessages);
@@ -3507,6 +3625,7 @@ function __ici_isEqual(problemId, actual, expected) {
     setSystemDesignAnswer("");
     setFeedbackText("");
     setLiveInterruption(null);
+    setAiHintByProblemId({});
     setConsoleEntries([]);
     setMessages([
       {
@@ -3523,6 +3642,9 @@ function __ici_isEqual(problemId, actual, expected) {
     lastInterruptTextRef.current = "";
     lastInterruptAtRef.current = 0;
     lastEditAtRef.current = 0;
+    lastUserMessageRef.current = "";
+    interruptionStatsByProblemRef.current = new Map();
+    pendingInterruptionRef.current = null;
     hasUserExplainedApproachRef.current = false;
   };
 
@@ -4365,13 +4487,19 @@ function __ici_isEqual(problemId, actual, expected) {
                     <div className="problem__block">
                       <div className="problem__block-title">Hints</div>
                       <div className="problem__hints">
+                        {String(aiHintByProblemId?.[activeProblem?.id] || "").trim() ? (
+                          <div className="problem__hint">
+                            <div className="problem__hint-n">AI interviewer</div>
+                            <div className="problem__text">{String(aiHintByProblemId?.[activeProblem?.id] || "")}</div>
+                          </div>
+                        ) : null}
                         {activeProblem.hints.slice(0, revealedCount).map((h, idx) => (
                           <div key={idx} className="problem__hint">
                             <div className="problem__hint-n">Hint {idx + 1}</div>
                             <div className="problem__text">{h}</div>
                           </div>
                         ))}
-                        {revealedCount === 0 && (
+                        {revealedCount === 0 && !String(aiHintByProblemId?.[activeProblem?.id] || "").trim() && (
                           <div className="problem__text problem__text--muted">
                             No hints revealed yet.
                           </div>

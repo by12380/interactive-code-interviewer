@@ -73,6 +73,8 @@ app.post("/api/chat", async (req, res) => {
           "Rules:",
           "- If an interruption is warranted, output exactly ONE short message (1–2 sentences) that starts with 'Wait,'.",
           "- Prefer questions + gentle nudges (e.g. ask to explain approach, point out brute force, suggest better DS).",
+          "- Ground feedback in the current code and expected signature/output; call out off-track or irrelevant code explicitly.",
+          "- Do NOT ask generic 'what is your approach?' unless the code is essentially empty.",
           "- Do NOT give a full solution or final code.",
           "- If no interruption is needed, output an empty string.",
           ctxText ? `\n${ctxText}\n` : ""
