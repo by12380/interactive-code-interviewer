@@ -7,7 +7,7 @@ import { getSessions, deleteSession, updateSession } from "../services/sessionSe
 import "../styles/interviewer.css";
 
 export default function InterviewerDashboard() {
-  const { user } = useAuth();
+  const { user, logOut } = useAuth();
   const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +50,15 @@ export default function InterviewerDashboard() {
           </button>
           <button className="iv-btn" onClick={() => navigate("/")}>
             Back to Practice
+          </button>
+          <button
+            className="iv-btn iv-btn--danger"
+            onClick={async () => {
+              await logOut();
+              navigate("/login", { replace: true });
+            }}
+          >
+            Logout
           </button>
         </div>
       </header>

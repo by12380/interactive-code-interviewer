@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "./contexts/AuthContext.jsx";
 import { sendChat } from "./api.js";
 import Header from "./components/Header.jsx";
 import Sidebar from "./components/Sidebar.jsx";
@@ -226,6 +228,8 @@ const runTestCases = (code, testCases, problem) => {
 export default function App() {
   const { accessibility } = useTheme();
   const { settings: focusSettings, toggleFocusMode, disableFocusMode } = useFocusMode();
+  const { logOut: firebaseLogOut, user: authUser, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   
   // Screen-based navigation state
   // "interview" | "settings" | "leaderboard" | "achievements" | "roadmap"
@@ -237,7 +241,16 @@ export default function App() {
   }, []);
 
   // User authentication state
+  // localStorage-based user for gamification/profile features
   const [user, setUser] = useState(() => getCurrentUser());
+  // Effective user: prefer localStorage user, fall back to Firebase auth user
+  // so the UI (logout button, sidebar avatar) always reflects the signed-in state.
+  const effectiveUser = user || (authUser ? {
+    id: authUser.uid,
+    username: authUser.displayName || authUser.email?.split("@")[0] || "User",
+    email: authUser.email,
+    role: authUser.role,
+  } : null);
   const [isAuthModalVisible, setIsAuthModalVisible] = useState(false);
   const [isProfileVisible, setIsProfileVisible] = useState(false);
   const [personalBest, setPersonalBest] = useState(null);
@@ -1237,12 +1250,14 @@ export default function App() {
     setIsProfileVisible(false);
   }, []);
 
-  const handleLogout = useCallback(() => {
-    logoutUser();
+  const handleLogout = useCallback(async () => {
+    logoutUser();           // clear localStorage user key
     setUser(null);
     setPersonalBest(null);
     setIsProfileVisible(false);
-  }, []);
+    await firebaseLogOut(); // Firebase sign-out + clear remaining localStorage
+    navigate("/login", { replace: true });
+  }, [firebaseLogOut, navigate]);
 
   // User update handler (shared by gamification, roadmap, etc.)
   const handleUserUpdate = useCallback((updatedUser) => {
@@ -1492,7 +1507,7 @@ export default function App() {
       {/* Sidebar Navigation */}
       {!shouldHideSidebar && (
         <Sidebar
-          user={user}
+          user={effectiveUser}
           activeScreen={activeScreen}
           onNavigate={handleNavigate}
           onOpenAuth={handleOpenAuth}
@@ -1505,7 +1520,7 @@ export default function App() {
               currentProblemId={currentProblemId}
               onSelectProblem={handleSelectProblem}
               isLocked={isLocked}
-              user={user}
+              user={effectiveUser}
             />
           }
         />
@@ -1527,6 +1542,8 @@ export default function App() {
                 onDifficultyChange={handleDifficultyChange}
                 onPauseToggle={handlePauseToggle}
                 onStop={handleStop}
+                onLogout={handleLogout}
+                user={effectiveUser}
                 currentProblemTitle={currentProblem?.title}
               />
             )}

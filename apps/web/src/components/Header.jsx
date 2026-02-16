@@ -15,6 +15,8 @@ function Header({
   onDifficultyChange,
   onPauseToggle,
   onStop,
+  onLogout,
+  user,
   currentProblemTitle,
 }) {
   return (
@@ -84,7 +86,7 @@ function Header({
         </div>
       </div>
 
-      {/* Right: Status Indicator */}
+      {/* Right: Status + Logout */}
       <div className="topbar__status">
         {isLocked ? (
           <span className="topbar__status-badge topbar__status-badge--completed">
@@ -98,6 +100,33 @@ function Header({
           <span className="topbar__status-badge topbar__status-badge--active">
             In Progress
           </span>
+        )}
+
+        {user && onLogout && (
+          <button
+            type="button"
+            className="topbar__btn topbar__btn--logout"
+            onClick={onLogout}
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <svg
+              className="topbar__logout-icon"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            <span className="topbar__btn-text">Logout</span>
+          </button>
         )}
       </div>
     </header>

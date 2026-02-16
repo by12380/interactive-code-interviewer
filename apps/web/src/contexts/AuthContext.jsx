@@ -72,6 +72,17 @@ export function AuthProvider({ children }) {
     setError(null);
     try {
       sessionStorage.removeItem(SESSION_KEY); // clear session flag
+
+      // Clear all app-related localStorage keys
+      const appKeys = [
+        "code_interviewer_current_user",
+        "code_interviewer_users",
+        "code_interviewer_leaderboard",
+        "onboardingComplete",
+        "onboardingNeverShow",
+      ];
+      appKeys.forEach((key) => localStorage.removeItem(key));
+
       await firebaseLogout();
       setUser(null);
     } catch (e) {

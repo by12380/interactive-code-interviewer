@@ -77,14 +77,14 @@ function Sidebar({
               className="sidebar__user-btn"
               onClick={toggleUserMenu}
               aria-expanded={isUserMenuOpen}
-              aria-label={`User menu for ${user.username}`}
+              aria-label={`User menu for ${user.username || user.displayName || user.email || "User"}`}
             >
               <span className="sidebar__avatar">
-                {user.username?.charAt(0).toUpperCase() || "U"}
+                {(user.username || user.displayName || user.email || "U").charAt(0).toUpperCase()}
               </span>
               {!isCollapsed && (
                 <div className="sidebar__user-info">
-                  <span className="sidebar__username">{user.username}</span>
+                  <span className="sidebar__username">{user.username || user.displayName || user.email}</span>
                   <span className="sidebar__user-level">Level {level}</span>
                 </div>
               )}

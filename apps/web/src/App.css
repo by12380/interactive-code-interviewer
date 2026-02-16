@@ -12537,6 +12537,7 @@ body.theme-dark .settings-help-info h4 {
 .topbar__status {
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .topbar__status-badge {
@@ -12566,6 +12567,38 @@ body.theme-dark .settings-help-info h4 {
   border: 1px solid rgba(99, 102, 241, 0.2);
 }
 
+/* Logout button in header */
+.topbar__btn--logout {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 12px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #dc2626;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.topbar__btn--logout:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: rgba(239, 68, 68, 0.35);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.15);
+}
+
+.topbar__btn--logout:active {
+  transform: translateY(0);
+}
+
+.topbar__logout-icon {
+  flex-shrink: 0;
+}
+
 /* Dark Theme Adjustments for Topbar */
 body.theme-dark .app__topbar {
   background: #1e293b;
@@ -12586,6 +12619,17 @@ body.theme-dark .topbar__select {
   background: #1e293b;
   border-color: #475569;
   color: #e2e8f0;
+}
+
+body.theme-dark .topbar__btn--logout {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.25);
+}
+
+body.theme-dark .topbar__btn--logout:hover {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.4);
 }
 
 /* ===================================
