@@ -276,6 +276,18 @@ function Sidebar({
           <span className="sidebar__nav-icon">&#x2699;&#xFE0F;</span>
           {!isCollapsed && <span className="sidebar__nav-text">Settings</span>}
         </button>
+
+        {user && (
+          <button
+            type="button"
+            className="sidebar__nav-item sidebar__user-menu-item--danger"
+            onClick={handleLogoutClick}
+            aria-label="Sign out"
+          >
+            <span className="sidebar__nav-icon">&#x1F6AA;</span>
+            {!isCollapsed && <span className="sidebar__nav-text">Logout</span>}
+          </button>
+        )}
       </div>
     </aside>
   );

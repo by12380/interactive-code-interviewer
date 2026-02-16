@@ -15,7 +15,8 @@ import CandidateSession from "./pages/CandidateSession.jsx";
 import SessionResults from "./pages/SessionResults.jsx";
 
 export default function AppRouter() {
-  const { isAuthenticated, loading } = useAuth();
+  const { user, isAuthenticated, loading } = useAuth();
+  const defaultAuthedRoute = user?.role === "interviewer" ? "/interviewer" : "/";
 
   return (
     <Routes>
@@ -23,7 +24,7 @@ export default function AppRouter() {
       <Route
         path="/login"
         element={
-          loading ? null : isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />
+          loading ? null : isAuthenticated ? <Navigate to={defaultAuthedRoute} replace /> : <LoginPage />
         }
       />
 
@@ -32,7 +33,7 @@ export default function AppRouter() {
         path="/"
         element={
           <ProtectedRoute>
-            <App />
+            {user?.role === "interviewer" ? <Navigate to="/interviewer" replace /> : <App />}
           </ProtectedRoute>
         }
       />
@@ -98,7 +99,10 @@ export default function AppRouter() {
       />
 
       {/* Fallback – send unknown routes to login if not authed */}
-      <Route path="*" element={<Navigate to={isAuthenticated ? "/" : "/login"} replace />} />
+      <Route
+        path="*"
+        element={<Navigate to={isAuthenticated ? defaultAuthedRoute : "/login"} replace />}
+      />
     </Routes>
   );
 }

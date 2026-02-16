@@ -1,14 +1,14 @@
 // SessionCreator – wizard to build a new interview session.
 // Interviewer picks questions, sets permissions, then generates a share link.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { createSession, getQuestionBank, createQuestion } from "../services/sessionService.js";
 import "../styles/interviewer.css";
 
 export default function SessionCreator() {
-  const { user } = useAuth();
+  const { user, logOut } = useAuth();
   const navigate = useNavigate();
 
   // Question bank
@@ -38,6 +38,11 @@ export default function SessionCreator() {
 
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState(null);
+  const handleLogout = useCallback(async () => {
+    await logOut();
+    localStorage.clear();
+    navigate("/login", { replace: true });
+  }, [logOut, navigate]);
 
   useEffect(() => {
     getQuestionBank({ category: filterCat, difficulty: filterDiff, search: searchTerm })
@@ -121,7 +126,10 @@ export default function SessionCreator() {
     <div className="iv-dashboard">
       <header className="iv-header">
         <h1>Create Interview Session</h1>
-        <button className="iv-btn" onClick={() => navigate("/interviewer")}>Cancel</button>
+        <div className="iv-header__actions">
+          <button className="iv-btn" onClick={() => navigate("/interviewer")}>Cancel</button>
+          <button className="iv-btn iv-btn--danger" onClick={handleLogout}>Logout</button>
+        </div>
       </header>
 
       <section className="iv-section">

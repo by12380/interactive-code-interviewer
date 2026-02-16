@@ -1,8 +1,9 @@
 // SessionResults – Comparative ranking dashboard after a session ends.
 // Shows ranked candidates, per-question breakdown, and export option.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
+import { useAuth } from "../contexts/AuthContext.jsx";
 import {
   getSession,
   getCandidates,
@@ -16,6 +17,7 @@ import "../styles/interviewer.css";
 export default function SessionResults() {
   const { id: sessionId } = useParams();
   const navigate = useNavigate();
+  const { logOut } = useAuth();
 
   const [session, setSession] = useState(null);
   const [candidates, setCandidates] = useState([]);
@@ -23,6 +25,11 @@ export default function SessionResults() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [selectedCid, setSelectedCid] = useState(null);
+  const handleLogout = useCallback(async () => {
+    await logOut();
+    localStorage.clear();
+    navigate("/login", { replace: true });
+  }, [logOut, navigate]);
 
   useEffect(() => {
     Promise.all([
@@ -90,6 +97,7 @@ export default function SessionResults() {
         <h1>Results: {session?.title || "Session"}</h1>
         <div className="iv-header__actions">
           <button className="iv-btn iv-btn--sm" onClick={() => navigate("/interviewer")}>Dashboard</button>
+          <button className="iv-btn iv-btn--sm iv-btn--danger" onClick={handleLogout}>Logout</button>
         </div>
       </header>
 

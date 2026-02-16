@@ -1,16 +1,22 @@
 // Interviewer Dashboard – main hub for creating / managing sessions.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { getSessions, deleteSession, updateSession } from "../services/sessionService.js";
 import "../styles/interviewer.css";
 
 export default function InterviewerDashboard() {
-  const { user } = useAuth();
+  const { user, logOut } = useAuth();
   const navigate = useNavigate();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const handleLogout = useCallback(async () => {
+    await logOut();
+    localStorage.clear();
+    navigate("/login", { replace: true });
+  }, [logOut, navigate]);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -50,6 +56,9 @@ export default function InterviewerDashboard() {
           </button>
           <button className="iv-btn" onClick={() => navigate("/")}>
             Back to Practice
+          </button>
+          <button className="iv-btn iv-btn--danger" onClick={handleLogout}>
+            Logout
           </button>
         </div>
       </header>

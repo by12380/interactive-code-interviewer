@@ -51,6 +51,7 @@ import {
   checkUnlockableProblems,
   calculateLevel
 } from "./services/gamificationService.js";
+import { firebaseLogout } from "./services/firebaseAuthService.js";
 import {
   createRecordingSession,
   recordCodeChange,
@@ -1237,8 +1238,15 @@ export default function App() {
     setIsProfileVisible(false);
   }, []);
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
+    try {
+      await firebaseLogout();
+    } catch {
+      // Continue local cleanup even if Firebase sign-out fails.
+    }
+
     logoutUser();
+    localStorage.clear();
     setUser(null);
     setPersonalBest(null);
     setIsProfileVisible(false);

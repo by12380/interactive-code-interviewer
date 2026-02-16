@@ -14,6 +14,7 @@ import {
 } from "../services/sessionService.js";
 import { QUESTION_BANK } from "../data/questionBank.js";
 import { sendChat } from "../api.js";
+import { useAuth } from "../contexts/AuthContext.jsx";
 import "../styles/interviewer.css";
 
 const POLL_MS = 2000;
@@ -21,6 +22,7 @@ const POLL_MS = 2000;
 export default function LiveMonitor() {
   const { id: sessionId } = useParams();
   const navigate = useNavigate();
+  const { logOut } = useAuth();
 
   const [session, setSession] = useState(null);
   const [candidates, setCandidates] = useState([]);
@@ -110,6 +112,12 @@ Evaluate: approach, correctness, time/space complexity, code quality. Be concise
     navigate(`/interviewer/results/${sessionId}`);
   };
 
+  const handleLogout = useCallback(async () => {
+    await logOut();
+    localStorage.clear();
+    navigate("/login", { replace: true });
+  }, [logOut, navigate]);
+
   return (
     <div className="iv-monitor">
       {/* ── Top bar ─────────────────────────────────────────────── */}
@@ -124,6 +132,7 @@ Evaluate: approach, correctness, time/space complexity, code quality. Be concise
           <button className="iv-btn iv-btn--sm iv-btn--primary" onClick={handleEvalAll}>Evaluate All</button>
           <button className="iv-btn iv-btn--sm iv-btn--danger" onClick={handleEndSession}>End Session</button>
           <button className="iv-btn iv-btn--sm" onClick={() => navigate("/interviewer")}>Dashboard</button>
+          <button className="iv-btn iv-btn--sm iv-btn--danger" onClick={handleLogout}>Logout</button>
         </div>
       </header>
 
