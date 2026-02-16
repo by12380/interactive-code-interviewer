@@ -12523,6 +12523,18 @@ body.theme-dark .settings-help-info h4 {
   box-shadow: 0 6px 16px rgba(34, 197, 94, 0.35);
 }
 
+.topbar__btn--logout {
+  background: linear-gradient(135deg, #f97316, #ea580c);
+  color: white;
+  box-shadow: 0 4px 12px rgba(249, 115, 22, 0.25);
+}
+
+.topbar__btn--logout:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ea580c, #c2410c);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(249, 115, 22, 0.35);
+}
+
 .topbar__btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

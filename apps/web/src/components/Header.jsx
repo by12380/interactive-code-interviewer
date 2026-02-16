@@ -15,6 +15,7 @@ function Header({
   onDifficultyChange,
   onPauseToggle,
   onStop,
+  onLogout,
   currentProblemTitle,
 }) {
   return (
@@ -80,6 +81,16 @@ function Header({
           >
             <span className="topbar__btn-icon">✓</span>
             <span className="topbar__btn-text">Submit</span>
+          </button>
+
+          <button
+            type="button"
+            className="topbar__btn topbar__btn--logout"
+            onClick={onLogout}
+            aria-label="Log out"
+          >
+            <span className="topbar__btn-icon">↪</span>
+            <span className="topbar__btn-text">Logout</span>
           </button>
         </div>
       </div>

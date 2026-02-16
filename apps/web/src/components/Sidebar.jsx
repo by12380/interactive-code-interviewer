@@ -24,6 +24,7 @@ function Sidebar({
   const level = useMemo(() => calculateLevel(xp), [xp]);
   const levelProgress = useMemo(() => getLevelProgress(xp), [xp]);
   const streak = gamification?.streak?.current || 0;
+  const displayName = user?.username || user?.displayName || "User";
 
   const toggleCollapse = useCallback(() => {
     setIsCollapsed(prev => !prev);
@@ -77,14 +78,14 @@ function Sidebar({
               className="sidebar__user-btn"
               onClick={toggleUserMenu}
               aria-expanded={isUserMenuOpen}
-              aria-label={`User menu for ${user.username}`}
+              aria-label={`User menu for ${displayName}`}
             >
               <span className="sidebar__avatar">
-                {user.username?.charAt(0).toUpperCase() || "U"}
+                {displayName.charAt(0).toUpperCase() || "U"}
               </span>
               {!isCollapsed && (
                 <div className="sidebar__user-info">
-                  <span className="sidebar__username">{user.username}</span>
+                  <span className="sidebar__username">{displayName}</span>
                   <span className="sidebar__user-level">Level {level}</span>
                 </div>
               )}

@@ -28,6 +28,7 @@ import FocusModePanel from "./components/FocusModePanel.jsx";
 import SplitScreenPanel from "./components/SplitScreenPanel.jsx";
 import { useTheme } from "./contexts/ThemeContext.jsx";
 import { useFocusMode } from "./contexts/FocusModeContext.jsx";
+import { useAuth } from "./contexts/AuthContext.jsx";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
 import { 
   getCurrentUser, 
@@ -51,7 +52,6 @@ import {
   checkUnlockableProblems,
   calculateLevel
 } from "./services/gamificationService.js";
-import { firebaseLogout } from "./services/firebaseAuthService.js";
 import {
   createRecordingSession,
   recordCodeChange,
@@ -227,6 +227,7 @@ const runTestCases = (code, testCases, problem) => {
 export default function App() {
   const { accessibility } = useTheme();
   const { settings: focusSettings, toggleFocusMode, disableFocusMode } = useFocusMode();
+  const { user: authUser, logOut } = useAuth();
   
   // Screen-based navigation state
   // "interview" | "settings" | "leaderboard" | "achievements" | "roadmap"
@@ -242,6 +243,38 @@ export default function App() {
   const [isAuthModalVisible, setIsAuthModalVisible] = useState(false);
   const [isProfileVisible, setIsProfileVisible] = useState(false);
   const [personalBest, setPersonalBest] = useState(null);
+
+  // Keep local app user state in sync with Firebase auth state so
+  // sidebar/header never show "Sign In" while an auth session exists.
+  useEffect(() => {
+    if (!authUser) {
+      setUser(null);
+      setPersonalBest(null);
+      return;
+    }
+
+    setUser((prev) => {
+      if (prev) return prev;
+      return {
+        id: authUser.uid,
+        uid: authUser.uid,
+        username:
+          authUser.displayName ||
+          (authUser.email ? authUser.email.split("@")[0] : "User"),
+        displayName: authUser.displayName || "",
+        email: authUser.email || "",
+        role: authUser.role || "candidate",
+        gamification: {
+          xp: 0,
+          level: 1,
+          streak: { current: 0 },
+        },
+        stats: {
+          problemsCompleted: [],
+        },
+      };
+    });
+  }, [authUser]);
   
   // Gamification/toast state
   const [toasts, setToasts] = useState([]);
@@ -1239,18 +1272,13 @@ export default function App() {
   }, []);
 
   const handleLogout = useCallback(async () => {
-    try {
-      await firebaseLogout();
-    } catch {
-      // Continue local cleanup even if Firebase sign-out fails.
-    }
-
+    await logOut();
     logoutUser();
     localStorage.clear();
     setUser(null);
     setPersonalBest(null);
     setIsProfileVisible(false);
-  }, []);
+  }, [logOut]);
 
   // User update handler (shared by gamification, roadmap, etc.)
   const handleUserUpdate = useCallback((updatedUser) => {
@@ -1535,6 +1563,7 @@ export default function App() {
                 onDifficultyChange={handleDifficultyChange}
                 onPauseToggle={handlePauseToggle}
                 onStop={handleStop}
+                onLogout={handleLogout}
                 currentProblemTitle={currentProblem?.title}
               />
             )}
