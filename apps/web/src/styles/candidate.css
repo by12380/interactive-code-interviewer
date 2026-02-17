@@ -16,6 +16,34 @@
   padding: 32px; box-shadow: 0 4px 24px rgba(0,0,0,0.08);
 }
 .cs-join__card h1 { margin: 0 0 8px; font-size: 1.5rem; }
+
+.cs-join__header {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.cs-join__header h1 {
+  margin: 12px 0 4px;
+}
+
+.cs-join__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+  color: #4f46e5;
+  margin: 0 auto;
+}
+
+.cs-extracted-code {
+  font-size: 0.82rem;
+  color: #059669;
+  margin: -4px 0 12px;
+}
+
 .cs-muted { color: #94a3b8; font-size: 0.88rem; margin-bottom: 16px; }
 
 .cs-label { display: block; font-weight: 600; margin-bottom: 4px; font-size: 0.88rem; }

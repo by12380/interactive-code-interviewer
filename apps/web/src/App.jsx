@@ -1279,6 +1279,10 @@ export default function App() {
     setIsInterviewSimActive(true);
   }, []);
 
+  const handleJoinInterview = useCallback(() => {
+    navigate("/join");
+  }, [navigate]);
+
   const handleExitInterviewSim = useCallback(() => {
     setIsInterviewSimActive(false);
     setInterviewSimConfig(null);
@@ -1514,6 +1518,7 @@ export default function App() {
           onOpenProfile={handleOpenProfile}
           onLogout={handleLogout}
           onStartInterviewSim={handleOpenInterviewLauncher}
+          onJoinInterview={handleJoinInterview}
           problemSelector={
             <ProblemSelector
               problems={PROBLEMS}

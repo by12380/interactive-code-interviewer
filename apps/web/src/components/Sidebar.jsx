@@ -11,6 +11,7 @@ function Sidebar({
   onOpenProfile,
   onLogout,
   onStartInterviewSim,
+  onJoinInterview,
   problemSelector,
 }) {
   const { theme, toggleTheme } = useTheme();
@@ -198,6 +199,16 @@ function Sidebar({
         >
           <span className="sidebar__nav-icon">&#x1F3AF;</span>
           {!isCollapsed && <span className="sidebar__nav-text">Mock Interview</span>}
+        </button>
+
+        <button
+          type="button"
+          className="sidebar__nav-item sidebar__nav-item--join"
+          onClick={onJoinInterview}
+          aria-label="Join a live interview session"
+        >
+          <span className="sidebar__nav-icon">&#x1F517;</span>
+          {!isCollapsed && <span className="sidebar__nav-text">Join Interview</span>}
         </button>
 
         <button
