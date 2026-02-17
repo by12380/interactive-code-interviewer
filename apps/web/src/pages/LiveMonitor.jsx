@@ -105,6 +105,7 @@ Evaluate: approach, correctness, time/space complexity, code quality. Be concise
   };
 
   const handleEvalAll = async () => {
+    await updateSession(sessionId, { status: "completed" }).catch(() => {});
     for (const c of candidates) {
       await evaluateCandidate(sessionId, c.id).catch(() => {});
     }

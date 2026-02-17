@@ -9,6 +9,7 @@ import { QUESTION_BANK } from "../data/questionBank.js";
 import "../styles/candidate.css";
 
 const PUSH_MS = 2000;
+const SESSION_POLL_MS = 3000;
 const ACTIVE_SCREEN_STORAGE_KEY = "activeScreen";
 
 export default function CandidateSession() {
@@ -23,6 +24,7 @@ export default function CandidateSession() {
   const [hint, setHint] = useState("");
   const [hintLoading, setHintLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [endedByInterviewer, setEndedByInterviewer] = useState(false);
 
   const codeRef = useRef("");
   const lastPushedRef = useRef("");
@@ -34,25 +36,60 @@ export default function CandidateSession() {
 
   // Load session + questions
   useEffect(() => {
-    getSession(sessionId).then(async (s) => {
-      setSession(s);
-      const qs = (s.questionIds || []).map((qid) => {
-        const fromBank = QUESTION_BANK.find((q) => q.id === qid);
-        return fromBank || { id: qid, title: qid, description: "", starterCode: "" };
-      });
-      setQuestions(qs);
-      if (qs.length) setCode(qs[0].starterCode || "");
-    }).catch(() => {});
+    let isCancelled = false;
+    getSession(sessionId)
+      .then(async (s) => {
+        if (isCancelled) return;
+        setSession(s);
+        const qs = (s.questionIds || []).map((qid) => {
+          const fromBank = QUESTION_BANK.find((q) => q.id === qid);
+          return fromBank || { id: qid, title: qid, description: "", starterCode: "" };
+        });
+        setQuestions(qs);
+        if (qs.length) {
+          setCode(qs[0].starterCode || "");
+          codeRef.current = qs[0].starterCode || "";
+          lastPushedRef.current = "";
+        }
+        if (s.status === "completed") {
+          setEndedByInterviewer(true);
+          setSubmitted(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      isCancelled = true;
+    };
   }, [sessionId]);
+
+  // Keep session status in sync so interviewer can end interview remotely.
+  useEffect(() => {
+    if (submitted) return;
+    const poll = () => {
+      getSession(sessionId)
+        .then((s) => {
+          setSession(s);
+          if (s.status === "completed") {
+            setEndedByInterviewer(true);
+            setSubmitted(true);
+          }
+        })
+        .catch(() => {});
+    };
+    const timer = setInterval(poll, SESSION_POLL_MS);
+    return () => clearInterval(timer);
+  }, [sessionId, submitted]);
 
   // Timer
   useEffect(() => {
+    if (submitted) return;
     const t = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [submitted]);
 
   // Code push loop
   useEffect(() => {
+    if (submitted || session?.status === "completed") return;
     pushTimerRef.current = setInterval(() => {
       const current = codeRef.current;
       if (current === lastPushedRef.current) return;
@@ -61,12 +98,13 @@ export default function CandidateSession() {
       pushCode(sessionId, candidateId, { code: current, questionId: q?.id || "_default" }).catch(() => {});
     }, PUSH_MS);
     return () => clearInterval(pushTimerRef.current);
-  }, [sessionId, candidateId, currentIdx, questions]);
+  }, [sessionId, candidateId, currentIdx, questions, submitted, session?.status]);
 
   const handleCodeChange = useCallback((val) => {
+    if (submitted || session?.status === "completed") return;
     setCode(val || "");
     codeRef.current = val || "";
-  }, []);
+  }, [submitted, session?.status]);
 
   const question = questions[currentIdx] || null;
   const timeLimit = session?.settings?.timeLimitSeconds || 1800;
@@ -97,6 +135,7 @@ export default function CandidateSession() {
   };
 
   const handleSubmit = () => {
+    if (submitted || session?.status === "completed") return;
     // Final push
     pushCode(sessionId, candidateId, { code, questionId: question?.id || "_default" }).catch(() => {});
     if (currentIdx < questions.length - 1) {
@@ -108,18 +147,22 @@ export default function CandidateSession() {
 
   // Time's up
   useEffect(() => {
-    if (remaining <= 0 && !submitted) {
+    if (remaining <= 0 && !submitted && session?.status !== "completed") {
       pushCode(sessionId, candidateId, { code: codeRef.current, questionId: question?.id || "_default" }).catch(() => {});
       setSubmitted(true);
     }
-  }, [remaining, submitted]);
+  }, [remaining, submitted, session?.status, sessionId, candidateId, question?.id]);
 
   if (submitted) {
     return (
       <div className="cs-join">
         <div className="cs-join__card">
           <h1>Session Complete</h1>
-          <p>Your code has been submitted. The interviewer will review your solutions.</p>
+          <p>
+            {endedByInterviewer
+              ? "The interviewer has ended this session. Submissions are now closed."
+              : "Your code has been submitted. The interviewer will review your solutions."}
+          </p>
           <button className="cs-btn cs-btn--primary" onClick={() => navigate("/")}>Back to Home</button>
         </div>
       </div>
@@ -183,15 +226,19 @@ export default function CandidateSession() {
             theme="vs-dark"
             value={code}
             onChange={handleCodeChange}
-            options={{ minimap: { enabled: false }, fontSize: 14 }}
+            options={{ minimap: { enabled: false }, fontSize: 14, readOnly: submitted || session?.status === "completed" }}
           />
         </main>
       </div>
 
       {/* ── Bottom bar ────────────────────────────────────────── */}
       <footer className="cs-session__footer">
-        <button className="cs-btn cs-btn--primary" onClick={handleSubmit}>
-          {currentIdx < questions.length - 1 ? "Submit & Next" : "Submit Final"}
+        <button className="cs-btn cs-btn--primary" onClick={handleSubmit} disabled={submitted || session?.status === "completed"}>
+          {session?.status === "completed"
+            ? "Interview Ended"
+            : currentIdx < questions.length - 1
+              ? "Submit & Next"
+              : "Submit Final"}
         </button>
       </footer>
     </div>

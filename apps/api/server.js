@@ -344,6 +344,12 @@ app.post("/api/sessions/:sid/candidates/:cid/code", async (req, res) => {
   const { sid, cid } = req.params;
   const qid = questionId || "_default";
   try {
+    const sessionSnap = await withTimeout(getDoc(doc(db, "sessions", sid)));
+    if (!sessionSnap.exists()) return res.status(404).send("Session not found.");
+    if (sessionSnap.data()?.status === "completed") {
+      return res.status(409).send("Session has ended. Submissions are closed.");
+    }
+
     const ref = doc(db, "sessions", sid, "candidates", cid, "submissions", qid);
     await withTimeout(setDoc(ref, { code: code || "", lastUpdatedAt: new Date().toISOString() }, { merge: true }));
     res.json({ ok: true });
