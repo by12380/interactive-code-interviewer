@@ -22,15 +22,23 @@ export default function CandidateSession() {
   const [hint, setHint] = useState("");
   const [hintLoading, setHintLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [endedByInterviewer, setEndedByInterviewer] = useState(false);
 
   const codeRef = useRef("");
   const lastPushedRef = useRef("");
   const pushTimerRef = useRef(null);
+  const sessionPollerRef = useRef(null);
 
   // Load session + questions
   useEffect(() => {
     getSession(sessionId).then(async (s) => {
       setSession(s);
+      // If session was already ended by interviewer, go straight to submitted
+      if (s.status === "completed") {
+        setEndedByInterviewer(true);
+        setSubmitted(true);
+        return;
+      }
       const qs = (s.questionIds || []).map((qid) => {
         const fromBank = QUESTION_BANK.find((q) => q.id === qid);
         return fromBank || { id: qid, title: qid, description: "", starterCode: "" };
@@ -40,11 +48,32 @@ export default function CandidateSession() {
     }).catch(() => {});
   }, [sessionId]);
 
+  // Poll session status every 3s to detect when interviewer ends the session
+  useEffect(() => {
+    if (submitted) return;
+    sessionPollerRef.current = setInterval(() => {
+      getSession(sessionId).then((s) => {
+        if (s.status === "completed") {
+          // Interviewer ended the session – push final code and lock out
+          const q = questions[currentIdx];
+          pushCode(sessionId, candidateId, {
+            code: codeRef.current,
+            questionId: q?.id || "_default",
+          }).catch(() => {});
+          setEndedByInterviewer(true);
+          setSubmitted(true);
+        }
+      }).catch(() => {});
+    }, 3000);
+    return () => clearInterval(sessionPollerRef.current);
+  }, [sessionId, candidateId, submitted, questions, currentIdx]);
+
   // Timer
   useEffect(() => {
+    if (submitted) return;
     const t = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [submitted]);
 
   // Code push loop
   useEffect(() => {
@@ -114,7 +143,11 @@ export default function CandidateSession() {
       <div className="cs-join">
         <div className="cs-join__card">
           <h1>Session Complete</h1>
-          <p>Your code has been submitted. The interviewer will review your solutions.</p>
+          {endedByInterviewer ? (
+            <p>The interviewer has ended this session. Your code has been submitted automatically and will be reviewed.</p>
+          ) : (
+            <p>Your code has been submitted. The interviewer will review your solutions.</p>
+          )}
           <button className="cs-btn cs-btn--primary" onClick={() => navigate("/")}>Back to Home</button>
         </div>
       </div>
