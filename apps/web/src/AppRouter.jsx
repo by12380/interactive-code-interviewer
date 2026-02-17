@@ -72,30 +72,18 @@ export default function AppRouter() {
         }
       />
 
-      {/* Candidate routes – require auth (any role can join a session) */}
+      {/* Candidate routes – public so invite links work without prior auth */}
       <Route
         path="/join"
-        element={
-          <ProtectedRoute>
-            <JoinSession />
-          </ProtectedRoute>
-        }
+        element={<JoinSession />}
       />
       <Route
         path="/join/:code"
-        element={
-          <ProtectedRoute>
-            <JoinSession />
-          </ProtectedRoute>
-        }
+        element={<JoinSession />}
       />
       <Route
         path="/session/:sessionId/:candidateId"
-        element={
-          <ProtectedRoute>
-            <CandidateSession />
-          </ProtectedRoute>
-        }
+        element={<CandidateSession />}
       />
 
       {/* Fallback – send unknown routes to login if not authed */}

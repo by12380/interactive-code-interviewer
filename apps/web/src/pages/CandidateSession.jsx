@@ -9,6 +9,7 @@ import { QUESTION_BANK } from "../data/questionBank.js";
 import "../styles/candidate.css";
 
 const PUSH_MS = 2000;
+const ACTIVE_SCREEN_STORAGE_KEY = "activeScreen";
 
 export default function CandidateSession() {
   const { sessionId, candidateId } = useParams();
@@ -26,6 +27,10 @@ export default function CandidateSession() {
   const codeRef = useRef("");
   const lastPushedRef = useRef("");
   const pushTimerRef = useRef(null);
+
+  useEffect(() => {
+    localStorage.setItem(ACTIVE_SCREEN_STORAGE_KEY, "interview");
+  }, []);
 
   // Load session + questions
   useEffect(() => {

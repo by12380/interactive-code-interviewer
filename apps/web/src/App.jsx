@@ -63,6 +63,9 @@ import {
   getReplayByInterviewId,
   getAllReplays,
 } from "./services/codeReplayService.js";
+import { useNavigate } from "react-router-dom";
+
+const ACTIVE_SCREEN_STORAGE_KEY = "activeScreen";
 
 const getTimeScore = (elapsedSeconds, limitSeconds) => {
   if (elapsedSeconds <= 10 * 60) {
@@ -225,18 +228,30 @@ const runTestCases = (code, testCases, problem) => {
 };
 
 export default function App() {
+  const navigate = useNavigate();
   const { accessibility } = useTheme();
   const { settings: focusSettings, toggleFocusMode, disableFocusMode } = useFocusMode();
   const { user: authUser, logOut } = useAuth();
   
   // Screen-based navigation state
   // "interview" | "settings" | "leaderboard" | "achievements" | "roadmap"
-  const [activeScreen, setActiveScreen] = useState("interview");
+  const [activeScreen, setActiveScreen] = useState(
+    () => localStorage.getItem(ACTIVE_SCREEN_STORAGE_KEY) || "interview"
+  );
 
   // Navigation handler
   const handleNavigate = useCallback((screen) => {
     setActiveScreen(screen);
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem(ACTIVE_SCREEN_STORAGE_KEY, activeScreen);
+  }, [activeScreen]);
+
+  const handleJoinLiveSession = useCallback(() => {
+    localStorage.setItem(ACTIVE_SCREEN_STORAGE_KEY, "interview");
+    navigate("/join");
+  }, [navigate]);
 
   // User authentication state
   const [user, setUser] = useState(() => getCurrentUser());
@@ -1531,6 +1546,7 @@ export default function App() {
           user={user}
           activeScreen={activeScreen}
           onNavigate={handleNavigate}
+          onJoinLiveSession={handleJoinLiveSession}
           onOpenAuth={handleOpenAuth}
           onOpenProfile={handleOpenProfile}
           onLogout={handleLogout}

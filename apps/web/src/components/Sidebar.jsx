@@ -7,6 +7,7 @@ function Sidebar({
   user,
   activeScreen,
   onNavigate,
+  onJoinLiveSession,
   onOpenAuth,
   onOpenProfile,
   onLogout,
@@ -199,6 +200,16 @@ function Sidebar({
         >
           <span className="sidebar__nav-icon">&#x1F3AF;</span>
           {!isCollapsed && <span className="sidebar__nav-text">Mock Interview</span>}
+        </button>
+
+        <button
+          type="button"
+          className="sidebar__nav-item"
+          onClick={onJoinLiveSession}
+          aria-label="Join live interview session"
+        >
+          <span className="sidebar__nav-icon">&#x1F517;</span>
+          {!isCollapsed && <span className="sidebar__nav-text">Join Live Session</span>}
         </button>
 
         <button

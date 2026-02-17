@@ -6,12 +6,35 @@ import { useAuth } from "../contexts/AuthContext.jsx";
 import { joinSession } from "../services/sessionService.js";
 import "../styles/candidate.css";
 
+const ACTIVE_SCREEN_STORAGE_KEY = "activeScreen";
+
+function extractShareCode(value = "") {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  try {
+    const url = new URL(trimmed);
+    const parts = url.pathname.split("/").filter(Boolean);
+    const joinIndex = parts.findIndex((part) => part.toLowerCase() === "join");
+    const fromPath = joinIndex >= 0 ? parts[joinIndex + 1] : "";
+    const fromQuery = url.searchParams.get("code") || "";
+    const candidate = fromPath || fromQuery;
+    if (candidate) {
+      return candidate.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    }
+  } catch {
+    // Not a URL, continue treating as plain code.
+  }
+
+  return trimmed.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
 export default function JoinSession() {
   const { code: urlCode } = useParams();
   const navigate = useNavigate();
   const { user, signUp, logIn } = useAuth();
 
-  const [shareCode, setShareCode] = useState(urlCode || "");
+  const [inviteInput, setInviteInput] = useState(urlCode || "");
   const [displayName, setDisplayName] = useState(user?.displayName || "");
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState("");
@@ -27,14 +50,19 @@ export default function JoinSession() {
   }, [user?.displayName]);
 
   const handleJoin = async () => {
-    if (!shareCode.trim()) { setError("Enter a session code."); return; }
+    const shareCode = extractShareCode(inviteInput);
+    if (!shareCode) {
+      setError("Paste your invite link or session code.");
+      return;
+    }
     setJoining(true);
     setError("");
     try {
-      const { session, candidateId } = await joinSession(shareCode.toUpperCase().trim(), {
+      const { session, candidateId } = await joinSession(shareCode, {
         userId: user?.uid || null,
         displayName: displayName || "Anonymous",
       });
+      localStorage.setItem(ACTIVE_SCREEN_STORAGE_KEY, "interview");
       // Navigate into the coding view
       navigate(`/session/${session.id}/${candidateId}`);
     } catch (e) {
@@ -61,15 +89,14 @@ export default function JoinSession() {
     <div className="cs-join">
       <div className="cs-join__card">
         <h1>Join Interview</h1>
-        <p className="cs-muted">Enter the session code provided by your interviewer.</p>
+        <p className="cs-muted">Paste the invite link from your interviewer, or enter the session code.</p>
 
-        <label className="cs-label">Session Code</label>
+        <label className="cs-label">Invite Link or Session Code</label>
         <input
           className="cs-input cs-input--lg"
-          value={shareCode}
-          onChange={(e) => setShareCode(e.target.value.toUpperCase())}
-          placeholder="e.g. A3XK7P"
-          maxLength={8}
+          value={inviteInput}
+          onChange={(e) => setInviteInput(e.target.value)}
+          placeholder="https://.../join/A3XK7P or A3XK7P"
         />
 
         <label className="cs-label">Your Name</label>
