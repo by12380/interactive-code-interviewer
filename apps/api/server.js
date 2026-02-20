@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import nodemailer from "nodemailer";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore,
@@ -201,7 +202,7 @@ app.post("/api/questions", async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════
 
 app.post("/api/sessions", async (req, res) => {
-  const { title, questionIds, settings, createdBy } = req.body || {};
+  const { title, questionIds, settings, createdBy, interviewerEmail } = req.body || {};
   if (!title) return res.status(400).send("title required.");
   const shareCode = randomCode();
   const session = {
@@ -215,6 +216,7 @@ app.post("/api/sessions", async (req, res) => {
       ...(settings || {}),
     },
     createdBy: createdBy || null,
+    interviewerEmail: interviewerEmail || null,
     shareCode,
     status: "draft",
     createdAt: new Date().toISOString(),
@@ -483,6 +485,390 @@ app.get("/api/sessions/:sid/evaluation", async (req, res) => {
     if (!snap.exists()) return res.json({ comparison: null });
     res.json(snap.data());
   } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  REPORT GENERATION & EMAIL
+// ═══════════════════════════════════════════════════════════════════
+
+async function generateFullReport(sid) {
+  const sessionSnap = await withTimeout(getDoc(doc(db, "sessions", sid)));
+  if (!sessionSnap.exists()) throw new Error("Session not found.");
+  const session = { id: sid, ...sessionSnap.data() };
+
+  const candSnap = await withTimeout(getDocs(collection(db, "sessions", sid, "candidates")));
+  const candidates = [];
+  for (const cdoc of candSnap.docs) {
+    const data = cdoc.data();
+    const subSnap = await withTimeout(getDocs(collection(db, "sessions", sid, "candidates", cdoc.id, "submissions")));
+    const submissions = {};
+    subSnap.forEach((s) => { submissions[s.id] = s.data(); });
+
+    // Evaluate each candidate individually
+    const evaluations = {};
+    for (const [qid, sub] of Object.entries(submissions)) {
+      const question = questionBank.find((q) => q.id === qid);
+      const prompt = `Evaluate this candidate's solution for "${question?.title || qid}".
+Score on: correctness (0-40), efficiency (0-25), code quality (0-20), communication (0-15).
+Return JSON: { "correctness": N, "efficiency": N, "codeQuality": N, "communication": N, "total": N, "feedback": "..." }`;
+      const reply = await llm(prompt, [{ role: "user", content: sub.code || "// no code" }], { maxTokens: 500 });
+      try {
+        evaluations[qid] = JSON.parse(reply);
+      } catch {
+        evaluations[qid] = { raw: reply, total: 0 };
+      }
+    }
+    await withTimeout(updateDoc(doc(db, "sessions", sid, "candidates", cdoc.id), { evaluation: evaluations }));
+
+    candidates.push({
+      id: cdoc.id,
+      displayName: data.displayName,
+      joinedAt: data.joinedAt,
+      submissions,
+      evaluation: evaluations,
+    });
+  }
+
+  // Build the comprehensive report via LLM
+  const reportPrompt = `You are a senior technical interviewer writing a comprehensive post-interview report.
+
+Session: "${session.title}"
+Number of candidates: ${candidates.length}
+Questions: ${(session.questionIds || []).map((qid) => {
+    const q = questionBank.find((x) => x.id === qid);
+    return q?.title || qid;
+  }).join(", ")}
+
+For each candidate you have their code submissions and per-question evaluation scores.
+
+Generate a DETAILED JSON report with this exact structure:
+{
+  "reportTitle": "Interview Report: <session title>",
+  "generatedAt": "<ISO timestamp>",
+  "sessionSummary": {
+    "title": "...",
+    "totalCandidates": N,
+    "questionsUsed": ["..."],
+    "overallDifficulty": "Easy|Medium|Hard"
+  },
+  "rankings": [
+    {
+      "rank": 1,
+      "candidateId": "...",
+      "displayName": "...",
+      "overallScore": N,
+      "recommendation": "Strong Hire|Hire|Lean Hire|Lean No Hire|No Hire",
+      "strengths": ["strength1", "strength2"],
+      "weaknesses": ["weakness1", "weakness2"],
+      "perQuestion": [
+        {
+          "questionId": "...",
+          "questionTitle": "...",
+          "correctness": N,
+          "efficiency": N,
+          "codeQuality": N,
+          "communication": N,
+          "total": N,
+          "feedback": "..."
+        }
+      ]
+    }
+  ],
+  "comparativeAnalysis": "A 3-5 sentence paragraph comparing all candidates, highlighting who performed best and why.",
+  "bestApproach": "Which candidate(s) had the most elegant solution and why.",
+  "hiringRecommendation": "A clear 2-3 sentence final recommendation for the interviewer about which candidates to advance."
+}
+
+Sort rankings by overallScore descending. Be thorough and specific in feedback.`;
+
+  const candidateData = candidates.map((c) => ({
+    id: c.id,
+    name: c.displayName,
+    evaluation: c.evaluation,
+    codeSnippets: Object.fromEntries(
+      Object.entries(c.submissions).map(([qid, s]) => [qid, (s.code || "").slice(0, 1200)])
+    ),
+  }));
+
+  const reportReply = await llm(reportPrompt, [{ role: "user", content: JSON.stringify(candidateData) }], {
+    maxTokens: 3000,
+    temperature: 0.2,
+  });
+
+  let report;
+  try {
+    report = JSON.parse(reportReply);
+  } catch {
+    report = { raw: reportReply, generatedAt: new Date().toISOString() };
+  }
+
+  report.generatedAt = report.generatedAt || new Date().toISOString();
+
+  // Store report in Firestore
+  await withTimeout(setDoc(doc(db, "reports", sid), {
+    report,
+    sessionId: sid,
+    sessionTitle: session.title,
+    candidateCount: candidates.length,
+    createdBy: session.createdBy,
+    interviewerEmail: session.interviewerEmail || null,
+    updatedAt: new Date().toISOString(),
+  }));
+
+  // Also update the evaluations collection for backward compatibility
+  const comparison = {
+    rankings: (report.rankings || []).map((r) => ({
+      candidateId: r.candidateId,
+      displayName: r.displayName,
+      totalScore: r.overallScore,
+      strengths: Array.isArray(r.strengths) ? r.strengths.join("; ") : r.strengths,
+      weaknesses: Array.isArray(r.weaknesses) ? r.weaknesses.join("; ") : r.weaknesses,
+    })),
+    bestApproach: report.bestApproach,
+    summary: report.comparativeAnalysis,
+  };
+  await withTimeout(setDoc(doc(db, "evaluations", sid), { comparison, updatedAt: new Date().toISOString() }));
+
+  return { report, session, candidates };
+}
+
+function buildReportHTML(report, sessionTitle) {
+  const rankings = report.rankings || [];
+  const recColors = {
+    "Strong Hire": "#059669",
+    "Hire": "#10b981",
+    "Lean Hire": "#f59e0b",
+    "Lean No Hire": "#f97316",
+    "No Hire": "#dc2626",
+  };
+
+  let candidateRows = rankings.map((r, i) => {
+    const color = recColors[r.recommendation] || "#64748b";
+    const strengths = Array.isArray(r.strengths) ? r.strengths.map((s) => `<li>${s}</li>`).join("") : `<li>${r.strengths}</li>`;
+    const weaknesses = Array.isArray(r.weaknesses) ? r.weaknesses.map((w) => `<li>${w}</li>`).join("") : `<li>${r.weaknesses}</li>`;
+
+    const perQ = (r.perQuestion || []).map((pq) => `
+      <tr>
+        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;font-size:13px;">${pq.questionTitle || pq.questionId}</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;">${pq.correctness}/40</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;">${pq.efficiency}/25</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;">${pq.codeQuality}/20</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-size:13px;">${pq.communication}/15</td>
+        <td style="padding:6px 10px;border-bottom:1px solid #e2e8f0;text-align:center;font-weight:700;font-size:13px;">${pq.total}/100</td>
+      </tr>
+    `).join("");
+
+    return `
+    <div style="border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:16px;background:#fff;">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+        <span style="display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:#4f46e5;color:#fff;font-weight:700;font-size:14px;">${i + 1}</span>
+        <h3 style="margin:0;font-size:18px;">${r.displayName || r.candidateId}</h3>
+        <span style="margin-left:auto;font-size:24px;font-weight:700;color:#1e293b;">${r.overallScore}/100</span>
+      </div>
+      <span style="display:inline-block;padding:3px 12px;border-radius:999px;font-size:12px;font-weight:700;color:#fff;background:${color};">${r.recommendation}</span>
+      <div style="display:flex;gap:24px;margin-top:16px;">
+        <div style="flex:1;">
+          <h4 style="margin:0 0 6px;font-size:13px;color:#059669;text-transform:uppercase;">Strengths</h4>
+          <ul style="margin:0;padding-left:18px;font-size:13px;color:#334155;">${strengths}</ul>
+        </div>
+        <div style="flex:1;">
+          <h4 style="margin:0 0 6px;font-size:13px;color:#dc2626;text-transform:uppercase;">Areas for Improvement</h4>
+          <ul style="margin:0;padding-left:18px;font-size:13px;color:#334155;">${weaknesses}</ul>
+        </div>
+      </div>
+      ${perQ ? `
+      <h4 style="margin:16px 0 8px;font-size:13px;color:#64748b;text-transform:uppercase;">Per-Question Breakdown</h4>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="background:#f1f5f9;">
+            <th style="padding:6px 10px;text-align:left;font-size:12px;color:#64748b;">Question</th>
+            <th style="padding:6px 10px;text-align:center;font-size:12px;color:#64748b;">Correct</th>
+            <th style="padding:6px 10px;text-align:center;font-size:12px;color:#64748b;">Efficiency</th>
+            <th style="padding:6px 10px;text-align:center;font-size:12px;color:#64748b;">Quality</th>
+            <th style="padding:6px 10px;text-align:center;font-size:12px;color:#64748b;">Comm.</th>
+            <th style="padding:6px 10px;text-align:center;font-size:12px;color:#64748b;">Total</th>
+          </tr>
+        </thead>
+        <tbody>${perQ}</tbody>
+      </table>` : ""}
+    </div>`;
+  }).join("");
+
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:720px;margin:0 auto;padding:32px 20px;">
+    <div style="text-align:center;margin-bottom:32px;">
+      <h1 style="margin:0 0 4px;font-size:24px;color:#1e293b;">${report.reportTitle || `Interview Report: ${sessionTitle}`}</h1>
+      <p style="margin:0;color:#64748b;font-size:14px;">Generated on ${new Date(report.generatedAt).toLocaleString()}</p>
+    </div>
+
+    <div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;padding:16px;margin-bottom:24px;">
+      <h2 style="margin:0 0 8px;font-size:16px;color:#3730a3;">Session Summary</h2>
+      <p style="margin:0;font-size:14px;color:#334155;">
+        <strong>${report.sessionSummary?.totalCandidates || 0}</strong> candidate(s) evaluated across 
+        <strong>${(report.sessionSummary?.questionsUsed || []).length}</strong> question(s)
+      </p>
+    </div>
+
+    <h2 style="font-size:18px;color:#1e293b;margin-bottom:12px;">Candidate Rankings</h2>
+    ${candidateRows}
+
+    <div style="background:#f1f5f9;border-radius:12px;padding:16px;margin-bottom:16px;">
+      <h2 style="margin:0 0 8px;font-size:16px;color:#1e293b;">Comparative Analysis</h2>
+      <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">${report.comparativeAnalysis || ""}</p>
+    </div>
+
+    ${report.bestApproach ? `
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px;margin-bottom:16px;">
+      <h2 style="margin:0 0 8px;font-size:16px;color:#166534;">Best Approach</h2>
+      <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">${report.bestApproach}</p>
+    </div>` : ""}
+
+    <div style="background:#4f46e5;border-radius:12px;padding:20px;color:#fff;">
+      <h2 style="margin:0 0 8px;font-size:16px;">Hiring Recommendation</h2>
+      <p style="margin:0;font-size:14px;line-height:1.6;opacity:0.95;">${report.hiringRecommendation || ""}</p>
+    </div>
+
+    <p style="text-align:center;margin-top:32px;font-size:12px;color:#94a3b8;">
+      Generated by AI Interview Platform
+    </p>
+  </div>
+</body>
+</html>`;
+}
+
+// Generate report
+app.post("/api/sessions/:sid/report/generate", async (req, res) => {
+  const { sid } = req.params;
+  try {
+    const { report } = await generateFullReport(sid);
+    res.json({ report });
+  } catch (e) {
+    console.error("POST report/generate error:", e);
+    res.status(500).send(e.message);
+  }
+});
+
+// Get stored report
+app.get("/api/sessions/:sid/report", async (req, res) => {
+  try {
+    const snap = await withTimeout(getDoc(doc(db, "reports", req.params.sid)));
+    if (!snap.exists()) return res.json({ report: null });
+    res.json(snap.data());
+  } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+// Send report via email
+app.post("/api/sessions/:sid/report/send", async (req, res) => {
+  const { sid } = req.params;
+  const { email } = req.body || {};
+  if (!email) return res.status(400).send("email required.");
+
+  try {
+    // Fetch stored report
+    let reportSnap = await withTimeout(getDoc(doc(db, "reports", sid)));
+    let report;
+    if (!reportSnap.exists()) {
+      const generated = await generateFullReport(sid);
+      report = generated.report;
+    } else {
+      report = reportSnap.data().report;
+    }
+
+    const sessionSnap = await withTimeout(getDoc(doc(db, "sessions", sid)));
+    const sessionTitle = sessionSnap.exists() ? sessionSnap.data().title : "Interview Session";
+
+    const html = buildReportHTML(report, sessionTitle);
+
+    const smtpHost = process.env.SMTP_HOST || "smtp.gmail.com";
+    const smtpPort = parseInt(process.env.SMTP_PORT || "587", 10);
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPass = process.env.SMTP_PASS;
+    const smtpFrom = process.env.SMTP_FROM || smtpUser;
+
+    if (!smtpUser || !smtpPass) {
+      return res.status(500).json({
+        error: "Email not configured. Set SMTP_USER and SMTP_PASS environment variables.",
+        report,
+      });
+    }
+
+    const transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpPort === 465,
+      auth: { user: smtpUser, pass: smtpPass },
+    });
+
+    await transporter.sendMail({
+      from: `"AI Interview Platform" <${smtpFrom}>`,
+      to: email,
+      subject: `Interview Report: ${sessionTitle}`,
+      html,
+    });
+
+    // Record that the report was sent
+    await withTimeout(updateDoc(doc(db, "reports", sid), {
+      lastSentTo: email,
+      lastSentAt: new Date().toISOString(),
+    }));
+
+    res.json({ ok: true, sentTo: email });
+  } catch (e) {
+    console.error("POST report/send error:", e);
+    res.status(500).send(e.message);
+  }
+});
+
+// End session and auto-generate report
+app.post("/api/sessions/:sid/end", async (req, res) => {
+  const { sid } = req.params;
+  try {
+    await withTimeout(updateDoc(doc(db, "sessions", sid), { status: "completed" }));
+
+    // Auto-generate report and optionally email it
+    generateFullReport(sid)
+      .then(async ({ report, session }) => {
+        console.log(`Report auto-generated for session ${sid}`);
+        const email = session.interviewerEmail;
+        const smtpUser = process.env.SMTP_USER;
+        const smtpPass = process.env.SMTP_PASS;
+        if (email && smtpUser && smtpPass) {
+          try {
+            const html = buildReportHTML(report, session.title);
+            const transporter = nodemailer.createTransport({
+              host: process.env.SMTP_HOST || "smtp.gmail.com",
+              port: parseInt(process.env.SMTP_PORT || "587", 10),
+              secure: parseInt(process.env.SMTP_PORT || "587", 10) === 465,
+              auth: { user: smtpUser, pass: smtpPass },
+            });
+            await transporter.sendMail({
+              from: `"AI Interview Platform" <${process.env.SMTP_FROM || smtpUser}>`,
+              to: email,
+              subject: `Interview Report: ${session.title}`,
+              html,
+            });
+            console.log(`Report auto-emailed to ${email} for session ${sid}`);
+            await updateDoc(doc(db, "reports", sid), {
+              lastSentTo: email,
+              lastSentAt: new Date().toISOString(),
+            }).catch(() => {});
+          } catch (emailErr) {
+            console.error(`Auto-email failed for ${sid}:`, emailErr.message);
+          }
+        }
+      })
+      .catch((e) => console.error(`Auto-report generation failed for ${sid}:`, e.message));
+
+    res.json({ ok: true, status: "completed" });
+  } catch (e) {
+    console.error("POST end session error:", e);
     res.status(500).send(e.message);
   }
 });

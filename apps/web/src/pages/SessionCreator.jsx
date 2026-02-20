@@ -20,6 +20,7 @@ export default function SessionCreator() {
 
   // Session config
   const [title, setTitle] = useState("");
+  const [interviewerEmail, setInterviewerEmail] = useState(user?.email || "");
   const [selectedIds, setSelectedIds] = useState([]);
   const [settings, setSettings] = useState({
     hintsEnabled: true,
@@ -87,6 +88,7 @@ export default function SessionCreator() {
         questionIds: selectedIds,
         settings,
         createdBy: user?.uid || null,
+        interviewerEmail: interviewerEmail || null,
       });
       setCreated(session);
     } catch (e) {
@@ -127,6 +129,8 @@ export default function SessionCreator() {
       <section className="iv-section">
         <label className="iv-label">Session Title</label>
         <input className="iv-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Frontend Eng Round 1" />
+        <label className="iv-label" style={{ marginTop: 12 }}>Your Email (for receiving the AI report)</label>
+        <input className="iv-input" type="email" value={interviewerEmail} onChange={(e) => setInterviewerEmail(e.target.value)} placeholder="interviewer@company.com" />
       </section>
 
       {/* ── Permissions ─────────────────────────────────────────── */}

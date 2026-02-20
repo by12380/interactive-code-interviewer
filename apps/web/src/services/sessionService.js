@@ -13,12 +13,12 @@ async function json(res) {
 
 // ─── Sessions ───────────────────────────────────────────────────────
 
-export async function createSession({ title, questionIds, settings, createdBy }) {
+export async function createSession({ title, questionIds, settings, createdBy, interviewerEmail }) {
   return json(
     await fetch(`${API}/sessions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, questionIds, settings, createdBy }),
+      body: JSON.stringify({ title, questionIds, settings, createdBy, interviewerEmail }),
     })
   );
 }
@@ -153,4 +153,38 @@ export async function compareAllCandidates(sessionId) {
 
 export async function getEvaluation(sessionId) {
   return json(await fetch(`${API}/sessions/${sessionId}/evaluation`));
+}
+
+// ─── Reports ─────────────────────────────────────────────────────────
+
+export async function generateReport(sessionId) {
+  return json(
+    await fetch(`${API}/sessions/${sessionId}/report/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    })
+  );
+}
+
+export async function getReport(sessionId) {
+  return json(await fetch(`${API}/sessions/${sessionId}/report`));
+}
+
+export async function sendReport(sessionId, email) {
+  return json(
+    await fetch(`${API}/sessions/${sessionId}/report/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    })
+  );
+}
+
+export async function endSession(sessionId) {
+  return json(
+    await fetch(`${API}/sessions/${sessionId}/end`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    })
+  );
 }

@@ -11,6 +11,7 @@ import {
   updateSession,
   evaluateCandidate,
   compareAllCandidates,
+  endSession,
 } from "../services/sessionService.js";
 import { QUESTION_BANK } from "../data/questionBank.js";
 import { sendChat } from "../api.js";
@@ -97,18 +98,14 @@ Evaluate: approach, correctness, time/space complexity, code quality. Be concise
   }, [code, question, currentQid]);
 
   const handleEndSession = async () => {
-    if (!confirm("End this session for all candidates?")) return;
-    await updateSession(sessionId, { status: "completed" }).catch(() => {});
+    if (!confirm("End this session for all candidates? An AI report will be generated automatically.")) return;
+    await endSession(sessionId).catch(() => {});
     navigate(`/interviewer/results/${sessionId}`);
   };
 
   const handleEvalAll = async () => {
-    // Mark session as completed so candidates are notified immediately
-    await updateSession(sessionId, { status: "completed" }).catch(() => {});
-    for (const c of candidates) {
-      await evaluateCandidate(sessionId, c.id).catch(() => {});
-    }
-    await compareAllCandidates(sessionId).catch(() => {});
+    if (!confirm("End session and generate AI report for all candidates?")) return;
+    await endSession(sessionId).catch(() => {});
     navigate(`/interviewer/results/${sessionId}`);
   };
 
@@ -123,7 +120,7 @@ Evaluate: approach, correctness, time/space complexity, code quality. Be concise
           <span>Elapsed: {fmtTime(elapsed)}</span>
         </div>
         <div className="iv-monitor__header-actions">
-          <button className="iv-btn iv-btn--sm iv-btn--primary" onClick={handleEvalAll}>Evaluate All</button>
+          <button className="iv-btn iv-btn--sm iv-btn--primary" onClick={handleEvalAll}>End & Generate Report</button>
           <button className="iv-btn iv-btn--sm iv-btn--danger" onClick={handleEndSession}>End Session</button>
           <button className="iv-btn iv-btn--sm" onClick={() => navigate("/interviewer")}>Dashboard</button>
         </div>
