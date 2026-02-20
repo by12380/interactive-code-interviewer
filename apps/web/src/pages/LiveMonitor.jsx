@@ -9,8 +9,7 @@ import {
   getCandidates,
   pullCode,
   updateSession,
-  evaluateCandidate,
-  compareAllCandidates,
+  finalizeSessionReport,
 } from "../services/sessionService.js";
 import { QUESTION_BANK } from "../data/questionBank.js";
 import { sendChat } from "../api.js";
@@ -31,6 +30,8 @@ export default function LiveMonitor() {
   const [code, setCode] = useState("");
   const [aiAnalysis, setAiAnalysis] = useState("");
   const [analyzing, setAnalyzing] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
+  const [finalizeNote, setFinalizeNote] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const pollerRef = useRef(null);
   const candidatePollerRef = useRef(null);
@@ -100,16 +101,30 @@ Evaluate: approach, correctness, time/space complexity, code quality. Be concise
 
   const handleEndSession = async () => {
     if (!confirm("End this session for all candidates?")) return;
+    setFinalizing(true);
+    setFinalizeNote("");
     await updateSession(sessionId, { status: "completed" }).catch(() => {});
+    await finalizeSessionReport(sessionId, "interviewer-end")
+      .then((payload) => {
+        const status = payload?.meta?.emailStatus;
+        setFinalizeNote(status === "sent" ? "Report generated and email sent." : "Report generated. Email was not sent.");
+      })
+      .catch((e) => setFinalizeNote(e.message || "Could not generate final report."));
+    setFinalizing(false);
     navigate(`/interviewer/results/${sessionId}`);
   };
 
   const handleEvalAll = async () => {
+    setFinalizing(true);
+    setFinalizeNote("");
     await updateSession(sessionId, { status: "completed" }).catch(() => {});
-    for (const c of candidates) {
-      await evaluateCandidate(sessionId, c.id).catch(() => {});
-    }
-    await compareAllCandidates(sessionId).catch(() => {});
+    await finalizeSessionReport(sessionId, "interviewer-manual")
+      .then((payload) => {
+        const status = payload?.meta?.emailStatus;
+        setFinalizeNote(status === "sent" ? "Report generated and email sent." : "Report generated. Email was not sent.");
+      })
+      .catch((e) => setFinalizeNote(e.message || "Could not generate final report."));
+    setFinalizing(false);
     navigate(`/interviewer/results/${sessionId}`);
   };
 
@@ -128,10 +143,15 @@ Evaluate: approach, correctness, time/space complexity, code quality. Be concise
           <span>Code: <strong>{session?.shareCode}</strong></span>
           <span>{candidates.length} candidate(s)</span>
           <span>Elapsed: {fmtTime(elapsed)}</span>
+          {finalizeNote && <span>{finalizeNote}</span>}
         </div>
         <div className="iv-monitor__header-actions">
-          <button className="iv-btn iv-btn--sm iv-btn--primary" onClick={handleEvalAll}>Evaluate All</button>
-          <button className="iv-btn iv-btn--sm iv-btn--danger" onClick={handleEndSession}>End Session</button>
+          <button className="iv-btn iv-btn--sm iv-btn--primary" onClick={handleEvalAll} disabled={finalizing}>
+            {finalizing ? "Generating..." : "Evaluate All"}
+          </button>
+          <button className="iv-btn iv-btn--sm iv-btn--danger" onClick={handleEndSession} disabled={finalizing}>
+            {finalizing ? "Ending..." : "End Session"}
+          </button>
           <button className="iv-btn iv-btn--sm" onClick={() => navigate("/interviewer")}>Dashboard</button>
           <button className="iv-btn iv-btn--sm iv-btn--danger" onClick={handleLogout}>Logout</button>
         </div>

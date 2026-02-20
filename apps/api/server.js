@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import nodemailer from "nodemailer";
 import { initializeApp } from "firebase/app";
 import {
   getFirestore,
@@ -38,6 +39,12 @@ const db = getFirestore(firebaseApp);
 const app = express();
 const PORT = process.env.PORT || 3002;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const SMTP_HOST = process.env.SMTP_HOST;
+const SMTP_PORT = Number(process.env.SMTP_PORT || 587);
+const SMTP_USER = process.env.SMTP_USER;
+const SMTP_PASS = process.env.SMTP_PASS;
+const SMTP_FROM = process.env.SMTP_FROM || SMTP_USER;
+const APP_BASE_URL = process.env.APP_BASE_URL || "http://localhost:5173";
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
@@ -77,6 +84,241 @@ async function llm(systemPrompt, messages, { maxTokens = 300, temperature = 0.3 
   if (!res.ok) throw new Error(await res.text());
   const data = await res.json();
   return data.choices?.[0]?.message?.content?.trim() || "";
+}
+
+function safeJsonParse(raw, fallback = null) {
+  if (!raw || typeof raw !== "string") return fallback;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return fallback;
+  }
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function numeric(value, fallback = 0) {
+  return Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+function average(values) {
+  if (!values.length) return 0;
+  return values.reduce((sum, n) => sum + numeric(n), 0) / values.length;
+}
+
+function deterministicSort(rankings) {
+  return [...rankings].sort((a, b) => {
+    if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+    if (b.correctness !== a.correctness) return b.correctness - a.correctness;
+    if (b.efficiency !== a.efficiency) return b.efficiency - a.efficiency;
+    return (a.displayName || a.candidateId || "").localeCompare(b.displayName || b.candidateId || "");
+  });
+}
+
+function recommendationBand(totalScore) {
+  if (totalScore >= 85) return "Strong Hire";
+  if (totalScore >= 70) return "Hire";
+  if (totalScore >= 55) return "Leaning No Hire";
+  return "No Hire";
+}
+
+function buildFallbackComparison(candidates) {
+  const rankings = candidates.map((candidate) => {
+    const rows = Object.values(candidate.evaluation || {});
+    const totals = rows.map((row) => numeric(row?.total));
+    const correctness = rows.map((row) => numeric(row?.correctness));
+    const efficiency = rows.map((row) => numeric(row?.efficiency));
+    const totalScore = clamp(Math.round(average(totals)), 0, 100);
+    return {
+      candidateId: candidate.id,
+      displayName: candidate.displayName || candidate.id,
+      totalScore,
+      correctness: clamp(Math.round(average(correctness)), 0, 40),
+      efficiency: clamp(Math.round(average(efficiency)), 0, 25),
+      strengths: "Consistent progress across submitted questions.",
+      weaknesses: "Needs deeper optimization and clearer communication on tradeoffs.",
+      recommendation: recommendationBand(totalScore),
+    };
+  });
+
+  const sorted = deterministicSort(rankings).map((row, idx) => ({ ...row, rank: idx + 1 }));
+  const top = sorted[0];
+  const summary = top
+    ? `Top performer is ${top.displayName} with ${top.totalScore}/100. Rankings use deterministic tie-breaks: correctness then efficiency.`
+    : "No candidate submissions found for this session.";
+  return {
+    rankings: sorted,
+    bestApproach: top ? `${top.displayName} currently has the strongest overall approach.` : "",
+    summary,
+  };
+}
+
+async function evaluateCandidateInternal(sid, candidateId) {
+  const subSnap = await withTimeout(getDocs(collection(db, "sessions", sid, "candidates", candidateId, "submissions")));
+  const submissions = {};
+  subSnap.forEach((d) => {
+    submissions[d.id] = d.data();
+  });
+
+  const evaluations = {};
+  for (const [qid, sub] of Object.entries(submissions)) {
+    const question = questionBank.find((q) => q.id === qid);
+    const prompt = `Evaluate this candidate's solution for "${question?.title || qid}".
+Score on: correctness (0-40), efficiency (0-25), code quality (0-20), communication (0-15).
+Return JSON: { "correctness": N, "efficiency": N, "codeQuality": N, "communication": N, "total": N, "feedback": "..." }`;
+    const reply = await llm(prompt, [{ role: "user", content: sub.code || "// no code" }], { maxTokens: 500 });
+    const parsed = safeJsonParse(reply, null);
+    if (parsed) {
+      const correctness = clamp(Math.round(numeric(parsed.correctness)), 0, 40);
+      const efficiency = clamp(Math.round(numeric(parsed.efficiency)), 0, 25);
+      const codeQuality = clamp(Math.round(numeric(parsed.codeQuality)), 0, 20);
+      const communication = clamp(Math.round(numeric(parsed.communication)), 0, 15);
+      const computedTotal = correctness + efficiency + codeQuality + communication;
+      evaluations[qid] = {
+        correctness,
+        efficiency,
+        codeQuality,
+        communication,
+        total: clamp(Math.round(numeric(parsed.total, computedTotal)), 0, 100),
+        feedback: typeof parsed.feedback === "string" ? parsed.feedback : "",
+      };
+      continue;
+    }
+    evaluations[qid] = { raw: reply, total: 0 };
+  }
+
+  await withTimeout(updateDoc(doc(db, "sessions", sid, "candidates", candidateId), { evaluation: evaluations }));
+  return evaluations;
+}
+
+async function collectCandidatesWithSubmissions(sid) {
+  const candSnap = await withTimeout(getDocs(collection(db, "sessions", sid, "candidates")));
+  const candidates = [];
+  for (const cdoc of candSnap.docs) {
+    const data = cdoc.data();
+    const subSnap = await withTimeout(getDocs(collection(db, "sessions", sid, "candidates", cdoc.id, "submissions")));
+    const submissions = {};
+    subSnap.forEach((s) => {
+      submissions[s.id] = s.data();
+    });
+    candidates.push({
+      id: cdoc.id,
+      displayName: data.displayName || cdoc.id,
+      evaluation: data.evaluation || {},
+      submissions,
+    });
+  }
+  return candidates;
+}
+
+async function compareCandidatesInternal(candidates) {
+  if (!candidates.length) return buildFallbackComparison([]);
+
+  const fallback = buildFallbackComparison(candidates);
+  const candidateSummary = candidates.map((candidate) => ({
+    candidateId: candidate.id,
+    displayName: candidate.displayName,
+    deterministicScore: fallback.rankings.find((row) => row.candidateId === candidate.id)?.totalScore || 0,
+    evaluation: candidate.evaluation || {},
+    codeSnippets: Object.fromEntries(
+      Object.entries(candidate.submissions || {}).map(([qid, submission]) => [qid, (submission.code || "").slice(0, 900)])
+    ),
+  }));
+
+  const summaryPrompt = `You are a senior technical interviewer writing a final report.
+Use the provided deterministic scores as the source of truth for ranking order and scores.
+Return strict JSON:
+{
+  "rankings": [
+    {
+      "candidateId": "...",
+      "displayName": "...",
+      "totalScore": N,
+      "strengths": "...",
+      "weaknesses": "...",
+      "recommendation": "Strong Hire|Hire|Leaning No Hire|No Hire"
+    }
+  ],
+  "bestApproach": "...",
+  "summary": "..."
+}
+Keep rankings sorted by totalScore descending and preserve candidate IDs exactly.`;
+
+  const reply = await llm(summaryPrompt, [{ role: "user", content: JSON.stringify(candidateSummary) }], {
+    maxTokens: 1400,
+    temperature: 0.2,
+  });
+  const parsed = safeJsonParse(reply, null);
+  if (!parsed || !Array.isArray(parsed.rankings)) {
+    return fallback;
+  }
+
+  const byId = new Map(fallback.rankings.map((row) => [row.candidateId, row]));
+  const mergedRankings = parsed.rankings
+    .map((row) => {
+      const id = row?.candidateId;
+      if (!id || !byId.has(id)) return null;
+      const base = byId.get(id);
+      return {
+        ...base,
+        displayName: row.displayName || base.displayName,
+        strengths: typeof row.strengths === "string" ? row.strengths : base.strengths,
+        weaknesses: typeof row.weaknesses === "string" ? row.weaknesses : base.weaknesses,
+        recommendation: typeof row.recommendation === "string" ? row.recommendation : base.recommendation,
+      };
+    })
+    .filter(Boolean);
+
+  const completedRankings = fallback.rankings.map((row) => mergedRankings.find((x) => x.candidateId === row.candidateId) || row);
+  const sorted = deterministicSort(completedRankings).map((row, idx) => ({ ...row, rank: idx + 1 }));
+  return {
+    rankings: sorted,
+    bestApproach: typeof parsed.bestApproach === "string" ? parsed.bestApproach : fallback.bestApproach,
+    summary: typeof parsed.summary === "string" ? parsed.summary : fallback.summary,
+  };
+}
+
+async function sendReportEmail({ to, sid, sessionTitle, comparison }) {
+  if (!to) return { ok: false, skipped: true, error: "Missing recipient email." };
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !SMTP_FROM) {
+    return { ok: false, skipped: true, error: "SMTP configuration is missing." };
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465,
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+  });
+
+  const rankings = comparison?.rankings || [];
+  const lines = rankings.slice(0, 10).map((row, index) => {
+    return `${index + 1}. ${row.displayName || row.candidateId} - ${row.totalScore}/100 (${row.recommendation || "N/A"})`;
+  });
+  const resultsUrl = `${APP_BASE_URL}/interviewer/results/${sid}`;
+  const text = [
+    `Final interview report for "${sessionTitle || sid}"`,
+    "",
+    "Candidate ranking:",
+    ...(lines.length ? lines : ["No candidate submissions were available."]),
+    "",
+    `Summary: ${comparison?.summary || "No summary available."}`,
+    comparison?.bestApproach ? `Best approach: ${comparison.bestApproach}` : "",
+    "",
+    `View full results: ${resultsUrl}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  await transporter.sendMail({
+    from: SMTP_FROM,
+    to,
+    subject: `Interview Report: ${sessionTitle || sid}`,
+    text,
+  });
+  return { ok: true, skipped: false };
 }
 
 // ─── Health ─────────────────────────────────────────────────────────
@@ -201,7 +443,7 @@ app.post("/api/questions", async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════
 
 app.post("/api/sessions", async (req, res) => {
-  const { title, questionIds, settings, createdBy } = req.body || {};
+  const { title, questionIds, settings, createdBy, createdByEmail } = req.body || {};
   if (!title) return res.status(400).send("title required.");
   const shareCode = randomCode();
   const session = {
@@ -215,8 +457,10 @@ app.post("/api/sessions", async (req, res) => {
       ...(settings || {}),
     },
     createdBy: createdBy || null,
+    createdByEmail: createdByEmail || null,
     shareCode,
     status: "draft",
+    reportStatus: "idle",
     createdAt: new Date().toISOString(),
   };
   try {
@@ -407,27 +651,7 @@ app.post("/api/sessions/:sid/evaluate", async (req, res) => {
   if (!candidateId) return res.status(400).send("candidateId required.");
 
   try {
-    // Gather all submissions
-    const subSnap = await withTimeout(getDocs(collection(db, "sessions", sid, "candidates", candidateId, "submissions")));
-    const submissions = {};
-    subSnap.forEach((d) => { submissions[d.id] = d.data(); });
-
-    const evaluations = {};
-    for (const [qid, sub] of Object.entries(submissions)) {
-      const question = questionBank.find((q) => q.id === qid);
-      const prompt = `Evaluate this candidate's solution for "${question?.title || qid}".
-Score on: correctness (0-40), efficiency (0-25), code quality (0-20), communication (0-15).
-Return JSON: { "correctness": N, "efficiency": N, "codeQuality": N, "communication": N, "total": N, "feedback": "..." }`;
-      const reply = await llm(prompt, [{ role: "user", content: sub.code || "// no code" }], { maxTokens: 500 });
-      try {
-        evaluations[qid] = JSON.parse(reply);
-      } catch {
-        evaluations[qid] = { raw: reply, total: 0 };
-      }
-    }
-
-    // Store evaluation on the candidate doc
-    await withTimeout(updateDoc(doc(db, "sessions", sid, "candidates", candidateId), { evaluation: evaluations }));
+    const evaluations = await evaluateCandidateInternal(sid, candidateId);
     res.json({ candidateId, evaluations });
   } catch (e) {
     console.error("POST evaluate error:", e);
@@ -438,44 +662,22 @@ Return JSON: { "correctness": N, "efficiency": N, "codeQuality": N, "communicati
 app.post("/api/sessions/:sid/compare", async (req, res) => {
   const { sid } = req.params;
   try {
-    const candSnap = await withTimeout(getDocs(collection(db, "sessions", sid, "candidates")));
-    const candidates = [];
-    for (const cdoc of candSnap.docs) {
-      const data = cdoc.data();
-      const subSnap = await withTimeout(getDocs(collection(db, "sessions", sid, "candidates", cdoc.id, "submissions")));
-      const subs = {};
-      subSnap.forEach((s) => { subs[s.id] = s.data(); });
-      candidates.push({ id: cdoc.id, displayName: data.displayName, submissions: subs, evaluation: data.evaluation || null });
-    }
-
-    const summaryPrompt = `You are a senior technical interviewer. Compare ${candidates.length} candidates.
-For each candidate you have their code submissions and individual evaluations.
-Produce a JSON ranking:
-{
-  "rankings": [{ "candidateId": "...", "displayName": "...", "totalScore": N, "strengths": "...", "weaknesses": "..." }],
-  "bestApproach": "... which candidate had the most elegant solution and why ...",
-  "summary": "... overall comparison ..."
-}
-Sort rankings by totalScore descending.`;
-
-    const candidateSummary = candidates.map((c) => ({
-      id: c.id,
-      name: c.displayName,
-      evaluation: c.evaluation,
-      codeSnippets: Object.fromEntries(
-        Object.entries(c.submissions).map(([qid, s]) => [qid, (s.code || "").slice(0, 800)])
-      ),
-    }));
-
-    const reply = await llm(summaryPrompt, [{ role: "user", content: JSON.stringify(candidateSummary) }], {
-      maxTokens: 1200,
-      temperature: 0.2,
-    });
-
-    let comparison;
-    try { comparison = JSON.parse(reply); } catch { comparison = { raw: reply }; }
-
-    await withTimeout(setDoc(doc(db, "evaluations", sid), { comparison, updatedAt: new Date().toISOString() }));
+    const candidates = await collectCandidatesWithSubmissions(sid);
+    const comparison = await compareCandidatesInternal(candidates);
+    await withTimeout(
+      setDoc(
+        doc(db, "evaluations", sid),
+        {
+          comparison,
+          updatedAt: new Date().toISOString(),
+          meta: {
+            generatedAt: new Date().toISOString(),
+            generatedBy: "manual-compare",
+          },
+        },
+        { merge: true }
+      )
+    );
     res.json(comparison);
   } catch (e) {
     console.error("POST compare error:", e);
@@ -489,6 +691,104 @@ app.get("/api/sessions/:sid/evaluation", async (req, res) => {
     if (!snap.exists()) return res.json({ comparison: null });
     res.json(snap.data());
   } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+app.post("/api/sessions/:sid/finalize-report", async (req, res) => {
+  const { sid } = req.params;
+  const generatedBy = req.body?.generatedBy || "system";
+  let sessionRef = null;
+
+  try {
+    sessionRef = doc(db, "sessions", sid);
+    const sessionSnap = await withTimeout(getDoc(sessionRef));
+    if (!sessionSnap.exists()) return res.status(404).send("Session not found.");
+    const session = sessionSnap.data();
+    if (session.reportStatus === "generating") {
+      return res.status(409).send("Report generation is already in progress.");
+    }
+
+    await withTimeout(
+      updateDoc(sessionRef, {
+        status: "completed",
+        reportStatus: "generating",
+        reportError: null,
+      })
+    );
+
+    const candidates = await getDocs(collection(db, "sessions", sid, "candidates"));
+    for (const candidateDoc of candidates.docs) {
+      await evaluateCandidateInternal(sid, candidateDoc.id);
+    }
+
+    const refreshedCandidates = await collectCandidatesWithSubmissions(sid);
+    const comparison = await compareCandidatesInternal(refreshedCandidates);
+    const evalRef = doc(db, "evaluations", sid);
+    const existingEvalSnap = await withTimeout(getDoc(evalRef));
+    const previousVersion = numeric(existingEvalSnap.data()?.meta?.version, 0);
+    const generatedAt = new Date().toISOString();
+
+    let emailStatus = "skipped";
+    let emailSentAt = null;
+    let emailError = null;
+    try {
+      const emailResult = await sendReportEmail({
+        to: session.createdByEmail,
+        sid,
+        sessionTitle: session.title,
+        comparison,
+      });
+      emailStatus = emailResult.ok ? "sent" : emailResult.skipped ? "skipped" : "failed";
+      emailSentAt = emailResult.ok ? generatedAt : null;
+      emailError = emailResult.ok ? null : emailResult.error || null;
+    } catch (emailFailure) {
+      emailStatus = "failed";
+      emailSentAt = null;
+      emailError = emailFailure.message || "Email send failed.";
+    }
+
+    const meta = {
+      generatedAt,
+      generatedBy,
+      version: previousVersion + 1,
+      emailStatus,
+      emailSentAt,
+      error: emailError,
+    };
+
+    await withTimeout(
+      setDoc(
+        evalRef,
+        {
+          comparison,
+          updatedAt: generatedAt,
+          meta,
+        },
+        { merge: true }
+      )
+    );
+
+    await withTimeout(
+      updateDoc(sessionRef, {
+        status: "completed",
+        reportStatus: "ready",
+        reportError: null,
+        lastReportGeneratedAt: generatedAt,
+      })
+    );
+
+    res.json({ comparison, meta });
+  } catch (e) {
+    if (sessionRef) {
+      await withTimeout(
+        updateDoc(sessionRef, {
+          reportStatus: "failed",
+          reportError: e.message || "Failed to finalize report.",
+        })
+      ).catch(() => {});
+    }
+    console.error("POST finalize-report error:", e);
     res.status(500).send(e.message);
   }
 });

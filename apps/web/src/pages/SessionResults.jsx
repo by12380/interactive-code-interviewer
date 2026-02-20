@@ -8,8 +8,7 @@ import {
   getSession,
   getCandidates,
   getEvaluation,
-  evaluateCandidate,
-  compareAllCandidates,
+  finalizeSessionReport,
 } from "../services/sessionService.js";
 import { QUESTION_BANK } from "../data/questionBank.js";
 import "../styles/interviewer.css";
@@ -24,6 +23,7 @@ export default function SessionResults() {
   const [evaluation, setEvaluation] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [reportMeta, setReportMeta] = useState(null);
   const [selectedCid, setSelectedCid] = useState(null);
   const handleLogout = useCallback(async () => {
     await logOut();
@@ -41,6 +41,7 @@ export default function SessionResults() {
         setSession(s);
         setCandidates(c);
         setEvaluation(e?.comparison || null);
+        setReportMeta(e?.meta || null);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -49,13 +50,13 @@ export default function SessionResults() {
   const handleGenerate = async () => {
     setGenerating(true);
     try {
-      // Evaluate each candidate first
-      for (const c of candidates) {
-        await evaluateCandidate(sessionId, c.id).catch(() => {});
-      }
-      // Then compare
-      const comp = await compareAllCandidates(sessionId);
-      setEvaluation(comp);
+      const [report, refreshedCandidates] = await Promise.all([
+        finalizeSessionReport(sessionId, "interviewer-results"),
+        getCandidates(sessionId),
+      ]);
+      setCandidates(refreshedCandidates);
+      setEvaluation(report?.comparison || null);
+      setReportMeta(report?.meta || null);
     } catch { /* ignore */ }
     setGenerating(false);
   };
@@ -126,6 +127,11 @@ export default function SessionResults() {
         <section className="iv-section">
           <h2>Summary</h2>
           <div className="iv-summary-box">{evaluation.summary}</div>
+          {reportMeta && (
+            <p className="iv-muted" style={{ marginTop: 8 }}>
+              Generated: {reportMeta.generatedAt || "—"} | Email status: {reportMeta.emailStatus || "unknown"}
+            </p>
+          )}
         </section>
       )}
 

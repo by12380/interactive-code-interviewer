@@ -92,6 +92,7 @@ export default function SessionCreator() {
         questionIds: selectedIds,
         settings,
         createdBy: user?.uid || null,
+        createdByEmail: user?.email || null,
       });
       setCreated(session);
     } catch (e) {

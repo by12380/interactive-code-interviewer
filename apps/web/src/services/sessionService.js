@@ -13,12 +13,12 @@ async function json(res) {
 
 // ─── Sessions ───────────────────────────────────────────────────────
 
-export async function createSession({ title, questionIds, settings, createdBy }) {
+export async function createSession({ title, questionIds, settings, createdBy, createdByEmail }) {
   return json(
     await fetch(`${API}/sessions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, questionIds, settings, createdBy }),
+      body: JSON.stringify({ title, questionIds, settings, createdBy, createdByEmail }),
     })
   );
 }
@@ -153,4 +153,14 @@ export async function compareAllCandidates(sessionId) {
 
 export async function getEvaluation(sessionId) {
   return json(await fetch(`${API}/sessions/${sessionId}/evaluation`));
+}
+
+export async function finalizeSessionReport(sessionId, generatedBy = "interviewer") {
+  return json(
+    await fetch(`${API}/sessions/${sessionId}/finalize-report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ generatedBy }),
+    })
+  );
 }
