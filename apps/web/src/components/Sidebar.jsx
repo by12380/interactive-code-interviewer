@@ -1,4 +1,5 @@
 import { memo, useState, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTheme } from "../contexts/ThemeContext.jsx";
 import { useFocusMode } from "../contexts/FocusModeContext.jsx";
 import { calculateLevel, getLevelProgress } from "../services/gamificationService.js";
@@ -10,16 +11,15 @@ function Sidebar({
   onOpenAuth,
   onOpenProfile,
   onLogout,
-  onStartInterviewSim,
-  onJoinInterview,
+  mode = "practice",
   problemSelector,
 }) {
+  const navigate = useNavigate();
   const { theme, toggleTheme } = useTheme();
   const { settings: focusSettings } = useFocusMode();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
 
-  // Gamification data
   const gamification = user?.gamification;
   const xp = gamification?.xp || 0;
   const level = useMemo(() => calculateLevel(xp), [xp]);
@@ -55,9 +55,9 @@ function Sidebar({
     >
       {/* Logo/Brand */}
       <div className="sidebar__brand">
-        <div className="sidebar__logo" onClick={() => handleNav("interview")} role="button" tabIndex={0}>
+        <div className="sidebar__logo" onClick={() => navigate("/")} role="button" tabIndex={0}>
           <span className="sidebar__logo-icon">&#x1F4BB;</span>
-          {!isCollapsed && <span className="sidebar__logo-text">AI Interviewer</span>}
+          {!isCollapsed && <span className="sidebar__logo-text">CodePractice</span>}
         </div>
         <button
           type="button"
@@ -93,7 +93,6 @@ function Sidebar({
                 )}
               </button>
               
-              {/* User dropdown menu */}
               {isUserMenuOpen && !isCollapsed && (
                 <div className="sidebar__user-menu">
                   <button
@@ -115,7 +114,6 @@ function Sidebar({
                 </div>
               )}
 
-              {/* XP Progress Bar */}
               {!isCollapsed && (
                 <button
                   type="button"
@@ -136,7 +134,6 @@ function Sidebar({
                 </button>
               )}
 
-              {/* Streak */}
               <button
                 type="button"
                 className={`sidebar__streak ${streak > 0 ? 'sidebar__streak--active' : ''}`}
@@ -168,7 +165,7 @@ function Sidebar({
           )}
         </div>
 
-        {/* Problem Selector - only on interview screen */}
+        {/* Problem Selector - only on the main practice/interview screen */}
         {!isCollapsed && activeScreen === "interview" && (
           <div className="sidebar__problem-selector">
             <span className="sidebar__section-label">Current Problem</span>
@@ -184,33 +181,33 @@ function Sidebar({
 
           <button
             type="button"
+            className="sidebar__nav-item"
+            onClick={() => navigate("/")}
+            aria-label="Back to home"
+          >
+            <span className="sidebar__nav-icon">&#x1F3E0;</span>
+            {!isCollapsed && <span className="sidebar__nav-text">Home</span>}
+          </button>
+
+          <button
+            type="button"
             className={`sidebar__nav-item ${activeScreen === "interview" ? "sidebar__nav-item--active" : ""}`}
             onClick={() => handleNav("interview")}
-            aria-label="Interview workspace"
+            aria-label="Practice workspace"
             aria-current={activeScreen === "interview" ? "page" : undefined}
           >
             <span className="sidebar__nav-icon">&#x1F4BB;</span>
-            {!isCollapsed && <span className="sidebar__nav-text">Interview</span>}
-          </button>
-          
-          <button
-            type="button"
-            className="sidebar__nav-item"
-            onClick={onStartInterviewSim}
-            aria-label="Start mock interview"
-          >
-            <span className="sidebar__nav-icon">&#x1F3AF;</span>
-            {!isCollapsed && <span className="sidebar__nav-text">Mock Interview</span>}
+            {!isCollapsed && <span className="sidebar__nav-text">Practice</span>}
           </button>
 
           <button
             type="button"
             className="sidebar__nav-item"
-            onClick={onJoinInterview}
-            aria-label="Join a live interview session"
+            onClick={() => navigate("/interview")}
+            aria-label="Go to interviews"
           >
-            <span className="sidebar__nav-icon">&#x1F517;</span>
-            {!isCollapsed && <span className="sidebar__nav-text">Join Interview</span>}
+            <span className="sidebar__nav-icon">&#x1F3AF;</span>
+            {!isCollapsed && <span className="sidebar__nav-text">Interviews</span>}
           </button>
 
           <button
@@ -250,7 +247,6 @@ function Sidebar({
             </button>
           )}
 
-          {/* Focus Mode indicator */}
           {focusSettings.isEnabled && (
             <div className="sidebar__focus-indicator">
               <span className="sidebar__nav-icon">&#x1F3AF;</span>

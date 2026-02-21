@@ -15,8 +15,6 @@ import ProblemSelector from "./components/ProblemSelector.jsx";
 import AuthModal from "./components/AuthModal.jsx";
 import UserProfile from "./components/UserProfile.jsx";
 import Leaderboard from "./components/Leaderboard.jsx";
-import InterviewLauncher from "./components/InterviewLauncher.jsx";
-import InterviewSimulation from "./components/InterviewSimulation.jsx";
 import SettingsPanel from "./components/SettingsPanel.jsx";
 import OnboardingTour from "./components/OnboardingTour.jsx";
 import SkipLinks from "./components/SkipLinks.jsx";
@@ -225,7 +223,8 @@ const runTestCases = (code, testCases, problem) => {
   return { passed, total: testCases.length, results, note };
 };
 
-export default function App() {
+export default function App({ mode = "practice" }) {
+  const isPracticeMode = mode === "practice";
   const { accessibility } = useTheme();
   const { settings: focusSettings, toggleFocusMode, disableFocusMode } = useFocusMode();
   const { logOut: firebaseLogOut, user: authUser, isAuthenticated } = useAuth();
@@ -259,10 +258,6 @@ export default function App() {
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
   
-  // Interview simulation state
-  const [isInterviewLauncherVisible, setIsInterviewLauncherVisible] = useState(false);
-  const [isInterviewSimActive, setIsInterviewSimActive] = useState(false);
-  const [interviewSimConfig, setInterviewSimConfig] = useState(null);
   
   // Onboarding state
   const [isOnboardingVisible, setIsOnboardingVisible] = useState(() => {
@@ -305,8 +300,9 @@ export default function App() {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content:
-        "Hi! I'm your interviewer today. Before you start coding, can you walk me through your approach to this problem?"
+      content: isPracticeMode
+        ? "Hi! I'm your AI coding assistant. Pick a problem and start coding — I'll give you feedback and hints as you go."
+        : "Hi! I'm your interviewer today. Before you start coding, can you walk me through your approach to this problem?"
     }
   ]);
   const lastCodeSentRef = useRef("");
@@ -349,7 +345,7 @@ export default function App() {
 
   const TOTAL_SECONDS = currentProblem?.timeLimit || 30 * 60;
   const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
-  const isTimeUp = elapsedSeconds >= TOTAL_SECONDS;
+  const isTimeUp = isPracticeMode ? false : elapsedSeconds >= TOTAL_SECONDS;
   const isEditorDisabled = isLocked || isPaused;
   const isCompleted = isLocked;
 
@@ -641,7 +637,7 @@ export default function App() {
       const llmMessages = [...withCode, { role: "user", content: prompt }];
       llmMessagesRef.current = llmMessages;
 
-      const data = await sendChat({ messages: llmMessages, mode: "chat" });
+      const data = await sendChat({ messages: llmMessages, mode: "chat", practiceMode: isPracticeMode });
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: data.reply }
@@ -661,7 +657,7 @@ export default function App() {
     } finally {
       setIsSending(false);
     }
-  }, [appendCodeUpdateIfNeeded, code, isSending, messages]);
+  }, [appendCodeUpdateIfNeeded, code, isSending, messages, isPracticeMode]);
 
   const updateUndoRedoState = useCallback(() => {
     const editor = editorRef.current;
@@ -774,6 +770,7 @@ export default function App() {
             const data = await sendChat({
               messages: nextMessages,
               mode: "interrupt",
+              practiceMode: isPracticeMode,
               interruptContext: {
                 detectedIssue: analysisResult.message,
                 severity: analysisResult.severity,
@@ -837,7 +834,8 @@ export default function App() {
 
         const data = await sendChat({
           messages: nextMessages,
-          mode: "proactive"
+          mode: "proactive",
+          practiceMode: isPracticeMode
         });
 
         if (!data?.reply) {
@@ -891,7 +889,7 @@ export default function App() {
       const llmMessages = [...withCode, { role: "user", content: trimmed }];
       llmMessagesRef.current = llmMessages;
 
-      const data = await sendChat({ messages: llmMessages, mode: "chat" });
+      const data = await sendChat({ messages: llmMessages, mode: "chat", practiceMode: isPracticeMode });
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: data.reply }
@@ -911,7 +909,7 @@ export default function App() {
     } finally {
       setIsSending(false);
     }
-  }, [appendCodeUpdateIfNeeded, code, input, isSending, messages]);
+  }, [appendCodeUpdateIfNeeded, code, input, isSending, messages, isPracticeMode]);
 
   const handleEditorChange = useCallback((value) => {
     const newCode = value ?? "";
@@ -1179,7 +1177,9 @@ export default function App() {
     setMessages([
       {
         role: "assistant",
-        content: `Now working on: **${problem.title}**. Before you start coding, can you walk me through how you'd approach this problem?`
+        content: isPracticeMode
+          ? `Switched to: **${problem.title}**. Take your time — start coding whenever you're ready and I'll help along the way.`
+          : `Now working on: **${problem.title}**. Before you start coding, can you walk me through how you'd approach this problem?`
       }
     ]);
     
@@ -1264,39 +1264,6 @@ export default function App() {
     setUser(updatedUser);
   }, []);
 
-  // Interview simulation handlers
-  const handleOpenInterviewLauncher = useCallback(() => {
-    setIsInterviewLauncherVisible(true);
-  }, []);
-
-  const handleCloseInterviewLauncher = useCallback(() => {
-    setIsInterviewLauncherVisible(false);
-  }, []);
-
-  const handleStartInterviewSim = useCallback((config) => {
-    setInterviewSimConfig(config);
-    setIsInterviewLauncherVisible(false);
-    setIsInterviewSimActive(true);
-  }, []);
-
-  const handleJoinInterview = useCallback(() => {
-    navigate("/join");
-  }, [navigate]);
-
-  const handleExitInterviewSim = useCallback(() => {
-    setIsInterviewSimActive(false);
-    setInterviewSimConfig(null);
-  }, []);
-
-  const handleInterviewSimComplete = useCallback((results) => {
-    // Save results if user is logged in
-    if (user && results) {
-      // Could save to user profile here
-      console.log("Interview simulation completed:", results);
-    }
-    setIsInterviewSimActive(false);
-    setInterviewSimConfig(null);
-  }, [user]);
 
   // Onboarding handlers
   const handleCloseOnboarding = useCallback(() => {
@@ -1481,7 +1448,7 @@ export default function App() {
     <div 
       className={`app app--with-sidebar ${focusSettings.isEnabled ? "app--focus-mode" : ""} ${isZenMode ? "app--zen-mode" : ""}`} 
       role="application" 
-      aria-label="Live AI Coding Interviewer"
+      aria-label={isPracticeMode ? "AI Coding Practice" : "Live AI Coding Interviewer"}
     >
       {/* Skip links for keyboard navigation */}
       <SkipLinks />
@@ -1517,8 +1484,7 @@ export default function App() {
           onOpenAuth={handleOpenAuth}
           onOpenProfile={handleOpenProfile}
           onLogout={handleLogout}
-          onStartInterviewSim={handleOpenInterviewLauncher}
-          onJoinInterview={handleJoinInterview}
+          mode={mode}
           problemSelector={
             <ProblemSelector
               problems={PROBLEMS}
@@ -1544,12 +1510,14 @@ export default function App() {
                 isPaused={isPaused}
                 isTimeUp={isTimeUp}
                 remainingSeconds={remainingSeconds}
+                elapsedSeconds={elapsedSeconds}
                 onDifficultyChange={handleDifficultyChange}
                 onPauseToggle={handlePauseToggle}
                 onStop={handleStop}
                 onLogout={handleLogout}
                 user={effectiveUser}
                 currentProblemTitle={currentProblem?.title}
+                mode={mode}
               />
             )}
 
@@ -1631,6 +1599,7 @@ export default function App() {
                         onEvaluateEfficiency={handleEvaluateEfficiency}
                         onRunTests={handleRunTests}
                         onComplete={handleStop}
+                        mode={mode}
                       />
                     )}
                   </div>
@@ -1741,6 +1710,7 @@ export default function App() {
             <ScoreReport
               isVisible={isReportVisible}
               totalScore={totalScore}
+              mode={mode}
               grade={grade}
               timeSummary={{
                 takenSeconds: elapsedSeconds,
@@ -1829,27 +1799,6 @@ export default function App() {
       )}
       
       {/* Leaderboard is now an inline screen, rendered in main content above */}
-      
-      {/* Interview Simulation Launcher */}
-      {isInterviewLauncherVisible && (
-        <InterviewLauncher
-          onStart={handleStartInterviewSim}
-          onClose={handleCloseInterviewLauncher}
-          user={user}
-        />
-      )}
-      
-      {/* Interview Simulation Active */}
-      {isInterviewSimActive && interviewSimConfig && (
-        <InterviewSimulation
-          mode={interviewSimConfig.mode}
-          persona={interviewSimConfig.persona}
-          enableVideoRecording={interviewSimConfig.enableVideo}
-          customConfig={interviewSimConfig.customConfig}
-          onComplete={handleInterviewSimComplete}
-          onExit={handleExitInterviewSim}
-        />
-      )}
       
       {/* Gamification & Roadmap are now inline screens, rendered in main content above */}
       

@@ -1,11 +1,9 @@
-// AppRouter – maps all routes. The original App component renders at "/".
-// Interviewer and candidate pages are separate routes.
-// /login is the dedicated authentication page.
-
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext.jsx";
 import App from "./App.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
+import HomePage from "./pages/HomePage.jsx";
+import InterviewHub from "./pages/InterviewHub.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import InterviewerDashboard from "./pages/InterviewerDashboard.jsx";
 import SessionCreator from "./pages/SessionCreator.jsx";
@@ -17,12 +15,10 @@ import SessionResults from "./pages/SessionResults.jsx";
 export default function AppRouter() {
   const { isAuthenticated, loading, user } = useAuth();
 
-  // Determine the correct home route based on the user's role
   const homeRoute = user?.role === "interviewer" ? "/interviewer" : "/";
 
   return (
     <Routes>
-      {/* Auth page – redirect away if already logged in */}
       <Route
         path="/login"
         element={
@@ -30,15 +26,21 @@ export default function AppRouter() {
         }
       />
 
-      {/* Home / practice app – requires auth, redirects to /login otherwise */}
+      {/* Home dashboard – public, anyone can see it */}
+      <Route path="/" element={<HomePage />} />
+
+      {/* Practice workspace – requires account (we track XP, streaks, etc.) */}
       <Route
-        path="/"
+        path="/practice"
         element={
           <ProtectedRoute>
-            <App />
+            <App mode="practice" />
           </ProtectedRoute>
         }
       />
+
+      {/* Interview hub – public, no account needed to take an interview */}
+      <Route path="/interview" element={<InterviewHub />} />
 
       {/* Interviewer routes – require auth + interviewer role */}
       <Route
@@ -74,34 +76,12 @@ export default function AppRouter() {
         }
       />
 
-      {/* Candidate routes – require auth (any role can join a session) */}
-      <Route
-        path="/join"
-        element={
-          <ProtectedRoute>
-            <JoinSession />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/join/:code"
-        element={
-          <ProtectedRoute>
-            <JoinSession />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/session/:sessionId/:candidateId"
-        element={
-          <ProtectedRoute>
-            <CandidateSession />
-          </ProtectedRoute>
-        }
-      />
+      {/* Candidate live session routes – public, guests enter name + code */}
+      <Route path="/join" element={<JoinSession />} />
+      <Route path="/join/:code" element={<JoinSession />} />
+      <Route path="/session/:sessionId/:candidateId" element={<CandidateSession />} />
 
-      {/* Fallback – send unknown routes to login if not authed */}
-      <Route path="*" element={<Navigate to={isAuthenticated ? homeRoute : "/login"} replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

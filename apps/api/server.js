@@ -91,12 +91,37 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.post("/api/chat", async (req, res) => {
   if (!OPENAI_API_KEY) return res.status(500).send("Missing OPENAI_API_KEY on the server.");
 
-  const { messages, mode = "chat", interruptContext = null } = req.body || {};
+  const { messages, mode = "chat", interruptContext = null, practiceMode = false } = req.body || {};
   if (!Array.isArray(messages)) return res.status(400).send("messages must be an array.");
 
   let systemPrompt;
-  if (mode === "interrupt") {
-    systemPrompt = `You are an experienced technical interviewer conducting a live coding interview.
+  if (practiceMode) {
+    if (mode === "interrupt") {
+      systemPrompt = `You are a friendly AI coding tutor helping someone practice.
+You've noticed something in the learner's code worth mentioning.
+CONTEXT: ${interruptContext?.detectedIssue || "General observation"}
+Severity: ${interruptContext?.severity || "approach"}
+Rules:
+- Be encouraging and supportive: "Hey, quick tip..." or "I noticed something..."
+- Be direct but gentle – 2-3 sentences max
+- Give more guidance than you would in an interview — it's okay to be more helpful
+- Ground feedback in the current code
+- If they seem stuck, offer a concrete next step`;
+    } else if (mode === "proactive") {
+      systemPrompt = `You are a supportive AI coding tutor observing code in real-time during a practice session.
+Look for learning opportunities: inefficient approaches, wrong data structures, common mistakes, signs of being stuck.
+If something is worth mentioning: start with "Tip:" or "Quick thought..." (1-2 sentences).
+Be encouraging — this is practice, not an interview. It's okay to give more direct guidance.
+Ground feedback in the current code. If no feedback is needed respond with EXACTLY an empty string "".`;
+    } else {
+      systemPrompt = `You are a friendly and supportive AI coding tutor. The user is practicing — not in an interview.
+Be helpful, explain concepts clearly, give hints freely, and encourage learning.
+If they ask for help, guide them step by step. It's okay to show code examples.
+Be concise but thorough. Celebrate progress and correct mistakes gently.`;
+    }
+  } else {
+    if (mode === "interrupt") {
+      systemPrompt = `You are an experienced technical interviewer conducting a live coding interview.
 You've just noticed something in the candidate's code that warrants an interruption.
 CONTEXT: ${interruptContext?.detectedIssue || "General observation"}
 Severity: ${interruptContext?.severity || "approach"}
@@ -106,15 +131,16 @@ Rules:
 - Don't give the full solution
 - Ground feedback in the current code
 - Do NOT ask generic "what is your approach?" unless the code is essentially empty`;
-  } else if (mode === "proactive") {
-    systemPrompt = `You are a live interview coach observing code in real-time.
+    } else if (mode === "proactive") {
+      systemPrompt = `You are a live interview coach observing code in real-time.
 Look for inefficient approaches, wrong data structures, common mistakes, signs of being stuck.
 If something is worth mentioning: start with "I notice..." or "Quick thought..." (1-2 sentences).
 Ground feedback in the current code and expected signature/output; call out off-track or irrelevant code explicitly.
 Do NOT ask generic "what is your approach?" unless the code is essentially empty.
 If no feedback is needed respond with EXACTLY an empty string "".`;
-  } else {
-    systemPrompt = `You are a coding interview coach. Be concise, point out mistakes, ask clarifying questions. Do not solve end-to-end unless asked.`;
+    } else {
+      systemPrompt = `You are a coding interview coach. Be concise, point out mistakes, ask clarifying questions. Do not solve end-to-end unless asked.`;
+    }
   }
 
   try {

@@ -1,7 +1,6 @@
-export async function sendChat({ messages, mode = "chat", interruptContext = null }) {
-  const body = { messages, mode };
+export async function sendChat({ messages, mode = "chat", interruptContext = null, practiceMode = false }) {
+  const body = { messages, mode, practiceMode };
   
-  // Include interrupt context for AI-powered interruptions
   if (interruptContext) {
     body.interruptContext = interruptContext;
   }

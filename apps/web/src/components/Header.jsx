@@ -12,22 +12,24 @@ function Header({
   isPaused,
   isTimeUp,
   remainingSeconds,
+  elapsedSeconds = 0,
   onDifficultyChange,
   onPauseToggle,
   onStop,
   onLogout,
   user,
   currentProblemTitle,
+  mode = "practice",
 }) {
+  const isPractice = mode === "practice";
+
   return (
     <header className="app__topbar" role="banner">
-      {/* Current Problem Title */}
       <div className="topbar__problem">
         <span className="topbar__problem-label">Working on:</span>
         <span className="topbar__problem-title">{currentProblemTitle || "Select a problem"}</span>
       </div>
 
-      {/* Center: Timer and Controls */}
       <div className="topbar__center">
         <div className="topbar__difficulty">
           <label htmlFor="difficulty-select" className="topbar__label">Difficulty</label>
@@ -44,49 +46,56 @@ function Header({
           </select>
         </div>
 
-        <div className="topbar__timer" role="timer" aria-label="Interview timer">
+        <div className="topbar__timer" role="timer" aria-label={isPractice ? "Elapsed time" : "Interview timer"}>
           <div className="topbar__time-display">
-            <span className="topbar__time-label">Time Left</span>
+            <span className="topbar__time-label">
+              {isPractice ? "Time" : "Time Left"}
+            </span>
             <span 
-              className={`topbar__time-value ${remainingSeconds <= 300 ? 'topbar__time-value--warning' : ''} ${isTimeUp ? 'topbar__time-value--danger' : ''}`}
+              className={`topbar__time-value ${!isPractice && remainingSeconds <= 300 ? 'topbar__time-value--warning' : ''} ${!isPractice && isTimeUp ? 'topbar__time-value--danger' : ''}`}
               aria-live="polite"
             >
-              {isTimeUp ? "00:00" : formatTime(remainingSeconds)}
+              {isPractice
+                ? formatTime(elapsedSeconds)
+                : isTimeUp
+                  ? "00:00"
+                  : formatTime(remainingSeconds)}
             </span>
           </div>
           
-          {isTimeUp && (
+          {!isPractice && isTimeUp && (
             <span className="topbar__time-status" role="alert">Time's up!</span>
           )}
         </div>
 
         <div className="topbar__actions">
-          <button
-            type="button"
-            className={`topbar__btn topbar__btn--pause ${isPaused ? 'topbar__btn--resume' : ''}`}
-            onClick={onPauseToggle}
-            disabled={isLocked || isTimeUp}
-            aria-label={isPaused ? "Resume interview" : "Pause interview"}
-            aria-pressed={isPaused}
-          >
-            <span className="topbar__btn-icon">{isPaused ? '▶' : '⏸'}</span>
-            <span className="topbar__btn-text">{isPaused ? "Resume" : "Pause"}</span>
-          </button>
+          {!isPractice && (
+            <button
+              type="button"
+              className={`topbar__btn topbar__btn--pause ${isPaused ? 'topbar__btn--resume' : ''}`}
+              onClick={onPauseToggle}
+              disabled={isLocked || isTimeUp}
+              aria-label={isPaused ? "Resume interview" : "Pause interview"}
+              aria-pressed={isPaused}
+            >
+              <span className="topbar__btn-icon">{isPaused ? '▶' : '⏸'}</span>
+              <span className="topbar__btn-text">{isPaused ? "Resume" : "Pause"}</span>
+            </button>
+          )}
           
           <button
             type="button"
             className="topbar__btn topbar__btn--stop"
             onClick={onStop}
             disabled={isLocked}
-            aria-label="Submit and finish interview"
+            aria-label={isPractice ? "Finish practice session" : "Submit and finish interview"}
           >
             <span className="topbar__btn-icon">✓</span>
-            <span className="topbar__btn-text">Submit</span>
+            <span className="topbar__btn-text">{isPractice ? "Finish Session" : "Submit"}</span>
           </button>
         </div>
       </div>
 
-      {/* Right: Status + Logout */}
       <div className="topbar__status">
         {isLocked ? (
           <span className="topbar__status-badge topbar__status-badge--completed">
@@ -98,7 +107,7 @@ function Header({
           </span>
         ) : (
           <span className="topbar__status-badge topbar__status-badge--active">
-            In Progress
+            {isPractice ? "Practicing" : "In Progress"}
           </span>
         )}
 

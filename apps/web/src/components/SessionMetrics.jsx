@@ -11,8 +11,10 @@ function SessionMetrics({
   isLocked,
   onEvaluateEfficiency,
   onRunTests,
-  onComplete
+  onComplete,
+  mode = "practice"
 }) {
+  const isPractice = mode === "practice";
   const [showTestDetails, setShowTestDetails] = useState(false);
   const displayTotal = testsTotal || 5;
 
@@ -110,7 +112,7 @@ function SessionMetrics({
           onClick={onComplete}
           disabled={isLocked}
         >
-          Complete interview
+          {isPractice ? "Finish Session" : "Complete Interview"}
         </button>
       </div>
     </section>

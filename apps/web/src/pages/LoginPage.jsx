@@ -6,7 +6,7 @@ const ROLES = [
   {
     id: "candidate",
     label: "Candidate",
-    description: "Practice coding interviews with AI feedback",
+    description: "Practice coding skills or take AI-powered interviews",
     icon: (
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -141,11 +141,11 @@ export default function LoginPage() {
               <line x1="12" y1="2" x2="12" y2="22" opacity="0.3" />
             </svg>
           </div>
-          <h1 className="login-page__title">CodeInterview</h1>
+          <h1 className="login-page__title">CodePractice</h1>
           <p className="login-page__subtitle">
             {mode === "login"
               ? "Sign in to continue your practice"
-              : "Create an account to get started"}
+              : "Create an account to track your progress"}
           </p>
         </div>
 
@@ -289,6 +289,17 @@ export default function LoginPage() {
             {mode === "login" ? "Sign Up" : "Sign In"}
           </button>
         </p>
+
+        <div className="login-page__guest-notice">
+          <p>Just here for an interview? No account needed.</p>
+          <button
+            type="button"
+            className="login-page__switch"
+            onClick={() => navigate("/interview")}
+          >
+            Go to Interviews &rarr;
+          </button>
+        </div>
       </div>
     </div>
   );

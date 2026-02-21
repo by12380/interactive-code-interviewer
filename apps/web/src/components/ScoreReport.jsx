@@ -32,8 +32,10 @@ function ScoreReport({
   onToggleDetails,
   isDetailsVisible,
   aiFeedback,
-  detailedAnalysis
+  detailedAnalysis,
+  mode = "practice"
 }) {
+  const isPractice = mode === "practice";
   if (!isVisible) {
     return null;
   }
@@ -46,7 +48,7 @@ function ScoreReport({
 
   return (
     <section className="panel panel--report">
-      <div className="panel__header">Interview Performance Report</div>
+      <div className="panel__header">{isPractice ? "Practice Summary" : "Interview Performance Report"}</div>
       <div className="report">
         <div className="report__summary">
           <div className="report__score">
