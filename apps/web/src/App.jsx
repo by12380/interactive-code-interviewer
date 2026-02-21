@@ -66,6 +66,14 @@ import {
 import { useNavigate } from "react-router-dom";
 
 const ACTIVE_SCREEN_STORAGE_KEY = "activeScreen";
+const WORKSPACE_MODE_STORAGE_KEY = "workspaceMode";
+
+const getModeIntroMessage = (mode, problemTitle) => {
+  if (mode === "practice") {
+    return `You're in Practice Mode. I'll coach you through this problem and help you improve step-by-step.${problemTitle ? `\n\nCurrent problem: **${problemTitle}**` : ""}`;
+  }
+  return `Hi! I'm your interviewer today. Before you start coding, can you walk me through your approach to this problem?${problemTitle ? `\n\nCurrent problem: **${problemTitle}**` : ""}`;
+};
 
 const getTimeScore = (elapsedSeconds, limitSeconds) => {
   if (elapsedSeconds <= 10 * 60) {
@@ -238,6 +246,10 @@ export default function App() {
   const [activeScreen, setActiveScreen] = useState(
     () => localStorage.getItem(ACTIVE_SCREEN_STORAGE_KEY) || "interview"
   );
+  const [workspaceMode, setWorkspaceMode] = useState(
+    () => localStorage.getItem(WORKSPACE_MODE_STORAGE_KEY) || "practice"
+  );
+  const isPracticeMode = workspaceMode === "practice";
 
   // Navigation handler
   const handleNavigate = useCallback((screen) => {
@@ -248,10 +260,41 @@ export default function App() {
     localStorage.setItem(ACTIVE_SCREEN_STORAGE_KEY, activeScreen);
   }, [activeScreen]);
 
+  useEffect(() => {
+    localStorage.setItem(WORKSPACE_MODE_STORAGE_KEY, workspaceMode);
+  }, [workspaceMode]);
+
   const handleJoinLiveSession = useCallback(() => {
+    setWorkspaceMode("interview");
     localStorage.setItem(ACTIVE_SCREEN_STORAGE_KEY, "interview");
+    localStorage.setItem(WORKSPACE_MODE_STORAGE_KEY, "interview");
     navigate("/join");
   }, [navigate]);
+
+  const handleWorkspaceModeChange = useCallback(
+    (nextMode) => {
+      if (!nextMode || nextMode === workspaceMode) return;
+      setWorkspaceMode(nextMode);
+      setActiveScreen("interview");
+      setIsPaused(false);
+      setIsLocked(false);
+      setIsReportVisible(false);
+      setIsDetailsVisible(false);
+      setElapsedSeconds(0);
+      startAtRef.current = Date.now();
+      pausedDurationRef.current = 0;
+      setMessages([
+        {
+          role: "assistant",
+          content: getModeIntroMessage(nextMode),
+        },
+      ]);
+      llmMessagesRef.current = [];
+      lastCodeSentRef.current = "";
+      setEditorHint(null);
+    },
+    [workspaceMode]
+  );
 
   // User authentication state
   const [user, setUser] = useState(() => getCurrentUser());
@@ -341,8 +384,7 @@ export default function App() {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      content:
-        "Hi! I'm your interviewer today. Before you start coding, can you walk me through your approach to this problem?"
+      content: getModeIntroMessage("practice")
     }
   ]);
   const lastCodeSentRef = useRef("");
@@ -383,9 +425,9 @@ export default function App() {
   // Right panel collapse state
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
 
-  const TOTAL_SECONDS = currentProblem?.timeLimit || 30 * 60;
-  const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
-  const isTimeUp = elapsedSeconds >= TOTAL_SECONDS;
+  const TOTAL_SECONDS = isPracticeMode ? null : currentProblem?.timeLimit || 30 * 60;
+  const remainingSeconds = isPracticeMode ? 0 : Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
+  const isTimeUp = isPracticeMode ? false : elapsedSeconds >= TOTAL_SECONDS;
   const isEditorDisabled = isLocked || isPaused;
   const isCompleted = isLocked;
 
@@ -506,12 +548,12 @@ export default function App() {
   }, [isLocked, isPaused]);
 
   useEffect(() => {
-    if (isTimeUp && !isLocked) {
+    if (!isPracticeMode && isTimeUp && !isLocked) {
       setIsPaused(false);
       setIsLocked(true);
       setIsReportVisible(true);
     }
-  }, [isLocked, isTimeUp]);
+  }, [isLocked, isPracticeMode, isTimeUp]);
 
   // Report is now a modal overlay, no need for scrollIntoView
 
@@ -1215,7 +1257,7 @@ export default function App() {
     setMessages([
       {
         role: "assistant",
-        content: `Now working on: **${problem.title}**. Before you start coding, can you walk me through how you'd approach this problem?`
+        content: getModeIntroMessage(workspaceMode, problem.title)
       }
     ]);
     
@@ -1242,7 +1284,7 @@ export default function App() {
       const best = getPersonalBest(problemId);
       setPersonalBest(best);
     }
-  }, [isLocked, user, initializeReplayRecording]);
+  }, [isLocked, user, initializeReplayRecording, workspaceMode]);
 
   const handleRevealHint = useCallback((hintNumber) => {
     if (!currentProblem || hintNumber > currentProblem.hints.length) return;
@@ -1302,6 +1344,7 @@ export default function App() {
 
   // Interview simulation handlers
   const handleOpenInterviewLauncher = useCallback(() => {
+    setWorkspaceMode("interview");
     setIsInterviewLauncherVisible(true);
   }, []);
 
@@ -1513,7 +1556,7 @@ export default function App() {
     <div 
       className={`app app--with-sidebar ${focusSettings.isEnabled ? "app--focus-mode" : ""} ${isZenMode ? "app--zen-mode" : ""}`} 
       role="application" 
-      aria-label="Live AI Coding Interviewer"
+      aria-label={isPracticeMode ? "AI Coding Practice Workspace" : "Live AI Coding Interview Workspace"}
     >
       {/* Skip links for keyboard navigation */}
       <SkipLinks />
@@ -1545,7 +1588,9 @@ export default function App() {
         <Sidebar
           user={user}
           activeScreen={activeScreen}
+          workspaceMode={workspaceMode}
           onNavigate={handleNavigate}
+          onSelectWorkspaceMode={handleWorkspaceModeChange}
           onJoinLiveSession={handleJoinLiveSession}
           onOpenAuth={handleOpenAuth}
           onOpenProfile={handleOpenProfile}
@@ -1571,10 +1616,12 @@ export default function App() {
           <>
             {!shouldHideHeader && (
               <Header
+                workspaceMode={workspaceMode}
                 difficulty={difficulty}
                 isLocked={isLocked}
                 isPaused={isPaused}
                 isTimeUp={isTimeUp}
+                elapsedSeconds={elapsedSeconds}
                 remainingSeconds={remainingSeconds}
                 onDifficultyChange={handleDifficultyChange}
                 onPauseToggle={handlePauseToggle}
@@ -1651,6 +1698,7 @@ export default function App() {
                     />
                     {!shouldHideMetrics && (
                       <SessionMetrics
+                        workspaceMode={workspaceMode}
                         hintsUsed={hintsUsed}
                         testsPassed={testsPassed}
                         testsTotal={testsTotal}

@@ -6,7 +6,9 @@ import { calculateLevel, getLevelProgress } from "../services/gamificationServic
 function Sidebar({
   user,
   activeScreen,
+  workspaceMode,
   onNavigate,
+  onSelectWorkspaceMode,
   onJoinLiveSession,
   onOpenAuth,
   onOpenProfile,
@@ -49,6 +51,8 @@ function Sidebar({
     onNavigate(screen);
   }, [onNavigate]);
 
+  const isPracticeMode = workspaceMode === "practice";
+
   return (
     <aside 
       className={`sidebar ${isCollapsed ? 'sidebar--collapsed' : ''}`}
@@ -58,7 +62,7 @@ function Sidebar({
       <div className="sidebar__brand">
         <div className="sidebar__logo" onClick={() => handleNav("interview")} role="button" tabIndex={0}>
           <span className="sidebar__logo-icon">&#x1F4BB;</span>
-          {!isCollapsed && <span className="sidebar__logo-text">AI Interviewer</span>}
+          {!isCollapsed && <span className="sidebar__logo-text">AI Coding Coach</span>}
         </div>
         <button
           type="button"
@@ -184,13 +188,40 @@ function Sidebar({
 
           <button
             type="button"
-            className={`sidebar__nav-item ${activeScreen === "interview" ? "sidebar__nav-item--active" : ""}`}
-            onClick={() => handleNav("interview")}
+            className={`sidebar__nav-item ${isPracticeMode && activeScreen === "interview" ? "sidebar__nav-item--active" : ""}`}
+            onClick={() => {
+              onSelectWorkspaceMode("practice");
+              handleNav("interview");
+            }}
+            aria-label="Practice workspace"
+            aria-current={isPracticeMode && activeScreen === "interview" ? "page" : undefined}
+          >
+            <span className="sidebar__nav-icon">&#x1F4DA;</span>
+            {!isCollapsed && <span className="sidebar__nav-text">Practice Workspace</span>}
+          </button>
+
+          <button
+            type="button"
+            className={`sidebar__nav-item ${!isPracticeMode && activeScreen === "interview" ? "sidebar__nav-item--active" : ""}`}
+            onClick={() => {
+              onSelectWorkspaceMode("interview");
+              handleNav("interview");
+            }}
             aria-label="Interview workspace"
-            aria-current={activeScreen === "interview" ? "page" : undefined}
+            aria-current={!isPracticeMode && activeScreen === "interview" ? "page" : undefined}
+          >
+            <span className="sidebar__nav-icon">&#x1F3AF;</span>
+            {!isCollapsed && <span className="sidebar__nav-text">Interview Workspace</span>}
+          </button>
+
+          <button
+            type="button"
+            className="sidebar__nav-item"
+            onClick={() => handleNav("interview")}
+            aria-label="Open coding workspace"
           >
             <span className="sidebar__nav-icon">&#x1F4BB;</span>
-            {!isCollapsed && <span className="sidebar__nav-text">Interview</span>}
+            {!isCollapsed && <span className="sidebar__nav-text">Coding Workspace</span>}
           </button>
           
           <button

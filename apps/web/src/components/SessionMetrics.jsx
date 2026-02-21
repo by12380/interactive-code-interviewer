@@ -1,6 +1,7 @@
 import { memo, useState } from "react";
 
 function SessionMetrics({
+  workspaceMode,
   hintsUsed,
   testsPassed,
   testsTotal,
@@ -15,10 +16,11 @@ function SessionMetrics({
 }) {
   const [showTestDetails, setShowTestDetails] = useState(false);
   const displayTotal = testsTotal || 5;
+  const isPracticeMode = workspaceMode === "practice";
 
   return (
     <section className="panel panel--metrics">
-      <div className="panel__header">Session Metrics</div>
+      <div className="panel__header">{isPracticeMode ? "Practice Metrics" : "Interview Metrics"}</div>
       <div className="metrics">
         <div className="metrics__field">
           <span>Code efficiency</span>
@@ -104,14 +106,16 @@ function SessionMetrics({
           <div className="metrics__value">{hintsUsed}</div>
         </div>
 
-        <button
-          type="button"
-          className="metrics__complete"
-          onClick={onComplete}
-          disabled={isLocked}
-        >
-          Complete interview
-        </button>
+        {!isPracticeMode && (
+          <button
+            type="button"
+            className="metrics__complete"
+            onClick={onComplete}
+            disabled={isLocked}
+          >
+            Complete interview
+          </button>
+        )}
       </div>
     </section>
   );
