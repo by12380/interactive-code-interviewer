@@ -11447,6 +11447,15 @@ body.theme-dark .roadmap-trigger:hover {
   min-width: 72px;
 }
 
+.sidebar__content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
 /* Sidebar Brand/Logo */
 .sidebar__brand {
   display: flex;
@@ -11808,12 +11817,12 @@ body.theme-dark .roadmap-trigger:hover {
 
 /* Navigation Items */
 .sidebar__nav {
-  flex: 1;
+  flex: 0 0 auto;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .sidebar__nav-item {
@@ -11836,18 +11845,6 @@ body.theme-dark .roadmap-trigger:hover {
 .sidebar__nav-item:hover {
   background: #334155;
   color: #f1f5f9;
-}
-
-.sidebar__nav-item--primary {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(139, 92, 246, 0.1));
-  color: #a5b4fc;
-  border: 1px solid rgba(99, 102, 241, 0.2);
-}
-
-.sidebar__nav-item--primary:hover {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.25), rgba(139, 92, 246, 0.15));
-  border-color: rgba(99, 102, 241, 0.3);
-  color: #c7d2fe;
 }
 
 .sidebar__nav-icon {
@@ -11883,6 +11880,7 @@ body.theme-dark .roadmap-trigger:hover {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  margin-top: auto;
 }
 
 /* Active Navigation Item */

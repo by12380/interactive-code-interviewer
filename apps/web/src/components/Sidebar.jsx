@@ -69,116 +69,117 @@ function Sidebar({
         </button>
       </div>
 
-      {/* User Section */}
-      <div className="sidebar__user-section">
-          {user ? (
-            <>
-              <button
-                type="button"
-                className="sidebar__user-btn"
-                onClick={toggleUserMenu}
-                aria-expanded={isUserMenuOpen}
-                aria-label={`User menu for ${displayName}`}
-              >
-                <span className="sidebar__avatar">
-                  {displayName.charAt(0).toUpperCase() || "U"}
-                </span>
-                {!isCollapsed && (
-                  <div className="sidebar__user-info">
-                    <span className="sidebar__username">{displayName}</span>
-                    <span className="sidebar__user-level">Level {level}</span>
-                  </div>
-                )}
-              </button>
-              
-              {/* User dropdown menu */}
-              {isUserMenuOpen && !isCollapsed && (
-                <div className="sidebar__user-menu">
-                  <button
-                    type="button"
-                    className="sidebar__user-menu-item"
-                    onClick={handleProfileClick}
-                  >
-                    <span className="sidebar__menu-icon">&#x1F464;</span>
-                    View Profile
-                  </button>
-                  <button
-                    type="button"
-                    className="sidebar__user-menu-item sidebar__user-menu-item--danger"
-                    onClick={handleLogoutClick}
-                  >
-                    <span className="sidebar__menu-icon">&#x1F6AA;</span>
-                    Sign Out
-                  </button>
-                </div>
-              )}
-
-              {/* XP Progress Bar */}
-              {!isCollapsed && (
+      <div className="sidebar__content">
+        {/* User Section */}
+        <div className="sidebar__user-section">
+            {user ? (
+              <>
                 <button
                   type="button"
-                  className="sidebar__xp-section"
-                  onClick={() => handleNav("achievements")}
-                  aria-label={`${xp} XP, click to view progress`}
+                  className="sidebar__user-btn"
+                  onClick={toggleUserMenu}
+                  aria-expanded={isUserMenuOpen}
+                  aria-label={`User menu for ${displayName}`}
                 >
-                  <div className="sidebar__xp-header">
-                    <span className="sidebar__xp-label">XP Progress</span>
-                    <span className="sidebar__xp-value">{xp} XP</span>
-                  </div>
-                  <div className="sidebar__xp-bar">
-                    <div 
-                      className="sidebar__xp-fill"
-                      style={{ width: `${levelProgress}%` }}
-                    />
-                  </div>
-                </button>
-              )}
-
-              {/* Streak */}
-              <button
-                type="button"
-                className={`sidebar__streak ${streak > 0 ? 'sidebar__streak--active' : ''}`}
-                onClick={() => handleNav("achievements")}
-                aria-label={`${streak} day streak`}
-              >
-                <span className="sidebar__streak-icon">&#x1F525;</span>
-                {!isCollapsed && (
-                  <span className="sidebar__streak-text">
-                    {streak > 0 ? `${streak} Day Streak` : 'Start a streak!'}
+                  <span className="sidebar__avatar">
+                    {displayName.charAt(0).toUpperCase() || "U"}
                   </span>
+                  {!isCollapsed && (
+                    <div className="sidebar__user-info">
+                      <span className="sidebar__username">{displayName}</span>
+                      <span className="sidebar__user-level">Level {level}</span>
+                    </div>
+                  )}
+                </button>
+                
+                {/* User dropdown menu */}
+                {isUserMenuOpen && !isCollapsed && (
+                  <div className="sidebar__user-menu">
+                    <button
+                      type="button"
+                      className="sidebar__user-menu-item"
+                      onClick={handleProfileClick}
+                    >
+                      <span className="sidebar__menu-icon">&#x1F464;</span>
+                      View Profile
+                    </button>
+                    <button
+                      type="button"
+                      className="sidebar__user-menu-item sidebar__user-menu-item--danger"
+                      onClick={handleLogoutClick}
+                    >
+                      <span className="sidebar__menu-icon">&#x1F6AA;</span>
+                      Sign Out
+                    </button>
+                  </div>
                 )}
-              </button>
-            </>
-          ) : (
-            <div className="sidebar__guest">
-              {!isCollapsed && (
-                <p className="sidebar__guest-hint">Sign in to track your progress</p>
-              )}
-              <button
-                type="button"
-                className="sidebar__login-btn"
-                onClick={onOpenAuth}
-              >
-                <span className="sidebar__login-icon">&#x1F511;</span>
-                {!isCollapsed && <span>Sign In</span>}
-              </button>
-            </div>
-          )}
-      </div>
 
-      {/* Problem selector - only on practice screen */}
-      {!isCollapsed && activeScreen === "practice" && (
-        <div className="sidebar__problem-selector">
-          <span className="sidebar__section-label">Current Practice Problem</span>
-          {problemSelector}
+                {/* XP Progress Bar */}
+                {!isCollapsed && (
+                  <button
+                    type="button"
+                    className="sidebar__xp-section"
+                    onClick={() => handleNav("achievements")}
+                    aria-label={`${xp} XP, click to view progress`}
+                  >
+                    <div className="sidebar__xp-header">
+                      <span className="sidebar__xp-label">XP Progress</span>
+                      <span className="sidebar__xp-value">{xp} XP</span>
+                    </div>
+                    <div className="sidebar__xp-bar">
+                      <div 
+                        className="sidebar__xp-fill"
+                        style={{ width: `${levelProgress}%` }}
+                      />
+                    </div>
+                  </button>
+                )}
+
+                {/* Streak */}
+                <button
+                  type="button"
+                  className={`sidebar__streak ${streak > 0 ? 'sidebar__streak--active' : ''}`}
+                  onClick={() => handleNav("achievements")}
+                  aria-label={`${streak} day streak`}
+                >
+                  <span className="sidebar__streak-icon">&#x1F525;</span>
+                  {!isCollapsed && (
+                    <span className="sidebar__streak-text">
+                      {streak > 0 ? `${streak} Day Streak` : 'Start a streak!'}
+                    </span>
+                  )}
+                </button>
+              </>
+            ) : (
+              <div className="sidebar__guest">
+                {!isCollapsed && (
+                  <p className="sidebar__guest-hint">Sign in to track your progress</p>
+                )}
+                <button
+                  type="button"
+                  className="sidebar__login-btn"
+                  onClick={onOpenAuth}
+                >
+                  <span className="sidebar__login-icon">&#x1F511;</span>
+                  {!isCollapsed && <span>Sign In</span>}
+                </button>
+              </div>
+            )}
         </div>
-      )}
 
-      {/* Navigation Items */}
-      <nav className="sidebar__nav">
-          <span className="sidebar__section-label">
-            {!isCollapsed && 'Navigation'}
-          </span>
+        {/* Problem selector - only on practice screen */}
+        {!isCollapsed && activeScreen === "practice" && (
+          <div className="sidebar__problem-selector">
+            <span className="sidebar__section-label">Current Practice Problem</span>
+            {problemSelector}
+          </div>
+        )}
+
+        {/* Navigation Items */}
+        <nav className="sidebar__nav">
+            <span className="sidebar__section-label">
+              {!isCollapsed && 'Navigation'}
+            </span>
 
           <button
             type="button"
@@ -249,46 +250,47 @@ function Sidebar({
               )}
             </div>
           )}
-      </nav>
+        </nav>
 
-      {/* Bottom Actions */}
-      <div className="sidebar__bottom">
-          <button
-            type="button"
-            className="sidebar__nav-item"
-            onClick={toggleTheme}
-            aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
-          >
-            <span className="sidebar__nav-icon">{theme === 'light' ? '\u{1F319}' : '\u2600\uFE0F'}</span>
-            {!isCollapsed && (
-              <span className="sidebar__nav-text">
-                {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            className={`sidebar__nav-item ${activeScreen === "settings" ? "sidebar__nav-item--active" : ""}`}
-            onClick={() => handleNav("settings")}
-            aria-label="Settings"
-            aria-current={activeScreen === "settings" ? "page" : undefined}
-          >
-            <span className="sidebar__nav-icon">&#x2699;&#xFE0F;</span>
-            {!isCollapsed && <span className="sidebar__nav-text">Settings</span>}
-          </button>
-
-          {user && (
+        {/* Bottom Actions */}
+        <div className="sidebar__bottom">
             <button
               type="button"
-              className="sidebar__nav-item sidebar__user-menu-item--danger"
-              onClick={handleLogoutClick}
-              aria-label="Sign out"
+              className="sidebar__nav-item"
+              onClick={toggleTheme}
+              aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}
             >
-              <span className="sidebar__nav-icon">&#x1F6AA;</span>
-              {!isCollapsed && <span className="sidebar__nav-text">Logout</span>}
+              <span className="sidebar__nav-icon">{theme === 'light' ? '\u{1F319}' : '\u2600\uFE0F'}</span>
+              {!isCollapsed && (
+                <span className="sidebar__nav-text">
+                  {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
+                </span>
+              )}
             </button>
-          )}
+
+            <button
+              type="button"
+              className={`sidebar__nav-item ${activeScreen === "settings" ? "sidebar__nav-item--active" : ""}`}
+              onClick={() => handleNav("settings")}
+              aria-label="Settings"
+              aria-current={activeScreen === "settings" ? "page" : undefined}
+            >
+              <span className="sidebar__nav-icon">&#x2699;&#xFE0F;</span>
+              {!isCollapsed && <span className="sidebar__nav-text">Settings</span>}
+            </button>
+
+            {user && (
+              <button
+                type="button"
+                className="sidebar__nav-item sidebar__user-menu-item--danger"
+                onClick={handleLogoutClick}
+                aria-label="Sign out"
+              >
+                <span className="sidebar__nav-icon">&#x1F6AA;</span>
+                {!isCollapsed && <span className="sidebar__nav-text">Logout</span>}
+              </button>
+            )}
+        </div>
       </div>
     </aside>
   );
