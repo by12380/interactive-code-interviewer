@@ -6,7 +6,7 @@ const ROLES = [
   {
     id: "candidate",
     label: "Candidate",
-    description: "Practice coding interviews with AI feedback",
+    description: "Save practice progress, scores, and learning history",
     icon: (
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -46,7 +46,7 @@ export default function LoginPage() {
   const redirectForRole = useCallback(
     (r) => {
       if (r === "interviewer") navigate("/interviewer", { replace: true });
-      else navigate("/", { replace: true });
+      else navigate("/candidate", { replace: true });
     },
     [navigate]
   );

@@ -7,11 +7,10 @@ function Sidebar({
   user,
   activeScreen,
   onNavigate,
-  onJoinLiveSession,
+  onOpenInterviewHub,
   onOpenAuth,
   onOpenProfile,
   onLogout,
-  onStartInterviewSim,
   problemSelector,
 }) {
   const { theme, toggleTheme } = useTheme();
@@ -56,9 +55,9 @@ function Sidebar({
     >
       {/* Logo/Brand */}
       <div className="sidebar__brand">
-        <div className="sidebar__logo" onClick={() => handleNav("interview")} role="button" tabIndex={0}>
+        <div className="sidebar__logo" onClick={() => handleNav("practice")} role="button" tabIndex={0}>
           <span className="sidebar__logo-icon">&#x1F4BB;</span>
-          {!isCollapsed && <span className="sidebar__logo-text">AI Interviewer</span>}
+          {!isCollapsed && <span className="sidebar__logo-text">AI Practice Hub</span>}
         </div>
         <button
           type="button"
@@ -168,10 +167,10 @@ function Sidebar({
           )}
         </div>
 
-        {/* Problem Selector - only on interview screen */}
-        {!isCollapsed && activeScreen === "interview" && (
+        {/* Problem selector - only on practice screen */}
+        {!isCollapsed && activeScreen === "practice" && (
           <div className="sidebar__problem-selector">
-            <span className="sidebar__section-label">Current Problem</span>
+            <span className="sidebar__section-label">Current Practice Problem</span>
             {problemSelector}
           </div>
         )}
@@ -184,33 +183,23 @@ function Sidebar({
 
           <button
             type="button"
-            className={`sidebar__nav-item ${activeScreen === "interview" ? "sidebar__nav-item--active" : ""}`}
-            onClick={() => handleNav("interview")}
-            aria-label="Interview workspace"
-            aria-current={activeScreen === "interview" ? "page" : undefined}
+            className={`sidebar__nav-item ${activeScreen === "practice" ? "sidebar__nav-item--active" : ""}`}
+            onClick={() => handleNav("practice")}
+            aria-label="Practice workspace"
+            aria-current={activeScreen === "practice" ? "page" : undefined}
           >
             <span className="sidebar__nav-icon">&#x1F4BB;</span>
-            {!isCollapsed && <span className="sidebar__nav-text">Interview</span>}
-          </button>
-          
-          <button
-            type="button"
-            className="sidebar__nav-item"
-            onClick={onStartInterviewSim}
-            aria-label="Start mock interview"
-          >
-            <span className="sidebar__nav-icon">&#x1F3AF;</span>
-            {!isCollapsed && <span className="sidebar__nav-text">Mock Interview</span>}
+            {!isCollapsed && <span className="sidebar__nav-text">Practice</span>}
           </button>
 
           <button
             type="button"
             className="sidebar__nav-item"
-            onClick={onJoinLiveSession}
-            aria-label="Join live interview session"
+            onClick={onOpenInterviewHub}
+            aria-label="Open interview session hub"
           >
             <span className="sidebar__nav-icon">&#x1F517;</span>
-            {!isCollapsed && <span className="sidebar__nav-text">Join Live Session</span>}
+            {!isCollapsed && <span className="sidebar__nav-text">Interview Hub</span>}
           </button>
 
           <button

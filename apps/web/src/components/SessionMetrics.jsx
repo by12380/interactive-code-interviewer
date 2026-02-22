@@ -11,14 +11,15 @@ function SessionMetrics({
   isLocked,
   onEvaluateEfficiency,
   onRunTests,
-  onComplete
+  onComplete,
+  completionLabel = "Complete practice",
 }) {
   const [showTestDetails, setShowTestDetails] = useState(false);
   const displayTotal = testsTotal || 5;
 
   return (
     <section className="panel panel--metrics">
-      <div className="panel__header">Session Metrics</div>
+      <div className="panel__header">Practice Metrics</div>
       <div className="metrics">
         <div className="metrics__field">
           <span>Code efficiency</span>
@@ -110,7 +111,7 @@ function SessionMetrics({
           onClick={onComplete}
           disabled={isLocked}
         >
-          Complete interview
+          {completionLabel}
         </button>
       </div>
     </section>

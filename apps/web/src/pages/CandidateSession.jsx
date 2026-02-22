@@ -163,7 +163,7 @@ export default function CandidateSession() {
               ? "The interviewer has ended this session. Submissions are now closed."
               : "Your code has been submitted. The interviewer will review your solutions."}
           </p>
-          <button className="cs-btn cs-btn--primary" onClick={() => navigate("/")}>Back to Home</button>
+          <button className="cs-btn cs-btn--primary" onClick={() => navigate("/candidate")}>Back to Candidate Home</button>
         </div>
       </div>
     );

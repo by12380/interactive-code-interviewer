@@ -337,8 +337,8 @@ app.post("/api/chat", async (req, res) => {
 
   let systemPrompt;
   if (mode === "interrupt") {
-    systemPrompt = `You are an experienced technical interviewer conducting a live coding interview.
-You've just noticed something in the candidate's code that warrants an interruption.
+    systemPrompt = `You are an experienced coding coach helping a learner in a practice session.
+You've just noticed something in the learner's code that warrants an interruption.
 CONTEXT: ${interruptContext?.detectedIssue || "General observation"}
 Severity: ${interruptContext?.severity || "approach"}
 Rules:
@@ -348,14 +348,14 @@ Rules:
 - Ground feedback in the current code
 - Do NOT ask generic "what is your approach?" unless the code is essentially empty`;
   } else if (mode === "proactive") {
-    systemPrompt = `You are a live interview coach observing code in real-time.
+    systemPrompt = `You are a coding practice coach observing code in real-time.
 Look for inefficient approaches, wrong data structures, common mistakes, signs of being stuck.
 If something is worth mentioning: start with "I notice..." or "Quick thought..." (1-2 sentences).
 Ground feedback in the current code and expected signature/output; call out off-track or irrelevant code explicitly.
 Do NOT ask generic "what is your approach?" unless the code is essentially empty.
 If no feedback is needed respond with EXACTLY an empty string "".`;
   } else {
-    systemPrompt = `You are a coding interview coach. Be concise, point out mistakes, ask clarifying questions. Do not solve end-to-end unless asked.`;
+    systemPrompt = `You are a coding practice coach. Be concise, point out mistakes, ask clarifying questions, and guide learning without giving full end-to-end solutions unless asked.`;
   }
 
   try {

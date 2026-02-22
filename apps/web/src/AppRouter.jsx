@@ -1,5 +1,5 @@
-// AppRouter – maps all routes. The original App component renders at "/".
-// Interviewer and candidate pages are separate routes.
+// AppRouter – maps all candidate/interviewer routes.
+// /candidate is the post-login candidate hub.
 // /login is the dedicated authentication page.
 
 import { Routes, Route, Navigate } from "react-router-dom";
@@ -13,13 +13,19 @@ import LiveMonitor from "./pages/LiveMonitor.jsx";
 import JoinSession from "./pages/JoinSession.jsx";
 import CandidateSession from "./pages/CandidateSession.jsx";
 import SessionResults from "./pages/SessionResults.jsx";
+import CandidateHome from "./pages/CandidateHome.jsx";
 
 export default function AppRouter() {
   const { user, isAuthenticated, loading } = useAuth();
-  const defaultAuthedRoute = user?.role === "interviewer" ? "/interviewer" : "/";
+  const defaultAuthedRoute = user?.role === "interviewer" ? "/interviewer" : "/candidate";
 
   return (
     <Routes>
+      <Route
+        path="/"
+        element={loading ? null : <Navigate to={isAuthenticated ? defaultAuthedRoute : "/login"} replace />}
+      />
+
       {/* Auth page – redirect away if already logged in */}
       <Route
         path="/login"
@@ -28,12 +34,22 @@ export default function AppRouter() {
         }
       />
 
-      {/* Home / practice app – requires auth, redirects to /login otherwise */}
+      {/* Candidate hub – requires auth, interviewer users redirected to dashboard */}
       <Route
-        path="/"
+        path="/candidate"
         element={
-          <ProtectedRoute>
-            {user?.role === "interviewer" ? <Navigate to="/interviewer" replace /> : <App />}
+          <ProtectedRoute requiredRole="candidate">
+            <CandidateHome />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Practice workspace – isolated from live interview flow */}
+      <Route
+        path="/practice"
+        element={
+          <ProtectedRoute requiredRole="candidate">
+            <App />
           </ProtectedRoute>
         }
       />

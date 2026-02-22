@@ -26,7 +26,6 @@ import CodeTranslatorPanel from "./components/CodeTranslatorPanel.jsx";
 import PromptTemplatesPanel from "./components/PromptTemplatesPanel.jsx";
 import FocusModePanel from "./components/FocusModePanel.jsx";
 import SplitScreenPanel from "./components/SplitScreenPanel.jsx";
-import { useTheme } from "./contexts/ThemeContext.jsx";
 import { useFocusMode } from "./contexts/FocusModeContext.jsx";
 import { useAuth } from "./contexts/AuthContext.jsx";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
@@ -66,6 +65,7 @@ import {
 import { useNavigate } from "react-router-dom";
 
 const ACTIVE_SCREEN_STORAGE_KEY = "activeScreen";
+const normalizeActiveScreen = (screen) => (screen === "interview" ? "practice" : screen);
 
 const getTimeScore = (elapsedSeconds, limitSeconds) => {
   if (elapsedSeconds <= 10 * 60) {
@@ -229,29 +229,28 @@ const runTestCases = (code, testCases, problem) => {
 
 export default function App() {
   const navigate = useNavigate();
-  const { accessibility } = useTheme();
   const { settings: focusSettings, toggleFocusMode, disableFocusMode } = useFocusMode();
   const { user: authUser, logOut } = useAuth();
+  const showPracticeTimer = false;
   
   // Screen-based navigation state
-  // "interview" | "settings" | "leaderboard" | "achievements" | "roadmap"
+  // "practice" | "settings" | "leaderboard" | "achievements" | "roadmap"
   const [activeScreen, setActiveScreen] = useState(
-    () => localStorage.getItem(ACTIVE_SCREEN_STORAGE_KEY) || "interview"
+    () => normalizeActiveScreen(localStorage.getItem(ACTIVE_SCREEN_STORAGE_KEY)) || "practice"
   );
 
   // Navigation handler
   const handleNavigate = useCallback((screen) => {
-    setActiveScreen(screen);
+    setActiveScreen(normalizeActiveScreen(screen));
   }, []);
+
+  const handleOpenCandidateHome = useCallback(() => {
+    navigate("/candidate");
+  }, [navigate]);
 
   useEffect(() => {
     localStorage.setItem(ACTIVE_SCREEN_STORAGE_KEY, activeScreen);
   }, [activeScreen]);
-
-  const handleJoinLiveSession = useCallback(() => {
-    localStorage.setItem(ACTIVE_SCREEN_STORAGE_KEY, "interview");
-    navigate("/join");
-  }, [navigate]);
 
   // User authentication state
   const [user, setUser] = useState(() => getCurrentUser());
@@ -342,7 +341,7 @@ export default function App() {
     {
       role: "assistant",
       content:
-        "Hi! I'm your interviewer today. Before you start coding, can you walk me through your approach to this problem?"
+        "Hi! I'm your AI coding coach. Share your approach and I will guide you while you solve."
     }
   ]);
   const lastCodeSentRef = useRef("");
@@ -385,7 +384,7 @@ export default function App() {
 
   const TOTAL_SECONDS = currentProblem?.timeLimit || 30 * 60;
   const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
-  const isTimeUp = elapsedSeconds >= TOTAL_SECONDS;
+  const isTimeUp = showPracticeTimer && elapsedSeconds >= TOTAL_SECONDS;
   const isEditorDisabled = isLocked || isPaused;
   const isCompleted = isLocked;
 
@@ -1215,7 +1214,7 @@ export default function App() {
     setMessages([
       {
         role: "assistant",
-        content: `Now working on: **${problem.title}**. Before you start coding, can you walk me through how you'd approach this problem?`
+        content: `Now working on: **${problem.title}**. Tell me your approach and I will help you refine it while you code.`
       }
     ]);
     
@@ -1301,10 +1300,6 @@ export default function App() {
   }, []);
 
   // Interview simulation handlers
-  const handleOpenInterviewLauncher = useCallback(() => {
-    setIsInterviewLauncherVisible(true);
-  }, []);
-
   const handleCloseInterviewLauncher = useCallback(() => {
     setIsInterviewLauncherVisible(false);
   }, []);
@@ -1429,8 +1424,8 @@ export default function App() {
   }, [handleRunCode, toggleFocusMode, disableFocusMode, focusSettings.isEnabled]);
 
   const timeScore = useMemo(
-    () => getTimeScore(elapsedSeconds, TOTAL_SECONDS),
-    [elapsedSeconds]
+    () => (showPracticeTimer ? getTimeScore(elapsedSeconds, TOTAL_SECONDS) : 100),
+    [elapsedSeconds, showPracticeTimer, TOTAL_SECONDS]
   );
   const efficiencyScore = useMemo(
     () => getEfficiencyScore(efficiency),
@@ -1513,7 +1508,7 @@ export default function App() {
     <div 
       className={`app app--with-sidebar ${focusSettings.isEnabled ? "app--focus-mode" : ""} ${isZenMode ? "app--zen-mode" : ""}`} 
       role="application" 
-      aria-label="Live AI Coding Interviewer"
+      aria-label="AI coding practice workspace"
     >
       {/* Skip links for keyboard navigation */}
       <SkipLinks />
@@ -1546,11 +1541,10 @@ export default function App() {
           user={user}
           activeScreen={activeScreen}
           onNavigate={handleNavigate}
-          onJoinLiveSession={handleJoinLiveSession}
+          onOpenInterviewHub={handleOpenCandidateHome}
           onOpenAuth={handleOpenAuth}
           onOpenProfile={handleOpenProfile}
           onLogout={handleLogout}
-          onStartInterviewSim={handleOpenInterviewLauncher}
           problemSelector={
             <ProblemSelector
               problems={PROBLEMS}
@@ -1566,8 +1560,8 @@ export default function App() {
       {/* Main Content Area */}
       <div className={`app__content ${shouldHideSidebar ? "app__content--full-width" : ""}`}>
 
-        {/* === INTERVIEW SCREEN (default) === */}
-        {activeScreen === "interview" && (
+        {/* === PRACTICE SCREEN (default) === */}
+        {activeScreen === "practice" && (
           <>
             {!shouldHideHeader && (
               <Header
@@ -1581,6 +1575,7 @@ export default function App() {
                 onStop={handleStop}
                 onLogout={handleLogout}
                 currentProblemTitle={currentProblem?.title}
+                showTimer={showPracticeTimer}
               />
             )}
 
@@ -1631,7 +1626,7 @@ export default function App() {
                     className="app__sidebar-collapse-btn"
                     onClick={handleToggleRightPanel}
                     aria-label={isRightPanelCollapsed ? "Expand right panel" : "Collapse right panel"}
-                    title={isRightPanelCollapsed ? "Expand (AI Interview, Metrics)" : "Collapse right panel"}
+                    title={isRightPanelCollapsed ? "Expand (AI Coach, Metrics)" : "Collapse right panel"}
                   >
                     {isRightPanelCollapsed ? "\u25C0" : "\u25B6"}
                   </button>
@@ -1662,6 +1657,7 @@ export default function App() {
                         onEvaluateEfficiency={handleEvaluateEfficiency}
                         onRunTests={handleRunTests}
                         onComplete={handleStop}
+                        completionLabel="Complete practice"
                       />
                     )}
                   </div>
@@ -1690,8 +1686,8 @@ export default function App() {
               <button
                 type="button"
                 className="screen__back-btn"
-                onClick={() => handleNavigate("interview")}
-                aria-label="Back to interview"
+                onClick={() => handleNavigate("practice")}
+                aria-label="Back to practice"
               >
                 <span className="screen__back-arrow">&larr;</span>
                 Back
@@ -1715,8 +1711,8 @@ export default function App() {
               <button
                 type="button"
                 className="screen__back-btn"
-                onClick={() => handleNavigate("interview")}
-                aria-label="Back to interview"
+                onClick={() => handleNavigate("practice")}
+                aria-label="Back to practice"
               >
                 <span className="screen__back-arrow">&larr;</span>
                 Back
@@ -1740,8 +1736,8 @@ export default function App() {
               <button
                 type="button"
                 className="screen__back-btn"
-                onClick={() => handleNavigate("interview")}
-                aria-label="Back to interview"
+                onClick={() => handleNavigate("practice")}
+                aria-label="Back to practice"
               >
                 <span className="screen__back-arrow">&larr;</span>
                 Back
@@ -1755,7 +1751,7 @@ export default function App() {
                 onUserUpdate={handleUserUpdate}
                 onSelectProblem={(problemId) => {
                   handleSelectProblem(problemId);
-                  handleNavigate("interview");
+                  handleNavigate("practice");
                 }}
                 problems={PROBLEMS}
               />
