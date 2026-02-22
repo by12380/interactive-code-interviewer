@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { sendChat } from "../api.js";
+import { sendChat, getCodeHints } from "../api.js";
 import { PROBLEMS, getProblemById, getProblemsByDifficulty } from "../data/problems.js";
 import {
   INTERVIEW_CONFIG,
@@ -268,6 +268,13 @@ export default function InterviewSimulation({
   const [behavioralResponses, setBehavioralResponses] = useState([]);
   const [systemDesignNotes, setSystemDesignNotes] = useState("");
 
+  // Inline hint state for IDE-like suggestions
+  const [editorHint, setEditorHint] = useState(null);
+  const hintInFlightRef = useRef(false);
+  const lastHintCodeRef = useRef("");
+  const hintCountRef = useRef(0);
+  const lastThrottleCodeRef = useRef("");
+
   // Video recording state
   const [isRecording, setIsRecording] = useState(false);
   const [recordedChunks, setRecordedChunks] = useState([]);
@@ -283,6 +290,10 @@ export default function InterviewSimulation({
     if (currentProblem) {
       setCode(currentProblem.starterCode || "");
       setConsoleLogs([]);
+      setEditorHint(null);
+      hintCountRef.current = 0;
+      lastHintCodeRef.current = "";
+      lastThrottleCodeRef.current = "";
       setMessages([{
         role: "assistant",
         content: `Alright, let's move on to a coding problem. Here's your challenge:\n\n**${currentProblem.title}** (${currentProblem.difficulty})\n\nTake a moment to read the problem, then walk me through your initial thoughts before you start coding.`
@@ -494,6 +505,93 @@ export default function InterviewSimulation({
       handleSendMessage();
     }
   }, [handleSendMessage]);
+
+  // AI hints during coding phase (10s debounce, max 5 per problem)
+  useEffect(() => {
+    if (currentPhase !== PHASES.CODING || isPaused || !currentProblem) return;
+
+    const timer = setTimeout(async () => {
+      if (hintInFlightRef.current) return;
+      if (code === lastHintCodeRef.current) return;
+      if (hintCountRef.current >= 5) return;
+
+      const userCode = code.replace(currentProblem.starterCode || "", "").trim();
+      if (userCode.length < 15) return;
+
+      lastHintCodeRef.current = code;
+      hintInFlightRef.current = true;
+
+      try {
+        const data = await getCodeHints({
+          code,
+          problemTitle: currentProblem.title,
+          problemDescription: currentProblem.description,
+          starterCode: currentProblem.starterCode,
+        });
+
+        if (data?.hasIssue && data.hints?.length > 0) {
+          hintCountRef.current++;
+          setEditorHint({ hints: data.hints, message: data.hints[0].message });
+
+          const msg = data.hints.map(h => h.message).join(" ");
+          setMessages(prev => [...prev, { role: "assistant", content: msg, isInterruption: true }]);
+          llmMessagesRef.current.push({ role: "assistant", content: msg });
+        }
+      } catch {
+        // Silently ignore
+      } finally {
+        hintInFlightRef.current = false;
+      }
+    }, 10000);
+
+    return () => clearTimeout(timer);
+  }, [code, currentPhase, isPaused, currentProblem]);
+
+  // Throttle interval: fires every 12s even if user never stops typing.
+  // Catches wrong code during continuous typing that debounce would miss.
+  useEffect(() => {
+    if (currentPhase !== PHASES.CODING || isPaused || !currentProblem) return;
+
+    const interval = setInterval(async () => {
+      if (code === lastThrottleCodeRef.current) return;
+      if (hintInFlightRef.current) return;
+      if (hintCountRef.current >= 5) return;
+
+      const userCode = code.replace(currentProblem.starterCode || "", "").trim();
+      if (userCode.length < 15) return;
+
+      lastThrottleCodeRef.current = code;
+      hintInFlightRef.current = true;
+
+      try {
+        const data = await getCodeHints({
+          code,
+          problemTitle: currentProblem.title,
+          problemDescription: currentProblem.description,
+          starterCode: currentProblem.starterCode,
+        });
+
+        if (data?.hasIssue && data.hints?.length > 0) {
+          hintCountRef.current++;
+          setEditorHint({ hints: data.hints, message: data.hints[0].message });
+
+          const msg = data.hints.map(h => h.message).join(" ");
+          setMessages(prev => [...prev, { role: "assistant", content: msg, isInterruption: true }]);
+          llmMessagesRef.current.push({ role: "assistant", content: msg });
+        }
+      } catch {
+        // Silently ignore
+      } finally {
+        hintInFlightRef.current = false;
+      }
+    }, 12000);
+
+    return () => clearInterval(interval);
+  }, [code, currentPhase, isPaused, currentProblem]);
+
+  const handleDismissHint = useCallback(() => {
+    setEditorHint(null);
+  }, []);
 
   // Code editor handlers
   const handleCodeChange = useCallback((value) => {
@@ -899,6 +997,8 @@ export default function InterviewSimulation({
                   readOnly: isPaused
                 }}
                 code={code}
+                interviewerHint={editorHint}
+                onDismissHint={handleDismissHint}
               />
               <ConsolePanel
                 logs={consoleLogs}

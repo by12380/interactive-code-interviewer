@@ -289,7 +289,7 @@ class CodeAnalyzerState {
     // Interrupt budget: limits AI-powered (API) interrupts per session
     this.aiInterruptCount = 0;
     this.localInterruptCount = 0;
-    this.maxAIInterrupts = 5;
+    this.maxAIInterrupts = 8;
     // Test tracking for regression detection
     this.lastTestResults = null;
     this.codeAtLastTestRun = null;
@@ -309,14 +309,15 @@ class CodeAnalyzerState {
   }
 
   // Progressive cooldown: increases after each interrupt to avoid overwhelming
-  // the user. Starts at 45s and escalates to 3 minutes.
+  // the user. Starts at 15s for the first hint, then ramps up gradually.
   getProgressiveCooldown() {
     const totalInterrupts = this.aiInterruptCount + this.localInterruptCount;
-    if (totalInterrupts <= 1) return 45000;   // 45s
-    if (totalInterrupts <= 3) return 60000;   // 1 min
-    if (totalInterrupts <= 5) return 90000;   // 1.5 min
-    if (totalInterrupts <= 7) return 120000;  // 2 min
-    return 180000;                             // 3 min
+    if (totalInterrupts <= 1) return 15000;   // 15s — be responsive early
+    if (totalInterrupts <= 3) return 30000;   // 30s
+    if (totalInterrupts <= 5) return 45000;   // 45s
+    if (totalInterrupts <= 7) return 60000;   // 1 min
+    if (totalInterrupts <= 9) return 90000;   // 1.5 min
+    return 120000;                             // 2 min
   }
 
   canInterrupt() {
@@ -401,6 +402,51 @@ class CodeAnalyzerState {
   }
 }
 
+// Find the line number where a regex pattern matches in the code
+function findPatternLine(code, pattern) {
+  const match = code.match(pattern);
+  if (!match || match.index === undefined) return null;
+  const upToMatch = code.substring(0, match.index);
+  const lineNumber = upToMatch.split("\n").length;
+  const matchText = match[0];
+  const matchLines = matchText.split("\n").length;
+  return {
+    startLine: lineNumber,
+    endLine: lineNumber + matchLines - 1
+  };
+}
+
+// Find the first line of meaningful user code (for generic warnings)
+function findFirstCodeLine(code, starterCode) {
+  const userCode = code.replace(starterCode, "");
+  const lines = code.split("\n");
+  const starterLines = starterCode.split("\n").length;
+  for (let i = starterLines - 1; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+    if (trimmed.length > 0 && !trimmed.startsWith("//") && !trimmed.startsWith("{") && !trimmed.startsWith("}")) {
+      return i + 1;
+    }
+  }
+  return Math.max(starterLines, 1);
+}
+
+// Map severity strings to IDE-like severity levels
+function mapSeverity(severity) {
+  switch (severity) {
+    case "correctness":
+    case "requirement":
+      return "error";
+    case "approach":
+    case "optimization":
+      return "warning";
+    case "process":
+    case "syntax":
+      return "info";
+    default:
+      return "info";
+  }
+}
+
 // Main analysis function
 export function analyzeCode(code, problemId, starterCode, analyzerState, hasUserExplained = false) {
   if (!analyzerState.canInterrupt()) {
@@ -425,16 +471,19 @@ export function analyzeCode(code, problemId, starterCode, analyzerState, hasUser
   // ── GENERIC CHECKS (run for ALL problems) ──────────────────────────
 
   // PRIORITY 1: Check if user is coding without explaining approach first
-  // This is the most important check - real interviewers always ask for approach first
   for (const warning of GENERIC_PATTERNS.codingWithoutApproach) {
     if (warning.check && !analyzerState.hasTriggered("coding-without-approach")) {
       if (warning.check(code, starterCode, timeCoding / 1000, hasUserExplained)) {
+        const targetLine = findFirstCodeLine(code, starterCode);
         analyzerState.markLocalInterrupt("coding-without-approach");
         return {
           message: warning.message,
           severity: warning.severity,
+          displaySeverity: mapSeverity(warning.severity),
           type: "interruption",
-          tier: "local"
+          tier: "local",
+          lineNumber: targetLine,
+          endLineNumber: targetLine
         };
       }
     }
@@ -444,12 +493,16 @@ export function analyzeCode(code, problemId, starterCode, analyzerState, hasUser
   for (const warning of GENERIC_PATTERNS.noProgress) {
     if (warning.check && !analyzerState.hasTriggered("no-progress")) {
       if (warning.check(code, starterCode, timeCoding / 1000)) {
+        const starterLineCount = starterCode.split("\n").length;
         analyzerState.markLocalInterrupt("no-progress");
         return {
           message: warning.message,
           severity: warning.severity,
+          displaySeverity: mapSeverity(warning.severity),
           type: "interruption",
-          tier: "local"
+          tier: "local",
+          lineNumber: Math.max(starterLineCount - 1, 1),
+          endLineNumber: Math.max(starterLineCount - 1, 1)
         };
       }
     }
@@ -464,12 +517,16 @@ export function analyzeCode(code, problemId, starterCode, analyzerState, hasUser
       const patternKey = `inefficient-${i}`;
       
       if (!analyzerState.hasTriggered(patternKey) && pattern.pattern.test(code)) {
+        const location = findPatternLine(code, pattern.pattern);
         analyzerState.markLocalInterrupt(patternKey);
         return {
           message: pattern.message,
           severity: pattern.severity,
+          displaySeverity: mapSeverity(pattern.severity),
           type: "interruption",
-          tier: "local"
+          tier: "local",
+          lineNumber: location?.startLine || 1,
+          endLineNumber: location?.endLine || location?.startLine || 1
         };
       }
     }
@@ -483,15 +540,18 @@ export function analyzeCode(code, problemId, starterCode, analyzerState, hasUser
           meaningfulLines >= (pattern.afterLines || 3) &&
           pattern.check(code)) {
         
-        // Don't trigger if they're already on the right track
         const hasGoodPattern = problemPatterns.goodPatterns?.some(gp => gp.test(code));
         if (!hasGoodPattern) {
+          const targetLine = findFirstCodeLine(code, starterCode);
           analyzerState.markLocalInterrupt(patternKey);
           return {
             message: pattern.message,
             severity: pattern.severity,
+            displaySeverity: mapSeverity(pattern.severity),
             type: "interruption",
-            tier: "local"
+            tier: "local",
+            lineNumber: targetLine,
+            endLineNumber: targetLine
           };
         }
       }
@@ -500,17 +560,17 @@ export function analyzeCode(code, problemId, starterCode, analyzerState, hasUser
 
   // ── STUCK DETECTION (runs for ALL problems) ────────────────────────
 
-  // Check for spinning wheels (user writing and deleting code repeatedly)
-  // This is the only pattern that uses an API call because we need the AI
-  // to look at the full code context and give targeted guidance.
   if (!analyzerState.hasTriggered("spinning-wheels") && analyzerState.detectSpinningWheels()) {
     if (analyzerState.canAffordAPICall()) {
       analyzerState.markInterrupted("spinning-wheels");
       return {
         message: "The user seems to be going back and forth with their code — writing, deleting, rewriting. They appear stuck and may need help identifying what specific part they're struggling with.",
         severity: "process",
+        displaySeverity: "info",
         type: "interruption",
-        tier: "api"
+        tier: "api",
+        lineNumber: null,
+        endLineNumber: null
       };
     }
   }

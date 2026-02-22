@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext.jsx";
-import { sendChat } from "./api.js";
+import { sendChat, getCodeHints } from "./api.js";
 import Header from "./components/Header.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import EditorPanel from "./components/EditorPanel.jsx";
@@ -713,10 +713,10 @@ export default function App({ mode = "practice" }) {
     hasUserExplainedRef.current = messages.some(m => m.role === "user");
   }, [messages]);
 
-  // ── EFFECT A: Local pattern analysis (8s debounce) ─────────────────
+  // ── EFFECT A: Local pattern analysis (4s debounce) ─────────────────
   // Runs entirely on the client — zero API cost. Detects wrong approaches,
   // inefficient patterns, coding without explaining, no progress, and
-  // spinning-wheels. Fires quickly (8s) so the user gets fast feedback.
+  // spinning-wheels. Now returns structured hints with line numbers.
   useEffect(() => {
     if (isLocked || isPaused || !currentProblem) return;
 
@@ -736,16 +736,26 @@ export default function App({ mode = "practice" }) {
       if (!analysisResult) return;
 
       if (analysisResult.tier === "local") {
-        // LOCAL TIER: use the predefined message directly — free
         const interruptMessage = {
           role: "assistant",
           content: analysisResult.message,
           isInterruption: true
         };
 
-        setEditorHint(analysisResult.message);
+        // Pass structured hint with line info to EditorPanel
+        setEditorHint({
+          message: analysisResult.message,
+          displaySeverity: analysisResult.displaySeverity || "info",
+          lineNumber: analysisResult.lineNumber || null,
+          endLineNumber: analysisResult.endLineNumber || analysisResult.lineNumber || null,
+          hints: [{
+            lineNumber: analysisResult.lineNumber || null,
+            endLineNumber: analysisResult.endLineNumber || analysisResult.lineNumber || null,
+            severity: analysisResult.displaySeverity || "info",
+            message: analysisResult.message,
+          }]
+        });
 
-        // Add to LLM history so AI has context if user responds in chat
         llmMessagesRef.current = [
           ...appendCodeUpdateIfNeeded(code, llmMessagesRef.current),
           interruptMessage
@@ -753,7 +763,6 @@ export default function App({ mode = "practice" }) {
         setMessages((prev) => [...prev, interruptMessage]);
 
       } else if (analysisResult.tier === "api") {
-        // API TIER: spinning-wheels or complex stuck detection
         if (!analyzerStateRef.current.canAffordAPICall()) return;
         if (interruptInFlightRef.current) return;
 
@@ -780,7 +789,18 @@ export default function App({ mode = "practice" }) {
             });
 
             if (data?.reply) {
-              setEditorHint(data.reply);
+              setEditorHint({
+                message: data.reply,
+                displaySeverity: analysisResult.displaySeverity || "info",
+                lineNumber: analysisResult.lineNumber || null,
+                endLineNumber: analysisResult.endLineNumber || null,
+                hints: [{
+                  lineNumber: analysisResult.lineNumber || null,
+                  endLineNumber: analysisResult.endLineNumber || null,
+                  severity: analysisResult.displaySeverity || "warning",
+                  message: data.reply,
+                }]
+              });
 
               const interruptMessage = {
                 role: "assistant",
@@ -800,36 +820,67 @@ export default function App({ mode = "practice" }) {
           }
         })();
       }
-    }, 8000); // 8 seconds — fast enough to feel responsive
+    }, 4000);
 
     return () => clearTimeout(localTimer);
   }, [code, currentProblem, isLocked, isPaused, appendCodeUpdateIfNeeded]);
 
-  // ── EFFECT B: Idle AI feedback (20s debounce) ──────────────────────
-  // Fires when the user stops typing for 20s AND the local analysis above
-  // didn't already show something (checked via progressive cooldown).
-  // This is the "idle interviewer" the user expects — the AI reviews the
-  // code and gives contextual feedback. Budget-limited to ~5 API calls.
+  // ── EFFECT B: Idle AI feedback (10s debounce) ──────────────────────
+  // Uses the /api/code-hints endpoint for line-targeted IDE-style hints.
+  // Falls back to /api/chat proactive mode for general feedback.
+  // Budget-limited to ~5 API calls via the analyzer state.
   useEffect(() => {
     if (isLocked || isPaused || !currentProblem) return;
 
     const idleTimer = setTimeout(async () => {
-      // Skip if code hasn't changed since last idle check
       if (code === lastIdleCodeRef.current) return;
-      // Skip if a local interrupt just fired (cooldown prevents overlap)
       if (!analyzerStateRef.current.canInterrupt()) return;
-      // Skip if no API budget left or another call is in flight
       if (!analyzerStateRef.current.canAffordAPICall()) return;
       if (interruptInFlightRef.current) return;
+
+      // Don't analyze code that's basically just the starter template
+      const userCode = code.replace(currentProblem.starterCode || "", "").trim();
+      if (userCode.length < 15) return;
 
       lastIdleCodeRef.current = code;
       interruptInFlightRef.current = true;
 
       try {
-        const nextMessages = appendCodeUpdateIfNeeded(
+        // Try the line-targeted code-hints endpoint first
+        const hintData = await getCodeHints({
           code,
-          llmMessagesRef.current
-        );
+          problemTitle: currentProblem.title,
+          problemDescription: currentProblem.description,
+          starterCode: currentProblem.starterCode,
+          practiceMode: isPracticeMode,
+        });
+
+        if (hintData?.hasIssue && hintData.hints?.length > 0) {
+          analyzerStateRef.current.markInterrupted("idle-hint-" + Date.now());
+
+          // Show structured inline hints in the editor
+          setEditorHint({
+            hints: hintData.hints,
+            message: hintData.hints[0].message,
+          });
+
+          // Also add to chat for context
+          const hintSummary = hintData.hints.map(h => h.message).join(" ");
+          const interruptMessage = {
+            role: "assistant",
+            content: hintSummary,
+            isInterruption: true,
+          };
+          llmMessagesRef.current = [
+            ...appendCodeUpdateIfNeeded(code, llmMessagesRef.current),
+            interruptMessage
+          ];
+          setMessages((prev) => [...prev, interruptMessage]);
+          return;
+        }
+
+        // Fallback: use proactive chat if code-hints found nothing
+        const nextMessages = appendCodeUpdateIfNeeded(code, llmMessagesRef.current);
         llmMessagesRef.current = nextMessages;
 
         const data = await sendChat({
@@ -838,33 +889,115 @@ export default function App({ mode = "practice" }) {
           practiceMode: isPracticeMode
         });
 
-        if (!data?.reply) {
-          // AI had nothing to say — that's fine, no cost beyond the call
-          return;
-        }
+        if (!data?.reply) return;
 
-        // Mark this as an interrupt so cooldown kicks in
         analyzerStateRef.current.markInterrupted("idle-feedback-" + Date.now());
+
+        // Show as a floating hint (no line info from proactive mode)
+        setEditorHint(data.reply);
 
         const interruptMessage = {
           role: "assistant",
           content: data.reply
         };
-
-        llmMessagesRef.current = [
-          ...llmMessagesRef.current,
-          interruptMessage
-        ];
+        llmMessagesRef.current = [...llmMessagesRef.current, interruptMessage];
         setMessages((prev) => [...prev, interruptMessage]);
       } catch (error) {
         console.error("Idle feedback failed:", error);
       } finally {
         interruptInFlightRef.current = false;
       }
-    }, 20000); // 20 seconds — matches original idle timing
+    }, 10000); // 10 seconds — short enough to feel responsive when user pauses
 
     return () => clearTimeout(idleTimer);
-  }, [code, currentProblem, isLocked, isPaused, appendCodeUpdateIfNeeded]);
+  }, [code, currentProblem, isLocked, isPaused, appendCodeUpdateIfNeeded, isPracticeMode]);
+
+  // ── EFFECT C: Throttle interval (every 12s, even during continuous typing) ─
+  // Debounce-based effects never fire if the user types non-stop. This interval
+  // periodically checks code against the last analyzed snapshot and runs
+  // local analysis (free) or AI hints (budgeted) if meaningful changes exist.
+  const lastThrottleCodeRef = useRef("");
+  useEffect(() => {
+    if (isLocked || isPaused || !currentProblem) return;
+
+    const interval = setInterval(async () => {
+      if (code === lastThrottleCodeRef.current) return;
+      if (!analyzerStateRef.current.canInterrupt()) return;
+
+      const userCode = code.replace(currentProblem.starterCode || "", "").trim();
+      if (userCode.length < 15) return;
+
+      lastThrottleCodeRef.current = code;
+
+      // Try local analysis first (free)
+      const localResult = analyzeCode(
+        code,
+        currentProblem.id,
+        currentProblem.starterCode,
+        analyzerStateRef.current,
+        hasUserExplainedRef.current
+      );
+
+      if (localResult && localResult.tier === "local") {
+        setEditorHint({
+          message: localResult.message,
+          displaySeverity: localResult.displaySeverity || "info",
+          hints: [{
+            lineNumber: localResult.lineNumber || null,
+            endLineNumber: localResult.endLineNumber || null,
+            severity: localResult.displaySeverity || "info",
+            message: localResult.message,
+          }]
+        });
+
+        const interruptMessage = {
+          role: "assistant",
+          content: localResult.message,
+          isInterruption: true,
+        };
+        llmMessagesRef.current = [
+          ...appendCodeUpdateIfNeeded(code, llmMessagesRef.current),
+          interruptMessage,
+        ];
+        setMessages((prev) => [...prev, interruptMessage]);
+        return;
+      }
+
+      // If local found nothing, try AI (budgeted)
+      if (interruptInFlightRef.current) return;
+      if (!analyzerStateRef.current.canAffordAPICall()) return;
+      interruptInFlightRef.current = true;
+
+      try {
+        const data = await getCodeHints({
+          code,
+          problemTitle: currentProblem.title,
+          problemDescription: currentProblem.description,
+          starterCode: currentProblem.starterCode,
+          practiceMode: isPracticeMode,
+        });
+
+        if (data?.hasIssue && data.hints?.length > 0) {
+          analyzerStateRef.current.markInterrupted("throttle-hint-" + Date.now());
+          setEditorHint({ hints: data.hints, message: data.hints[0].message });
+
+          const msg = data.hints.map((h) => h.message).join(" ");
+          const interruptMessage = { role: "assistant", content: msg, isInterruption: true };
+          llmMessagesRef.current = [
+            ...appendCodeUpdateIfNeeded(code, llmMessagesRef.current),
+            interruptMessage,
+          ];
+          setMessages((prev) => [...prev, interruptMessage]);
+        }
+      } catch {
+        // silently ignore
+      } finally {
+        interruptInFlightRef.current = false;
+      }
+    }, 12000); // Check every 12 seconds regardless of typing
+
+    return () => clearInterval(interval);
+  }, [code, currentProblem, isLocked, isPaused, appendCodeUpdateIfNeeded, isPracticeMode]);
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
@@ -1145,7 +1278,18 @@ export default function App({ mode = "practice" }) {
     // Show test regression or no-improvement feedback if detected and cooldown allows
     if (testFeedback && analyzerStateRef.current.canInterrupt()) {
       analyzerStateRef.current.markLocalInterrupt("test-feedback-" + Date.now());
-      setEditorHint(testFeedback.message);
+      setEditorHint({
+        message: testFeedback.message,
+        displaySeverity: testFeedback.type === "test-regression" ? "error" : "warning",
+        lineNumber: null,
+        endLineNumber: null,
+        hints: [{
+          lineNumber: null,
+          endLineNumber: null,
+          severity: testFeedback.type === "test-regression" ? "error" : "warning",
+          message: testFeedback.message,
+        }]
+      });
 
       const interruptMessage = {
         role: "assistant",
@@ -1173,7 +1317,10 @@ export default function App({ mode = "practice" }) {
     setTestsNote("Run tests to evaluate correctness.");
     setShowSolution(false);
     setConsoleLogs([]);
-    setEditorHint(null); // Clear any editor hint
+    setEditorHint(null);
+    lastThrottleCodeRef.current = "";
+    lastAnalyzedCodeRef.current = "";
+    lastIdleCodeRef.current = "";
     setMessages([
       {
         role: "assistant",

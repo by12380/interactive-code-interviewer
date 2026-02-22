@@ -900,6 +900,83 @@ app.post("/api/sessions/:sid/end", async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
+//  INLINE CODE HINTS (IDE-style real-time analysis)
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/code-hints", async (req, res) => {
+  if (!OPENAI_API_KEY) return res.status(500).send("Missing OPENAI_API_KEY on the server.");
+
+  const { code, problemTitle, problemDescription, starterCode, practiceMode = false } = req.body || {};
+  if (!code || typeof code !== "string") return res.status(400).send("code required.");
+
+  const tone = practiceMode
+    ? "You are a friendly coding tutor. Be encouraging but point out issues clearly."
+    : "You are a technical interviewer. Be direct and professional.";
+
+  const systemPrompt = `${tone}
+Analyze the following code for a problem titled "${problemTitle || "coding challenge"}".
+${problemDescription ? `Problem: ${problemDescription}\n` : ""}
+Return a JSON object with this EXACT structure (no markdown, no code fences):
+{
+  "hasIssue": true/false,
+  "hints": [
+    {
+      "lineNumber": <number>,
+      "endLineNumber": <number>,
+      "severity": "error" | "warning" | "info",
+      "shortMessage": "<6-10 word summary for inline display>",
+      "message": "<1-2 sentence explanation>"
+    }
+  ]
+}
+
+Rules:
+- Only return hints for genuine issues (wrong approach, bugs, inefficiency, edge case misses)
+- Maximum 2 hints at a time — focus on the most important issues
+- lineNumber must reference actual lines in the code (1-based)
+- If the code looks good or is just starter code, return {"hasIssue": false, "hints": []}
+- shortMessage appears inline in the editor gutter, so keep it very concise
+- DO NOT mention trivial style issues — focus on logic, correctness, and algorithm choice
+- Return ONLY valid JSON, no explanation text around it`;
+
+  try {
+    const reply = await llm(systemPrompt, [{ role: "user", content: code }], {
+      maxTokens: 400,
+      temperature: 0.2,
+    });
+
+    let parsed;
+    try {
+      const cleaned = reply.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      parsed = JSON.parse(cleaned);
+    } catch {
+      return res.json({ hasIssue: false, hints: [] });
+    }
+
+    if (!parsed.hasIssue || !Array.isArray(parsed.hints)) {
+      return res.json({ hasIssue: false, hints: [] });
+    }
+
+    const totalLines = code.split("\n").length;
+    const validHints = parsed.hints
+      .filter(h => h.lineNumber >= 1 && h.lineNumber <= totalLines && h.message)
+      .slice(0, 2)
+      .map(h => ({
+        lineNumber: h.lineNumber,
+        endLineNumber: Math.min(h.endLineNumber || h.lineNumber, totalLines),
+        severity: ["error", "warning", "info"].includes(h.severity) ? h.severity : "info",
+        shortMessage: (h.shortMessage || h.message.slice(0, 40)).slice(0, 60),
+        message: h.message.slice(0, 200),
+      }));
+
+    return res.json({ hasIssue: validHints.length > 0, hints: validHints });
+  } catch (error) {
+    console.error("POST /api/code-hints error:", error);
+    return res.status(500).send(error.message || "Hint analysis failed.");
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
 //  CODE TRANSLATION (existing)
 // ═══════════════════════════════════════════════════════════════════
 

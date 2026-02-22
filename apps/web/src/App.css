@@ -594,26 +594,30 @@ textarea {
   margin-right: 6px;
 }
 
-/* ===== Interviewer Hint Widget (floating in top-right of editor panel) ===== */
+/* ===== Interviewer Hint Widget (floating fallback for non-line hints) ===== */
 .interviewer-hint-widget {
   position: absolute;
-  top: 48px; /* below the editor header bar */
+  top: 48px;
   right: 24px;
   background: #ffffff;
-  border: 1px solid #fcd34d;
-  border-radius: 10px;
-  box-shadow: 
-    0 8px 24px rgba(15, 23, 42, 0.15),
-    0 0 0 1px rgba(245, 158, 11, 0.2);
-  width: 320px;
+  border: 1px solid #e0e7ef;
+  border-left: 3px solid #3b82f6;
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.10), 0 1px 3px rgba(15, 23, 42, 0.06);
+  width: 340px;
   max-width: calc(100% - 48px);
-  font-family: "Inter", system-ui, sans-serif;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
   z-index: 50;
-  animation: hintSlideIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+  animation: hintSlideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1);
   overflow: hidden;
   pointer-events: auto;
-  opacity: 0.95;
-  transition: opacity 0.2s ease;
+  opacity: 0.97;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.interviewer-hint-widget--entering {
+  opacity: 0;
+  transform: translateY(-8px);
 }
 
 .interviewer-hint-widget:hover {
@@ -623,74 +627,213 @@ textarea {
 @keyframes hintSlideIn {
   0% {
     opacity: 0;
-    transform: translateY(-10px) scale(0.95);
+    transform: translateY(-8px);
   }
   100% {
-    opacity: 0.95;
-    transform: translateY(0) scale(1);
+    opacity: 0.97;
+    transform: translateY(0);
   }
 }
 
 .interviewer-hint-widget__header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: linear-gradient(135deg, #fef3c7 0%, #fef9c3 100%);
-  border-bottom: 1px solid #fcd34d;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .interviewer-hint-widget__icon {
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
 }
 
 .interviewer-hint-widget__title {
   flex: 1;
-  font-weight: 700;
+  font-weight: 600;
   font-size: 11px;
-  color: #92400e;
+  color: #3b82f6;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
 
 .interviewer-hint-widget__close {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(146, 64, 14, 0.1);
+  background: transparent;
   border: none;
-  border-radius: 4px;
+  border-radius: 3px;
   font-size: 14px;
-  color: #92400e;
+  color: #94a3b8;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .interviewer-hint-widget__close:hover {
-  background: rgba(146, 64, 14, 0.2);
-  color: #78350f;
+  background: rgba(15, 23, 42, 0.08);
+  color: #475569;
 }
 
 .interviewer-hint-widget__content {
-  padding: 10px 12px;
+  padding: 8px 12px;
   font-size: 12.5px;
-  line-height: 1.5;
-  color: #1e293b;
-  max-height: 120px;
+  line-height: 1.55;
+  color: #334155;
+  max-height: 100px;
   overflow-y: auto;
 }
 
+.interviewer-hint-widget__content p {
+  margin: 0;
+}
+
 .interviewer-hint-widget__footer {
-  padding: 6px 10px;
+  padding: 5px 10px;
   background: #f8fafc;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid #f1f5f9;
   font-size: 10px;
   color: #94a3b8;
   text-align: center;
-  font-style: italic;
+}
+
+/* ===== Inline Hint Zone (injected below the target line via Monaco ViewZone) ===== */
+.ai-hint-zone {
+  padding: 0 0 0 60px;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  animation: hintZoneFadeIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes hintZoneFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ai-hint-zone__inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 90%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ai-hint-zone__inner--info {
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  color: #1e40af;
+}
+
+.ai-hint-zone__inner--warning {
+  background: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  color: #92400e;
+}
+
+.ai-hint-zone__inner--error {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #991b1b;
+}
+
+.ai-hint-zone__icon {
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.ai-hint-zone__label {
+  flex-shrink: 0;
+  font-weight: 600;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+.ai-hint-zone__text {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.ai-hint-zone__dismiss {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 2px;
+  font-size: 13px;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: all 0.15s ease;
+  margin-left: 4px;
+}
+
+.ai-hint-zone__dismiss:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* ===== Monaco Glyph Margin Icons (gutter lightbulb/warning icons) ===== */
+.ai-hint-glyph {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.ai-hint-glyph--info::after {
+  content: "💡";
+  font-size: 12px;
+}
+
+.ai-hint-glyph--warning::after {
+  content: "⚠️";
+  font-size: 11px;
+}
+
+.ai-hint-glyph--error::after {
+  content: "❌";
+  font-size: 10px;
+}
+
+/* ===== Monaco Line Highlight Decorations ===== */
+.ai-hint-line {
+  transition: background-color 0.3s ease;
+}
+
+.ai-hint-line--info {
+  background: rgba(59, 130, 246, 0.06) !important;
+}
+
+.ai-hint-line--warning {
+  background: rgba(245, 158, 11, 0.06) !important;
+}
+
+.ai-hint-line--error {
+  background: rgba(239, 68, 68, 0.06) !important;
 }
 
 .chat__role {
@@ -6702,39 +6845,73 @@ body.theme-dark .panel--editor .monaco-editor .margin {
 /* Interviewer Hint Widget - Dark Theme */
 body.theme-dark .interviewer-hint-widget {
   background: #1e293b;
-  border-color: #854d0e;
-  box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.4),
-    0 0 0 1px rgba(245, 158, 11, 0.25);
+  border-color: #334155;
+  border-left-color: #60a5fa;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 body.theme-dark .interviewer-hint-widget__header {
-  background: linear-gradient(135deg, #422006 0%, #451a03 100%);
-  border-bottom-color: #854d0e;
+  background: #0f172a;
+  border-bottom-color: #334155;
 }
 
 body.theme-dark .interviewer-hint-widget__title {
-  color: #fbbf24;
+  color: #60a5fa;
 }
 
 body.theme-dark .interviewer-hint-widget__close {
-  background: rgba(251, 191, 36, 0.15);
-  color: #fbbf24;
+  color: #64748b;
 }
 
 body.theme-dark .interviewer-hint-widget__close:hover {
-  background: rgba(251, 191, 36, 0.3);
-  color: #fde68a;
+  background: rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
 }
 
 body.theme-dark .interviewer-hint-widget__content {
-  color: #e2e8f0;
+  color: #cbd5e1;
 }
 
 body.theme-dark .interviewer-hint-widget__footer {
   background: #0f172a;
-  border-top-color: #334155;
-  color: #64748b;
+  border-top-color: #1e293b;
+  color: #475569;
+}
+
+/* Inline Hint Zone - Dark Theme */
+body.theme-dark .ai-hint-zone__inner--info {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.25);
+  color: #93c5fd;
+}
+
+body.theme-dark .ai-hint-zone__inner--warning {
+  background: rgba(245, 158, 11, 0.12);
+  border-color: rgba(245, 158, 11, 0.25);
+  color: #fcd34d;
+}
+
+body.theme-dark .ai-hint-zone__inner--error {
+  background: rgba(239, 68, 68, 0.12);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #fca5a5;
+}
+
+body.theme-dark .ai-hint-zone__dismiss:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Monaco Line Highlights - Dark Theme */
+body.theme-dark .ai-hint-line--info {
+  background: rgba(59, 130, 246, 0.08) !important;
+}
+
+body.theme-dark .ai-hint-line--warning {
+  background: rgba(245, 158, 11, 0.08) !important;
+}
+
+body.theme-dark .ai-hint-line--error {
+  background: rgba(239, 68, 68, 0.08) !important;
 }
 
 /* ===================================

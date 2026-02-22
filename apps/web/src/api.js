@@ -20,6 +20,24 @@ export async function sendChat({ messages, mode = "chat", interruptContext = nul
 }
 
 /**
+ * Request AI-powered inline code hints (IDE-style diagnostics)
+ */
+export async function getCodeHints({ code, problemTitle, problemDescription, starterCode, practiceMode = false }) {
+  const response = await fetch("/api/code-hints", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code, problemTitle, problemDescription, starterCode, practiceMode })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || "Hint analysis failed");
+  }
+
+  return response.json();
+}
+
+/**
  * Translate code between programming languages
  * @param {Object} params - Translation parameters
  * @param {string} params.code - Source code to translate

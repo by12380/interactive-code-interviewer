@@ -1,14 +1,20 @@
 // CandidateSession – focused coding view for a candidate inside a live session.
-// Features: Monaco editor, problem panel, timer, AI hints (permission-gated), code auto-sync.
+// Features: Monaco editor with inline AI hints, problem panel, timer, code auto-sync.
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import Editor from "@monaco-editor/react";
-import { getSession, getQuestion, requestHint, pushCode } from "../services/sessionService.js";
+import EditorPanel from "../components/EditorPanel.jsx";
+import { getSession, pushCode } from "../services/sessionService.js";
+import { getCodeHints } from "../api.js";
+import { analyzeCode, createAnalyzerState } from "../services/codeAnalyzer.js";
 import { QUESTION_BANK } from "../data/questionBank.js";
 import "../styles/candidate.css";
 
 const PUSH_MS = 2000;
+const LOCAL_DEBOUNCE_MS = 4000;
+const AI_DEBOUNCE_MS = 10000;
+const THROTTLE_INTERVAL_MS = 12000;
+const MAX_AI_HINTS = 6;
 
 export default function CandidateSession() {
   const { sessionId, candidateId } = useParams();
@@ -19,11 +25,23 @@ export default function CandidateSession() {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [code, setCode] = useState("");
   const [elapsed, setElapsed] = useState(0);
-  const [hint, setHint] = useState("");
-  const [hintLoading, setHintLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [endedByInterviewer, setEndedByInterviewer] = useState(false);
 
+  // Editor refs
+  const editorRef = useRef(null);
+  const monacoRef = useRef(null);
+
+  // Hint state
+  const [editorHint, setEditorHint] = useState(null);
+  const analyzerStateRef = useRef(createAnalyzerState());
+  const hintInFlightRef = useRef(false);
+  const aiHintCountRef = useRef(0);
+  const lastLocalCodeRef = useRef("");
+  const lastAiCodeRef = useRef("");
+  const lastThrottleCodeRef = useRef("");
+
+  // Code sync refs
   const codeRef = useRef("");
   const lastPushedRef = useRef("");
   const pushTimerRef = useRef(null);
@@ -31,39 +49,44 @@ export default function CandidateSession() {
 
   // Load session + questions
   useEffect(() => {
-    getSession(sessionId).then(async (s) => {
-      setSession(s);
-      // If session was already ended by interviewer, go straight to submitted
-      if (s.status === "completed") {
-        setEndedByInterviewer(true);
-        setSubmitted(true);
-        return;
-      }
-      const qs = (s.questionIds || []).map((qid) => {
-        const fromBank = QUESTION_BANK.find((q) => q.id === qid);
-        return fromBank || { id: qid, title: qid, description: "", starterCode: "" };
-      });
-      setQuestions(qs);
-      if (qs.length) setCode(qs[0].starterCode || "");
-    }).catch(() => {});
+    getSession(sessionId)
+      .then(async (s) => {
+        setSession(s);
+        if (s.status === "completed") {
+          setEndedByInterviewer(true);
+          setSubmitted(true);
+          return;
+        }
+        const qs = (s.questionIds || []).map((qid) => {
+          const fromBank = QUESTION_BANK.find((q) => q.id === qid);
+          return fromBank || { id: qid, title: qid, description: "", starterCode: "" };
+        });
+        setQuestions(qs);
+        if (qs.length) {
+          setCode(qs[0].starterCode || "");
+          codeRef.current = qs[0].starterCode || "";
+        }
+      })
+      .catch(() => {});
   }, [sessionId]);
 
   // Poll session status every 3s to detect when interviewer ends the session
   useEffect(() => {
     if (submitted) return;
     sessionPollerRef.current = setInterval(() => {
-      getSession(sessionId).then((s) => {
-        if (s.status === "completed") {
-          // Interviewer ended the session – push final code and lock out
-          const q = questions[currentIdx];
-          pushCode(sessionId, candidateId, {
-            code: codeRef.current,
-            questionId: q?.id || "_default",
-          }).catch(() => {});
-          setEndedByInterviewer(true);
-          setSubmitted(true);
-        }
-      }).catch(() => {});
+      getSession(sessionId)
+        .then((s) => {
+          if (s.status === "completed") {
+            const q = questions[currentIdx];
+            pushCode(sessionId, candidateId, {
+              code: codeRef.current,
+              questionId: q?.id || "_default",
+            }).catch(() => {});
+            setEndedByInterviewer(true);
+            setSubmitted(true);
+          }
+        })
+        .catch(() => {});
     }, 3000);
     return () => clearInterval(sessionPollerRef.current);
   }, [sessionId, candidateId, submitted, questions, currentIdx]);
@@ -82,33 +105,182 @@ export default function CandidateSession() {
       if (current === lastPushedRef.current) return;
       lastPushedRef.current = current;
       const q = questions[currentIdx];
-      pushCode(sessionId, candidateId, { code: current, questionId: q?.id || "_default" }).catch(() => {});
+      pushCode(sessionId, candidateId, {
+        code: current,
+        questionId: q?.id || "_default",
+      }).catch(() => {});
     }, PUSH_MS);
     return () => clearInterval(pushTimerRef.current);
   }, [sessionId, candidateId, currentIdx, questions]);
-
-  const handleCodeChange = useCallback((val) => {
-    setCode(val || "");
-    codeRef.current = val || "";
-  }, []);
 
   const question = questions[currentIdx] || null;
   const timeLimit = session?.settings?.timeLimitSeconds || 1800;
   const remaining = Math.max(0, timeLimit - elapsed);
   const fmtTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
-  const handleHint = async () => {
-    if (!session?.settings?.hintsEnabled) return;
-    setHintLoading(true);
-    try {
-      const data = await requestHint(sessionId, candidateId, { questionId: question?.id, code });
-      setHint(data.hint || "No hint available.");
-    } catch (e) {
-      setHint(e.message || "Could not get hint.");
-    }
-    setHintLoading(false);
-  };
+  const handleCodeChange = useCallback((val) => {
+    setCode(val || "");
+    codeRef.current = val || "";
+  }, []);
 
+  const handleEditorMount = useCallback((editor, monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
+  }, []);
+
+  const handleDismissHint = useCallback(() => {
+    setEditorHint(null);
+  }, []);
+
+  // Helper to fire a structured hint into the editor
+  const fireHint = useCallback((hints, chatMessage) => {
+    if (!hints || hints.length === 0) return;
+    setEditorHint({
+      hints,
+      message: hints[0].message,
+    });
+  }, []);
+
+  // ── LOCAL PATTERN ANALYSIS (4s debounce) ──────────────────────────
+  // Free, zero API cost. Catches wrong approaches and common mistakes.
+  useEffect(() => {
+    if (submitted || !question) return;
+    if (!(session?.settings?.aiInterruptionsEnabled !== false)) return;
+
+    const timer = setTimeout(() => {
+      if (code === lastLocalCodeRef.current) return;
+      lastLocalCodeRef.current = code;
+
+      const result = analyzeCode(
+        code,
+        question.id,
+        question.starterCode || "",
+        analyzerStateRef.current,
+        true
+      );
+
+      if (!result) return;
+
+      if (result.tier === "local") {
+        fireHint([{
+          lineNumber: result.lineNumber || null,
+          endLineNumber: result.endLineNumber || null,
+          severity: result.displaySeverity || "warning",
+          message: result.message,
+        }]);
+      }
+    }, LOCAL_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [code, question, submitted, session, fireHint]);
+
+  // ── AI-POWERED HINTS (10s debounce) ───────────────────────────────
+  // Fires when user pauses for 10s. Uses /api/code-hints for line-targeted hints.
+  useEffect(() => {
+    if (submitted || !question) return;
+    if (!(session?.settings?.aiInterruptionsEnabled !== false)) return;
+
+    const timer = setTimeout(async () => {
+      if (hintInFlightRef.current) return;
+      if (code === lastAiCodeRef.current) return;
+      if (aiHintCountRef.current >= MAX_AI_HINTS) return;
+      if (!analyzerStateRef.current.canInterrupt()) return;
+
+      const userCode = code.replace(question.starterCode || "", "").trim();
+      if (userCode.length < 15) return;
+
+      lastAiCodeRef.current = code;
+      hintInFlightRef.current = true;
+
+      try {
+        const data = await getCodeHints({
+          code,
+          problemTitle: question.title,
+          problemDescription: question.description,
+          starterCode: question.starterCode,
+        });
+
+        if (data?.hasIssue && data.hints?.length > 0) {
+          aiHintCountRef.current++;
+          analyzerStateRef.current.markInterrupted("ai-hint-" + Date.now());
+          fireHint(data.hints);
+        }
+      } catch {
+        // silently ignore
+      } finally {
+        hintInFlightRef.current = false;
+      }
+    }, AI_DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [code, question, submitted, session, fireHint]);
+
+  // ── THROTTLE INTERVAL (every 12s, even during continuous typing) ──
+  // This is the key fix: if the user never stops typing, debounce-based
+  // timers never fire. This interval checks periodically regardless.
+  useEffect(() => {
+    if (submitted || !question) return;
+    if (!(session?.settings?.aiInterruptionsEnabled !== false)) return;
+
+    const interval = setInterval(async () => {
+      // Skip if code hasn't changed meaningfully since last throttle check
+      if (code === lastThrottleCodeRef.current) return;
+      if (hintInFlightRef.current) return;
+      if (!analyzerStateRef.current.canInterrupt()) return;
+
+      const userCode = code.replace(question.starterCode || "", "").trim();
+      if (userCode.length < 15) return;
+
+      lastThrottleCodeRef.current = code;
+
+      // First try local analysis (free)
+      const localResult = analyzeCode(
+        code,
+        question.id,
+        question.starterCode || "",
+        analyzerStateRef.current,
+        true
+      );
+
+      if (localResult && localResult.tier === "local") {
+        fireHint([{
+          lineNumber: localResult.lineNumber || null,
+          endLineNumber: localResult.endLineNumber || null,
+          severity: localResult.displaySeverity || "warning",
+          message: localResult.message,
+        }]);
+        return;
+      }
+
+      // If local found nothing and AI budget remains, try AI
+      if (aiHintCountRef.current >= MAX_AI_HINTS) return;
+      if (!analyzerStateRef.current.canAffordAPICall()) return;
+
+      hintInFlightRef.current = true;
+      try {
+        const data = await getCodeHints({
+          code,
+          problemTitle: question.title,
+          problemDescription: question.description,
+          starterCode: question.starterCode,
+        });
+
+        if (data?.hasIssue && data.hints?.length > 0) {
+          aiHintCountRef.current++;
+          analyzerStateRef.current.markInterrupted("throttle-hint-" + Date.now());
+          fireHint(data.hints);
+        }
+      } catch {
+        // silently ignore
+      } finally {
+        hintInFlightRef.current = false;
+      }
+    }, THROTTLE_INTERVAL_MS);
+
+    return () => clearInterval(interval);
+  }, [code, question, submitted, session, fireHint]);
+
+  // Reset hints when switching questions
   const handleNext = () => {
     if (currentIdx < questions.length - 1) {
       const nextIdx = currentIdx + 1;
@@ -116,13 +288,20 @@ export default function CandidateSession() {
       setCode(questions[nextIdx]?.starterCode || "");
       codeRef.current = questions[nextIdx]?.starterCode || "";
       lastPushedRef.current = "";
-      setHint("");
+      setEditorHint(null);
+      lastLocalCodeRef.current = "";
+      lastAiCodeRef.current = "";
+      lastThrottleCodeRef.current = "";
+      aiHintCountRef.current = 0;
+      analyzerStateRef.current.reset();
     }
   };
 
   const handleSubmit = () => {
-    // Final push
-    pushCode(sessionId, candidateId, { code, questionId: question?.id || "_default" }).catch(() => {});
+    pushCode(sessionId, candidateId, {
+      code,
+      questionId: question?.id || "_default",
+    }).catch(() => {});
     if (currentIdx < questions.length - 1) {
       handleNext();
     } else {
@@ -133,10 +312,13 @@ export default function CandidateSession() {
   // Time's up
   useEffect(() => {
     if (remaining <= 0 && !submitted) {
-      pushCode(sessionId, candidateId, { code: codeRef.current, questionId: question?.id || "_default" }).catch(() => {});
+      pushCode(sessionId, candidateId, {
+        code: codeRef.current,
+        questionId: question?.id || "_default",
+      }).catch(() => {});
       setSubmitted(true);
     }
-  }, [remaining, submitted]);
+  }, [remaining, submitted, sessionId, candidateId, question]);
 
   if (submitted) {
     return (
@@ -144,11 +326,16 @@ export default function CandidateSession() {
         <div className="cs-join__card">
           <h1>Session Complete</h1>
           {endedByInterviewer ? (
-            <p>The interviewer has ended this session. Your code has been submitted automatically and will be reviewed.</p>
+            <p>
+              The interviewer has ended this session. Your code has been submitted
+              automatically and will be reviewed.
+            </p>
           ) : (
             <p>Your code has been submitted. The interviewer will review your solutions.</p>
           )}
-          <button className="cs-btn cs-btn--primary" onClick={() => navigate("/")}>Back to Home</button>
+          <button className="cs-btn cs-btn--primary" onClick={() => navigate("/")}>
+            Back to Home
+          </button>
         </div>
       </div>
     );
@@ -175,43 +362,52 @@ export default function CandidateSession() {
           {question ? (
             <>
               <h3>{question.title}</h3>
-              <span className={`iv-diff iv-diff--${(question.difficulty || "").toLowerCase()}`}>{question.difficulty}</span>
+              <span
+                className={`iv-diff iv-diff--${(question.difficulty || "").toLowerCase()}`}
+              >
+                {question.difficulty}
+              </span>
               <div className="cs-desc">{question.description}</div>
 
-              {session?.settings?.showTestCases && question.testCases?.length > 0 && (
-                <div className="cs-tests">
-                  <h4>Test Cases</h4>
-                  {question.testCases.slice(0, 3).map((tc, i) => (
-                    <pre key={i} className="cs-test-case">
-                      Input: {JSON.stringify(tc.input)}{"\n"}Expected: {JSON.stringify(tc.expected)}
-                    </pre>
-                  ))}
-                </div>
-              )}
-
-              {session?.settings?.hintsEnabled && (
-                <div className="cs-hints">
-                  <button className="cs-btn cs-btn--sm" onClick={handleHint} disabled={hintLoading}>
-                    {hintLoading ? "Getting hint..." : "Get AI Hint"}
-                  </button>
-                  {hint && <div className="cs-hint-box">{hint}</div>}
-                </div>
-              )}
+              {session?.settings?.showTestCases &&
+                question.testCases?.length > 0 && (
+                  <div className="cs-tests">
+                    <h4>Test Cases</h4>
+                    {question.testCases.slice(0, 3).map((tc, i) => (
+                      <pre key={i} className="cs-test-case">
+                        Input: {JSON.stringify(tc.input)}
+                        {"\n"}Expected: {JSON.stringify(tc.expected)}
+                      </pre>
+                    ))}
+                  </div>
+                )}
             </>
           ) : (
             <p className="cs-muted">Loading problem...</p>
           )}
         </aside>
 
-        {/* ── Center: Editor ──────────────────────────────────── */}
+        {/* ── Center: Editor with inline AI hints ─────────────── */}
         <main className="cs-session__editor">
-          <Editor
-            height="100%"
-            defaultLanguage="javascript"
-            theme="vs-dark"
-            value={code}
-            onChange={handleCodeChange}
-            options={{ minimap: { enabled: false }, fontSize: 14 }}
+          <EditorPanel
+            canUndo={true}
+            canRedo={true}
+            isEditorDisabled={submitted}
+            isRunning={false}
+            onUndo={() => editorRef.current?.trigger("toolbar", "undo", null)}
+            onRedo={() => editorRef.current?.trigger("toolbar", "redo", null)}
+            onRun={() => {}}
+            onEditorMount={handleEditorMount}
+            onCodeChange={handleCodeChange}
+            editorOptions={{
+              minimap: { enabled: false },
+              fontSize: 14,
+              scrollBeyondLastLine: false,
+              wordWrap: "on",
+            }}
+            code={code}
+            interviewerHint={editorHint}
+            onDismissHint={handleDismissHint}
           />
         </main>
       </div>
