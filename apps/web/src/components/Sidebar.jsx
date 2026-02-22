@@ -69,9 +69,8 @@ function Sidebar({
         </button>
       </div>
 
-      <div className="sidebar__content">
-        {/* User Section */}
-        <div className="sidebar__user-section">
+      {/* User Section */}
+      <div className="sidebar__user-section">
           {user ? (
             <>
               <button
@@ -165,18 +164,18 @@ function Sidebar({
               </button>
             </div>
           )}
+      </div>
+
+      {/* Problem selector - only on practice screen */}
+      {!isCollapsed && activeScreen === "practice" && (
+        <div className="sidebar__problem-selector">
+          <span className="sidebar__section-label">Current Practice Problem</span>
+          {problemSelector}
         </div>
+      )}
 
-        {/* Problem selector - only on practice screen */}
-        {!isCollapsed && activeScreen === "practice" && (
-          <div className="sidebar__problem-selector">
-            <span className="sidebar__section-label">Current Practice Problem</span>
-            {problemSelector}
-          </div>
-        )}
-
-        {/* Navigation Items */}
-        <nav className="sidebar__nav">
+      {/* Navigation Items */}
+      <nav className="sidebar__nav">
           <span className="sidebar__section-label">
             {!isCollapsed && 'Navigation'}
           </span>
@@ -250,10 +249,10 @@ function Sidebar({
               )}
             </div>
           )}
-        </nav>
+      </nav>
 
-        {/* Bottom Actions */}
-        <div className="sidebar__bottom">
+      {/* Bottom Actions */}
+      <div className="sidebar__bottom">
           <button
             type="button"
             className="sidebar__nav-item"
@@ -290,7 +289,6 @@ function Sidebar({
               {!isCollapsed && <span className="sidebar__nav-text">Logout</span>}
             </button>
           )}
-        </div>
       </div>
     </aside>
   );
