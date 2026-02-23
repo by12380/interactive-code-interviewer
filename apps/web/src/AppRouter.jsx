@@ -3,6 +3,7 @@ import { useAuth } from "./contexts/AuthContext.jsx";
 import App from "./App.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import HomePage from "./pages/HomePage.jsx";
+import PracticeDashboard from "./pages/PracticeDashboard.jsx";
 import InterviewHub from "./pages/InterviewHub.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import InterviewerDashboard from "./pages/InterviewerDashboard.jsx";
@@ -29,9 +30,19 @@ export default function AppRouter() {
       {/* Home dashboard – public, anyone can see it */}
       <Route path="/" element={<HomePage />} />
 
-      {/* Practice workspace – requires account (we track XP, streaks, etc.) */}
+      {/* Practice hub – personalized dashboard with onboarding & roadmap */}
       <Route
         path="/practice"
+        element={
+          <ProtectedRoute>
+            <PracticeDashboard />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Practice IDE – full-screen coding workspace, no sidebar */}
+      <Route
+        path="/practice/solve/:problemId"
         element={
           <ProtectedRoute>
             <App mode="practice" />

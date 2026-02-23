@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext.jsx";
 import { sendChat, getCodeHints } from "./api.js";
 import Header from "./components/Header.jsx";
+import PracticeHeader from "./components/PracticeHeader.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import EditorPanel from "./components/EditorPanel.jsx";
 import ConsolePanel from "./components/ConsolePanel.jsx";
@@ -229,10 +230,14 @@ export default function App({ mode = "practice" }) {
   const { settings: focusSettings, toggleFocusMode, disableFocusMode } = useFocusMode();
   const { logOut: firebaseLogOut, user: authUser, isAuthenticated } = useAuth();
   const navigate = useNavigate();
+  const { problemId: routeProblemId } = useParams();
   
   // Screen-based navigation state
   // "interview" | "settings" | "leaderboard" | "achievements" | "roadmap"
   const [activeScreen, setActiveScreen] = useState("interview");
+  
+  // Achievements modal for practice mode (replaces sidebar achievements)
+  const [isPracticeAchievementsVisible, setIsPracticeAchievementsVisible] = useState(false);
 
   // Navigation handler
   const handleNavigate = useCallback((screen) => {
@@ -266,8 +271,14 @@ export default function App({ mode = "practice" }) {
     return !onboardingComplete && !neverShow;
   });
   
-  // Problem management state
-  const [currentProblemId, setCurrentProblemId] = useState(PROBLEMS[0].id);
+  // Problem management state — prefer problem from URL in practice mode
+  const [currentProblemId, setCurrentProblemId] = useState(() => {
+    if (routeProblemId) {
+      const found = getProblemById(routeProblemId);
+      if (found) return found.id;
+    }
+    return PROBLEMS[0].id;
+  });
   const currentProblem = useMemo(() => getProblemById(currentProblemId), [currentProblemId]);
   
   const [code, setCode] = useState(currentProblem?.starterCode || "");
@@ -1593,7 +1604,7 @@ export default function App({ mode = "practice" }) {
 
   return (
     <div 
-      className={`app app--with-sidebar ${focusSettings.isEnabled ? "app--focus-mode" : ""} ${isZenMode ? "app--zen-mode" : ""}`} 
+      className={`app ${isPracticeMode ? "app--practice-ide" : "app--with-sidebar"} ${focusSettings.isEnabled ? "app--focus-mode" : ""} ${isZenMode ? "app--zen-mode" : ""}`} 
       role="application" 
       aria-label={isPracticeMode ? "AI Coding Practice" : "Live AI Coding Interviewer"}
     >
@@ -1622,8 +1633,8 @@ export default function App({ mode = "practice" }) {
         </button>
       )}
       
-      {/* Sidebar Navigation */}
-      {!shouldHideSidebar && (
+      {/* Sidebar Navigation — hidden in practice mode */}
+      {!isPracticeMode && !shouldHideSidebar && (
         <Sidebar
           user={effectiveUser}
           activeScreen={activeScreen}
@@ -1645,12 +1656,23 @@ export default function App({ mode = "practice" }) {
       )}
 
       {/* Main Content Area */}
-      <div className={`app__content ${shouldHideSidebar ? "app__content--full-width" : ""}`}>
+      <div className={`app__content ${isPracticeMode || shouldHideSidebar ? "app__content--full-width" : ""}`}>
 
         {/* === INTERVIEW SCREEN (default) === */}
         {activeScreen === "interview" && (
           <>
-            {!shouldHideHeader && (
+            {isPracticeMode ? (
+              <PracticeHeader
+                currentProblemTitle={currentProblem?.title}
+                elapsedSeconds={elapsedSeconds}
+                isLocked={isLocked}
+                onStop={handleStop}
+                user={effectiveUser}
+                onLogout={handleLogout}
+                onOpenProfile={handleOpenProfile}
+                onOpenAchievements={() => setIsPracticeAchievementsVisible(true)}
+              />
+            ) : !shouldHideHeader ? (
               <Header
                 difficulty={difficulty}
                 isLocked={isLocked}
@@ -1666,7 +1688,7 @@ export default function App({ mode = "practice" }) {
                 currentProblemTitle={currentProblem?.title}
                 mode={mode}
               />
-            )}
+            ) : null}
 
             <main className={`app__main ${isZenMode ? "app__main--zen" : ""} ${shouldHideProblem && !isZenMode ? "app__main--no-problem" : ""} ${shouldHideChat && !isZenMode ? "app__main--no-chat" : ""} ${isRightPanelCollapsed && !shouldHideChat && !isZenMode ? "app__main--right-collapsed" : ""}`} id="main-content" role="main">
               {!isZenMode && !shouldHideProblem && (
@@ -1991,6 +2013,27 @@ export default function App({ mode = "practice" }) {
           user={user}
           onSelectProblem={handleSelectProblem}
         />
+      )}
+
+      {/* Practice Mode: Achievements Modal */}
+      {isPracticeAchievementsVisible && user && (
+        <div className="practice-achievements-overlay" onClick={() => setIsPracticeAchievementsVisible(false)}>
+          <div className="practice-achievements-modal" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="practice-achievements-modal__close"
+              onClick={() => setIsPracticeAchievementsVisible(false)}
+              aria-label="Close achievements"
+            >
+              &times;
+            </button>
+            <GamificationPanel
+              inline
+              user={user}
+              onUserUpdate={handleUserUpdate}
+            />
+          </div>
+        </div>
       )}
 
     </div>
