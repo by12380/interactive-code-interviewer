@@ -1,13 +1,14 @@
 import { memo, useEffect, useRef } from "react";
 
-function ConsolePanel({ logs, onClear, isRunning }) {
+function ConsolePanel({ logs, onClear, isRunning, isOpen, onToggle }) {
   const logsEndRef = useRef(null);
 
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
+    if (isOpen) {
+      logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [logs, isOpen]);
 
-  // Announce errors to screen readers
   useEffect(() => {
     const errorLogs = logs.filter(log => log.type === "error");
     if (errorLogs.length > 0) {
@@ -21,31 +22,21 @@ function ConsolePanel({ logs, onClear, isRunning }) {
 
   const getLogClass = (type) => {
     switch (type) {
-      case "error":
-        return "console__log--error";
-      case "warn":
-        return "console__log--warn";
-      case "info":
-        return "console__log--info";
-      case "result":
-        return "console__log--result";
-      default:
-        return "";
+      case "error": return "console__log--error";
+      case "warn": return "console__log--warn";
+      case "info": return "console__log--info";
+      case "result": return "console__log--result";
+      default: return "";
     }
   };
 
-  const getLogAriaLabel = (type) => {
+  const getLogPrefix = (type) => {
     switch (type) {
-      case "error":
-        return "Error";
-      case "warn":
-        return "Warning";
-      case "info":
-        return "Info";
-      case "result":
-        return "Return value";
-      default:
-        return "Log";
+      case "error": return "✕";
+      case "warn": return "⚠";
+      case "result": return "←";
+      case "info": return "ℹ";
+      default: return "›";
     }
   };
 
@@ -53,83 +44,107 @@ function ConsolePanel({ logs, onClear, isRunning }) {
     if (value === undefined) return "undefined";
     if (value === null) return "null";
     if (typeof value === "object") {
-      try {
-        return JSON.stringify(value, null, 2);
-      } catch {
-        return String(value);
-      }
+      try { return JSON.stringify(value, null, 2); }
+      catch { return String(value); }
     }
     return String(value);
   };
 
   const errorCount = logs.filter(l => l.type === "error").length;
-  const warnCount = logs.filter(l => l.type === "warn").length;
 
   return (
-    <section 
-      className="panel panel--console"
+    <section
+      className={`console-panel ${isOpen ? "console-panel--open" : "console-panel--closed"}`}
       aria-labelledby="console-heading"
       role="region"
     >
-      <div className="panel__header panel__header--console" id="console-heading">
-        <span>
-          Console
+      <div
+        className="console-panel__bar"
+        id="console-heading"
+        onClick={onToggle}
+        role="button"
+        tabIndex={0}
+        aria-expanded={isOpen}
+        aria-label={isOpen ? "Collapse console" : "Expand console"}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
+      >
+        <div className="console-panel__bar-left">
+          <span className="console-panel__chevron">{isOpen ? "▼" : "▲"}</span>
+          <span className="console-panel__title">Terminal</span>
+          {isRunning && <span className="console-panel__running-dot" />}
           {errorCount > 0 && (
-            <span className="console__error-count" aria-label={`${errorCount} error${errorCount > 1 ? "s" : ""}`}>
-              {" "}({errorCount} {errorCount === 1 ? "error" : "errors"})
+            <span className="console-panel__error-badge">
+              {errorCount}
             </span>
           )}
-        </span>
-        <div className="panel__actions">
+          {!isOpen && logs.length > 0 && !isRunning && errorCount === 0 && (
+            <span className="console-panel__preview">
+              {logs[logs.length - 1] ? formatValue(logs[logs.length - 1].value).substring(0, 60) : ""}
+            </span>
+          )}
+        </div>
+        <div className="console-panel__bar-right" onClick={(e) => e.stopPropagation()}>
+          {isOpen && (
+            <button
+              type="button"
+              className="console-panel__action"
+              onClick={onClear}
+              disabled={logs.length === 0}
+              aria-label="Clear console"
+              title="Clear"
+            >
+              Clear
+            </button>
+          )}
           <button
             type="button"
-            className="panel__action-button"
-            onClick={onClear}
-            disabled={logs.length === 0}
-            aria-label="Clear console output"
+            className="console-panel__action console-panel__action--toggle"
+            onClick={onToggle}
+            aria-label={isOpen ? "Minimize console" : "Open console"}
+            title={isOpen ? "Minimize" : "Open"}
           >
-            Clear
+            {isOpen ? "—" : "□"}
           </button>
         </div>
       </div>
-      <div 
-        className="console__output"
-        role="log"
-        aria-live="polite"
-        aria-label={`Console output. ${logs.length} ${logs.length === 1 ? "entry" : "entries"}${errorCount > 0 ? `, ${errorCount} ${errorCount === 1 ? "error" : "errors"}` : ""}${warnCount > 0 ? `, ${warnCount} ${warnCount === 1 ? "warning" : "warnings"}` : ""}`}
-        tabIndex={0}
-      >
-        {logs.length === 0 ? (
-          <div className="console__empty" aria-label="Console is empty">
-            Run your code to see output here
-          </div>
-        ) : (
-          logs.map((log, index) => (
-            <div 
-              key={index} 
-              className={`console__log ${getLogClass(log.type)}`}
-              role={log.type === "error" ? "alert" : undefined}
-              aria-label={`${getLogAriaLabel(log.type)}: ${formatValue(log.value).substring(0, 100)}`}
-            >
-              <span className="console__prefix" aria-hidden="true">
-                {log.type === "error" ? "✕" : log.type === "warn" ? "⚠" : log.type === "result" ? "→" : "›"}
-              </span>
-              <pre className="console__content">{formatValue(log.value)}</pre>
+
+      {isOpen && (
+        <div
+          className="console-panel__output"
+          role="log"
+          aria-live="polite"
+          tabIndex={0}
+        >
+          {logs.length === 0 && !isRunning ? (
+            <div className="console-panel__empty">
+              <span className="console-panel__prompt">$</span>
+              <span>Waiting for output...</span>
             </div>
-          ))
-        )}
-        {isRunning && (
-          <div 
-            className="console__log console__log--running"
-            role="status"
-            aria-live="polite"
-          >
-            <span className="console__prefix" aria-hidden="true">⟳</span>
-            <span>Running...</span>
-          </div>
-        )}
-        <div ref={logsEndRef} aria-hidden="true" />
-      </div>
+          ) : (
+            <>
+              {logs.map((log, index) => (
+                <div
+                  key={index}
+                  className={`console-panel__log ${getLogClass(log.type)}`}
+                  role={log.type === "error" ? "alert" : undefined}
+                >
+                  <span className="console-panel__log-prefix" aria-hidden="true">
+                    {getLogPrefix(log.type)}
+                  </span>
+                  <pre className="console-panel__log-content">{formatValue(log.value)}</pre>
+                </div>
+              ))}
+              {isRunning && (
+                <div className="console-panel__log console-panel__log--running">
+                  <span className="console-panel__log-prefix">⟳</span>
+                  <span>Running...</span>
+                </div>
+              )}
+            </>
+          )}
+          <div ref={logsEndRef} aria-hidden="true" />
+        </div>
+      )}
     </section>
   );
 }

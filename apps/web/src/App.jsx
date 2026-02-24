@@ -29,6 +29,7 @@ import FocusModePanel from "./components/FocusModePanel.jsx";
 import SplitScreenPanel from "./components/SplitScreenPanel.jsx";
 import { useTheme } from "./contexts/ThemeContext.jsx";
 import { useFocusMode } from "./contexts/FocusModeContext.jsx";
+import "./styles/candidate.css";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
 import { 
   getCurrentUser, 
@@ -226,7 +227,7 @@ const runTestCases = (code, testCases, problem) => {
 
 export default function App({ mode = "practice" }) {
   const isPracticeMode = mode === "practice";
-  const { accessibility } = useTheme();
+  const { accessibility, theme, toggleTheme } = useTheme();
   const { settings: focusSettings, toggleFocusMode, disableFocusMode } = useFocusMode();
   const { logOut: firebaseLogOut, user: authUser, isAuthenticated } = useAuth();
   const navigate = useNavigate();
@@ -239,9 +240,16 @@ export default function App({ mode = "practice" }) {
   // Achievements modal for practice mode (replaces sidebar achievements)
   const [isPracticeAchievementsVisible, setIsPracticeAchievementsVisible] = useState(false);
 
+  // Practice mode chat drawer (slide-over panel)
+  const [isPracticeChatOpen, setIsPracticeChatOpen] = useState(false);
+
   // Navigation handler
   const handleNavigate = useCallback((screen) => {
     setActiveScreen(screen);
+  }, []);
+
+  const handleTogglePracticeChat = useCallback(() => {
+    setIsPracticeChatOpen(prev => !prev);
   }, []);
 
   // User authentication state
@@ -307,6 +315,7 @@ export default function App({ mode = "practice" }) {
   const [isTutorialVisible, setIsTutorialVisible] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
+  const [isConsoleOpen, setIsConsoleOpen] = useState(false);
   const [showSolution, setShowSolution] = useState(false);
   const [messages, setMessages] = useState([
     {
@@ -354,6 +363,7 @@ export default function App({ mode = "practice" }) {
   // Right panel collapse state
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
 
+  const fmtElapsed = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
   const TOTAL_SECONDS = currentProblem?.timeLimit || 30 * 60;
   const remainingSeconds = Math.max(TOTAL_SECONDS - elapsedSeconds, 0);
   const isTimeUp = isPracticeMode ? false : elapsedSeconds >= TOTAL_SECONDS;
@@ -1440,11 +1450,16 @@ export default function App({ mode = "practice" }) {
     setConsoleLogs([]);
   }, []);
 
+  const handleToggleConsole = useCallback(() => {
+    setIsConsoleOpen(prev => !prev);
+  }, []);
+
   const handleRunCode = useCallback(() => {
     if (isRunning || isEditorDisabled) return;
 
     setIsRunning(true);
     setConsoleLogs([]);
+    setIsConsoleOpen(true);
 
     // Small delay to show the running state
     setTimeout(() => {
@@ -1490,6 +1505,10 @@ export default function App({ mode = "practice" }) {
           type: "error",
           value: `${error.name}: ${error.message}`
         });
+      }
+
+      if (logs.length === 0) {
+        logs.push({ type: "info", value: "Code executed successfully (no output). Use console.log() to see values." });
       }
 
       setConsoleLogs(logs);
@@ -1662,119 +1681,248 @@ export default function App({ mode = "practice" }) {
         {activeScreen === "interview" && (
           <>
             {isPracticeMode ? (
-              <PracticeHeader
-                currentProblemTitle={currentProblem?.title}
-                elapsedSeconds={elapsedSeconds}
-                isLocked={isLocked}
-                onStop={handleStop}
-                user={effectiveUser}
-                onLogout={handleLogout}
-                onOpenProfile={handleOpenProfile}
-                onOpenAchievements={() => setIsPracticeAchievementsVisible(true)}
-              />
-            ) : !shouldHideHeader ? (
-              <Header
-                difficulty={difficulty}
-                isLocked={isLocked}
-                isPaused={isPaused}
-                isTimeUp={isTimeUp}
-                remainingSeconds={remainingSeconds}
-                elapsedSeconds={elapsedSeconds}
-                onDifficultyChange={handleDifficultyChange}
-                onPauseToggle={handlePauseToggle}
-                onStop={handleStop}
-                onLogout={handleLogout}
-                user={effectiveUser}
-                currentProblemTitle={currentProblem?.title}
-                mode={mode}
-              />
-            ) : null}
+              /* Practice mode: CandidateSession-style 2-column layout */
+              <div className="cs-session practice-session">
+                <header className="cs-session__header practice-session__header">
+                  <div className="practice-session__header-left">
+                    <button
+                      type="button"
+                      className="practice-session__back"
+                      onClick={() => navigate("/practice")}
+                      aria-label="Back to practice dashboard"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M19 12H5" />
+                        <polyline points="12 19 5 12 12 5" />
+                      </svg>
+                      Back
+                    </button>
+                    <h2>{currentProblem?.title || "Select a problem"}</h2>
+                    {currentProblem?.difficulty && (
+                      <span className={`practice-session__diff practice-session__diff--${currentProblem.difficulty.toLowerCase()}`}>
+                        {currentProblem.difficulty}
+                      </span>
+                    )}
+                  </div>
+                  <div className="cs-session__meta practice-session__header-right">
+                    <span className="practice-session__timer-display">
+                      {fmtElapsed(elapsedSeconds)}
+                    </span>
+                    <button
+                      type="button"
+                      className={`practice-session__hdr-btn ${isPracticeChatOpen ? "practice-session__hdr-btn--active" : ""}`}
+                      onClick={handleTogglePracticeChat}
+                      aria-label={isPracticeChatOpen ? "Hide AI chat" : "Show AI chat"}
+                    >
+                      &#x1F4AC; {isPracticeChatOpen ? "Hide Chat" : "AI Chat"}
+                    </button>
+                    <button
+                      type="button"
+                      className="practice-session__hdr-btn"
+                      onClick={toggleTheme}
+                      aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+                    >
+                      {theme === "light" ? "\u{1F319}" : "\u2600\uFE0F"}
+                    </button>
+                    <button
+                      type="button"
+                      className="practice-session__hdr-btn"
+                      onClick={() => setIsPracticeAchievementsVisible(true)}
+                      aria-label="Achievements"
+                    >
+                      &#x1F3C6;
+                    </button>
+                    {effectiveUser && (
+                      <button
+                        type="button"
+                        className="practice-session__avatar"
+                        onClick={handleOpenProfile}
+                        aria-label="Open profile"
+                      >
+                        {(effectiveUser.username || effectiveUser.email || "U").charAt(0).toUpperCase()}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="practice-session__finish-btn"
+                      onClick={handleStop}
+                      disabled={isLocked}
+                    >
+                      {isLocked ? "Completed" : "Finish"}
+                    </button>
+                  </div>
+                </header>
 
-            <main className={`app__main ${isZenMode ? "app__main--zen" : ""} ${shouldHideProblem && !isZenMode ? "app__main--no-problem" : ""} ${shouldHideChat && !isZenMode ? "app__main--no-chat" : ""} ${isRightPanelCollapsed && !shouldHideChat && !isZenMode ? "app__main--right-collapsed" : ""}`} id="main-content" role="main">
-              {!isZenMode && !shouldHideProblem && (
-                <div className="app__problem-section" id="problem-panel">
-                  <ProblemPanel
-                    problem={currentProblem}
-                    hintsRevealed={hintsRevealed}
-                    onRevealHint={handleRevealHint}
-                    showSolution={showSolution}
-                    onShowSolution={handleShowSolution}
-                    isCompleted={isCompleted}
-                  />
+                <div className="cs-session__body" id="main-content" role="main">
+                  <aside className="cs-session__problem practice-session__problem" id="problem-panel">
+                    <ProblemPanel
+                      problem={currentProblem}
+                      hintsRevealed={hintsRevealed}
+                      onRevealHint={handleRevealHint}
+                      showSolution={showSolution}
+                      onShowSolution={handleShowSolution}
+                      isCompleted={isCompleted}
+                    />
+                  </aside>
+                  <main className="cs-session__editor practice-session__editor" id="editor-panel">
+                    <EditorPanel
+                      canUndo={canUndo}
+                      canRedo={canRedo}
+                      isEditorDisabled={isEditorDisabled}
+                      isRunning={isRunning}
+                      onUndo={handleUndo}
+                      onRedo={handleRedo}
+                      onRun={handleRunCode}
+                      onEditorMount={handleEditorMount}
+                      onCodeChange={handleEditorChange}
+                      editorOptions={editorOptions}
+                      code={code}
+                      interviewerHint={editorHint}
+                      onDismissHint={handleDismissEditorHint}
+                      onRecordCursorMove={handleRecordCursorMove}
+                      onRecordSelection={handleRecordSelection}
+                      isRecording={!!replaySession && !isLocked}
+                    />
+                    <ConsolePanel
+                      logs={consoleLogs}
+                      onClear={handleClearConsole}
+                      isRunning={isRunning}
+                      isOpen={isConsoleOpen}
+                      onToggle={handleToggleConsole}
+                    />
+                  </main>
                 </div>
-              )}
-              <div className={`app__editor-section ${isZenMode ? "app__editor-section--zen" : ""}`} id="editor-panel">
-                <EditorPanel
-                  canUndo={canUndo}
-                  canRedo={canRedo}
-                  isEditorDisabled={isEditorDisabled}
-                  isRunning={isRunning}
-                  onUndo={handleUndo}
-                  onRedo={handleRedo}
-                  onRun={handleRunCode}
-                  onEditorMount={handleEditorMount}
-                  onCodeChange={handleEditorChange}
-                  editorOptions={editorOptions}
-                  code={code}
-                  interviewerHint={editorHint}
-                  onDismissHint={handleDismissEditorHint}
-                  onRecordCursorMove={handleRecordCursorMove}
-                  onRecordSelection={handleRecordSelection}
-                  isRecording={!!replaySession && !isLocked}
-                />
-                {!isZenMode && (
-                  <ConsolePanel
-                    logs={consoleLogs}
-                    onClear={handleClearConsole}
-                    isRunning={isRunning}
-                  />
+
+                {isPracticeChatOpen && (
+                  <div className="practice-session__chat-overlay" onClick={handleTogglePracticeChat}>
+                    <div className="practice-session__chat-drawer" onClick={(e) => e.stopPropagation()}>
+                      <div className="practice-session__chat-drawer-header">
+                        <h3>AI Assistant</h3>
+                        <button type="button" onClick={handleTogglePracticeChat} aria-label="Close chat">&times;</button>
+                      </div>
+                      <ChatPanel
+                        messages={messages}
+                        input={input}
+                        isLocked={isLocked}
+                        isPaused={isPaused}
+                        isSending={isSending}
+                        onInputChange={handleInputChange}
+                        onKeyDown={handleInputKeyDown}
+                        onSend={handleSend}
+                      />
+                    </div>
+                  </div>
                 )}
               </div>
-              {!shouldHideChat && !isZenMode && (
-                <div className={`app__sidebar ${isRightPanelCollapsed ? "app__sidebar--collapsed" : ""}`} id="chat-panel">
-                  <button
-                    type="button"
-                    className="app__sidebar-collapse-btn"
-                    onClick={handleToggleRightPanel}
-                    aria-label={isRightPanelCollapsed ? "Expand right panel" : "Collapse right panel"}
-                    title={isRightPanelCollapsed ? "Expand (AI Interview, Metrics)" : "Collapse right panel"}
-                  >
-                    {isRightPanelCollapsed ? "\u25C0" : "\u25B6"}
-                  </button>
-                  {isRightPanelCollapsed && (
-                    <span className="app__sidebar-collapsed-label">Chat &amp; Metrics</span>
+            ) : (
+              <>
+                {!shouldHideHeader && (
+                  <Header
+                    difficulty={difficulty}
+                    isLocked={isLocked}
+                    isPaused={isPaused}
+                    isTimeUp={isTimeUp}
+                    remainingSeconds={remainingSeconds}
+                    elapsedSeconds={elapsedSeconds}
+                    onDifficultyChange={handleDifficultyChange}
+                    onPauseToggle={handlePauseToggle}
+                    onStop={handleStop}
+                    onLogout={handleLogout}
+                    user={effectiveUser}
+                    currentProblemTitle={currentProblem?.title}
+                    mode={mode}
+                  />
+                )}
+
+                <main className={`app__main ${isZenMode ? "app__main--zen" : ""} ${shouldHideProblem && !isZenMode ? "app__main--no-problem" : ""} ${shouldHideChat && !isZenMode ? "app__main--no-chat" : ""} ${isRightPanelCollapsed && !shouldHideChat && !isZenMode ? "app__main--right-collapsed" : ""}`} id="main-content" role="main">
+                  {!isZenMode && !shouldHideProblem && (
+                    <div className="app__problem-section" id="problem-panel">
+                      <ProblemPanel
+                        problem={currentProblem}
+                        hintsRevealed={hintsRevealed}
+                        onRevealHint={handleRevealHint}
+                        showSolution={showSolution}
+                        onShowSolution={handleShowSolution}
+                        isCompleted={isCompleted}
+                      />
+                    </div>
                   )}
-                  <div className="app__sidebar-content">
-                    <ChatPanel
-                      messages={messages}
-                      input={input}
-                      isLocked={isLocked}
-                      isPaused={isPaused}
-                      isSending={isSending}
-                      onInputChange={handleInputChange}
-                      onKeyDown={handleInputKeyDown}
-                      onSend={handleSend}
+                  <div className={`app__editor-section ${isZenMode ? "app__editor-section--zen" : ""}`} id="editor-panel">
+                    <EditorPanel
+                      canUndo={canUndo}
+                      canRedo={canRedo}
+                      isEditorDisabled={isEditorDisabled}
+                      isRunning={isRunning}
+                      onUndo={handleUndo}
+                      onRedo={handleRedo}
+                      onRun={handleRunCode}
+                      onEditorMount={handleEditorMount}
+                      onCodeChange={handleEditorChange}
+                      editorOptions={editorOptions}
+                      code={code}
+                      interviewerHint={editorHint}
+                      onDismissHint={handleDismissEditorHint}
+                      onRecordCursorMove={handleRecordCursorMove}
+                      onRecordSelection={handleRecordSelection}
+                      isRecording={!!replaySession && !isLocked}
                     />
-                    {!shouldHideMetrics && (
-                      <SessionMetrics
-                        hintsUsed={hintsUsed}
-                        testsPassed={testsPassed}
-                        testsTotal={testsTotal}
-                        testResults={testResults}
-                        efficiency={efficiency}
-                        efficiencyNote={efficiencyNote}
-                        testsNote={testsNote}
-                        isLocked={isLocked}
-                        onEvaluateEfficiency={handleEvaluateEfficiency}
-                        onRunTests={handleRunTests}
-                        onComplete={handleStop}
-                        mode={mode}
+                    {!isZenMode && (
+                      <ConsolePanel
+                        logs={consoleLogs}
+                        onClear={handleClearConsole}
+                        isRunning={isRunning}
+                        isOpen={true}
+                        onToggle={() => {}}
                       />
                     )}
                   </div>
-                </div>
-              )}
-            </main>
+                  {!shouldHideChat && !isZenMode && (
+                    <div className={`app__sidebar ${isRightPanelCollapsed ? "app__sidebar--collapsed" : ""}`} id="chat-panel">
+                      <button
+                        type="button"
+                        className="app__sidebar-collapse-btn"
+                        onClick={handleToggleRightPanel}
+                        aria-label={isRightPanelCollapsed ? "Expand right panel" : "Collapse right panel"}
+                        title={isRightPanelCollapsed ? "Expand (AI Interview, Metrics)" : "Collapse right panel"}
+                      >
+                        {isRightPanelCollapsed ? "\u25C0" : "\u25B6"}
+                      </button>
+                      {isRightPanelCollapsed && (
+                        <span className="app__sidebar-collapsed-label">Chat &amp; Metrics</span>
+                      )}
+                      <div className="app__sidebar-content">
+                        <ChatPanel
+                          messages={messages}
+                          input={input}
+                          isLocked={isLocked}
+                          isPaused={isPaused}
+                          isSending={isSending}
+                          onInputChange={handleInputChange}
+                          onKeyDown={handleInputKeyDown}
+                          onSend={handleSend}
+                        />
+                        {!shouldHideMetrics && (
+                          <SessionMetrics
+                            hintsUsed={hintsUsed}
+                            testsPassed={testsPassed}
+                            testsTotal={testsTotal}
+                            testResults={testResults}
+                            efficiency={efficiency}
+                            efficiencyNote={efficiencyNote}
+                            testsNote={testsNote}
+                            isLocked={isLocked}
+                            onEvaluateEfficiency={handleEvaluateEfficiency}
+                            onRunTests={handleRunTests}
+                            onComplete={handleStop}
+                            mode={mode}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </main>
+              </>
+            )}
           </>
         )}
 

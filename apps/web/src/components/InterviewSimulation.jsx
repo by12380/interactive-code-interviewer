@@ -1004,6 +1004,8 @@ export default function InterviewSimulation({
                 logs={consoleLogs}
                 onClear={handleClearConsole}
                 isRunning={isRunning}
+                isOpen={true}
+                onToggle={() => {}}
               />
             </div>
             <div className="interview-sim__chat-area">
