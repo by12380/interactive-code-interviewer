@@ -13,6 +13,8 @@ function EditorPanel({
   onUndo,
   onRedo,
   onRun,
+  onSave,
+  saveStatus,
   onEditorMount,
   onCodeChange,
   editorOptions,
@@ -334,6 +336,23 @@ function EditorPanel({
       <div className="panel__header panel__header--editor" id="editor-heading">
         <span>Code Editor</span>
         <div className="panel__actions" role="toolbar" aria-label="Editor actions">
+          {onSave && (
+            <button
+              type="button"
+              className={`panel__action-button panel__action-button--save ${saveStatus === "saved" ? "panel__action-button--save-ok" : ""}`}
+              onClick={onSave}
+              disabled={isEditorDisabled || saveStatus === "saving"}
+              aria-label={saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Code saved" : "Save code (Ctrl+S)"}
+              title="Save (⌘/Ctrl+S)"
+            >
+              <span aria-hidden="true">
+                {saveStatus === "saving" ? "⏳" : saveStatus === "saved" ? "✓" : "💾"}
+              </span>
+              <span>
+                {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved" : "Save"}
+              </span>
+            </button>
+          )}
           <button
             type="button"
             className="panel__action-button panel__action-button--run"

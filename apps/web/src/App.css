@@ -1327,6 +1327,28 @@ textarea {
 }
 
 /* Console Panel Styles */
+.panel__action-button--save {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+  border-color: #2563eb;
+  transition: background 0.2s, box-shadow 0.2s, opacity 0.2s;
+}
+
+.panel__action-button--save:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 8px 14px rgba(59, 130, 246, 0.22);
+}
+
+.panel__action-button--save-ok {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  border-color: #16a34a;
+}
+
+.panel__action-button--save-ok:hover:not(:disabled) {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  box-shadow: 0 8px 14px rgba(34, 197, 94, 0.22);
+}
+
 .panel__action-button--run {
   background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
   color: #ffffff;
@@ -19941,6 +19963,139 @@ body.theme-dark .interview-hub__name-btn--ghost:hover {
   color: var(--primary);
 }
 
+/* Resume Where You Left Off */
+.practice-dash__resume {
+  margin-bottom: 32px;
+}
+
+.practice-dash__resume-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.practice-dash__resume-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%);
+  border-radius: 14px;
+  padding: 16px 20px;
+  border: 1px solid #bfdbfe;
+  border-left: 4px solid #3b82f6;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+  width: 100%;
+}
+
+.practice-dash__resume-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.12);
+  border-color: #93c5fd;
+}
+
+.practice-dash__resume-icon-col {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  font-size: 18px;
+}
+
+.practice-dash__resume-icon {
+  filter: grayscale(1) brightness(10);
+}
+
+.practice-dash__resume-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.practice-dash__resume-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.practice-dash__resume-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.practice-dash__resume-diff {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.practice-dash__resume-diff--easy {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.practice-dash__resume-diff--medium {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.practice-dash__resume-diff--hard {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.practice-dash__resume-solved {
+  font-size: 11px;
+  font-weight: 600;
+  color: #16a34a;
+  background: #dcfce7;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+
+.practice-dash__resume-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.practice-dash__resume-cat {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.practice-dash__resume-time {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.practice-dash__resume-arrow {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3b82f6;
+  white-space: nowrap;
+  transition: transform 0.15s;
+}
+
+.practice-dash__resume-card:hover .practice-dash__resume-arrow {
+  transform: translateX(4px);
+}
+
 /* Filters */
 .practice-dash__filters {
   display: flex;
@@ -21141,6 +21296,37 @@ body.theme-dark .practice-dash__filter-chip {
 body.theme-dark .practice-dash__filter-chip:hover {
   color: #e2e8f0;
   border-color: #475569;
+}
+
+body.theme-dark .practice-dash__resume-card {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, #1e293b 100%);
+  border-color: #334155;
+  border-left-color: #3b82f6;
+}
+
+body.theme-dark .practice-dash__resume-card:hover {
+  border-color: #475569;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+}
+
+body.theme-dark .practice-dash__resume-title {
+  color: #f1f5f9;
+}
+
+body.theme-dark .practice-dash__resume-cat {
+  color: #94a3b8;
+}
+
+body.theme-dark .practice-dash__resume-time {
+  color: #64748b;
+}
+
+body.theme-dark .practice-dash__resume-arrow {
+  color: #60a5fa;
+}
+
+body.theme-dark .practice-dash__resume-icon-col {
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
 }
 
 body.theme-dark .practice-dash__problem-card {

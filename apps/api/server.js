@@ -900,6 +900,70 @@ app.post("/api/sessions/:sid/end", async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
+//  SAVED CODE (persist user progress per problem)
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/saved-code", async (req, res) => {
+  const { userId, problemId, code, language } = req.body || {};
+  if (!userId || !problemId) return res.status(400).send("userId and problemId required.");
+
+  try {
+    const docId = `${userId}_${problemId}`;
+    await withTimeout(setDoc(doc(db, "savedCode", docId), {
+      userId,
+      problemId,
+      code: code ?? "",
+      language: language || "javascript",
+      savedAt: new Date().toISOString(),
+    }));
+    res.json({ ok: true, savedAt: new Date().toISOString() });
+  } catch (e) {
+    console.error("POST /api/saved-code error:", e);
+    res.status(500).send(e.message);
+  }
+});
+
+app.get("/api/saved-code/:userId", async (req, res) => {
+  const { userId } = req.params;
+  try {
+    const q = query(collection(db, "savedCode"), where("userId", "==", userId));
+    const snap = await withTimeout(getDocs(q));
+    const items = [];
+    snap.forEach((d) => items.push({ id: d.id, ...d.data() }));
+    items.sort((a, b) => (b.savedAt || "").localeCompare(a.savedAt || ""));
+    res.json(items);
+  } catch (e) {
+    console.error("GET /api/saved-code/:userId error:", e);
+    res.status(500).send(e.message);
+  }
+});
+
+app.get("/api/saved-code/:userId/:problemId", async (req, res) => {
+  const { userId, problemId } = req.params;
+  try {
+    const docId = `${userId}_${problemId}`;
+    const snap = await withTimeout(getDoc(doc(db, "savedCode", docId)));
+    if (!snap.exists()) return res.json({ code: null, savedAt: null });
+    res.json(snap.data());
+  } catch (e) {
+    console.error("GET /api/saved-code error:", e);
+    res.status(500).send(e.message);
+  }
+});
+
+app.delete("/api/saved-code/:userId/:problemId", async (req, res) => {
+  const { userId, problemId } = req.params;
+  try {
+    const docId = `${userId}_${problemId}`;
+    await withTimeout(deleteDoc(doc(db, "savedCode", docId)));
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("DELETE /api/saved-code error:", e);
+    res.status(500).send(e.message);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
 //  INLINE CODE HINTS (IDE-style real-time analysis)
 // ═══════════════════════════════════════════════════════════════════
 

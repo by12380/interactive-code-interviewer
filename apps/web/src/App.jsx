@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext.jsx";
-import { sendChat, getCodeHints } from "./api.js";
+import { sendChat, getCodeHints, saveUserCode, loadUserCode } from "./api.js";
 import Header from "./components/Header.jsx";
 import PracticeHeader from "./components/PracticeHeader.jsx";
 import Sidebar from "./components/Sidebar.jsx";
@@ -360,6 +360,10 @@ export default function App({ mode = "practice" }) {
   // Split Screen Multi-Problem state
   const [isSplitScreenVisible, setIsSplitScreenVisible] = useState(false);
 
+  // Save progress state: "idle" | "saving" | "saved" | "error"
+  const [saveStatus, setSaveStatus] = useState("idle");
+  const saveStatusTimerRef = useRef(null);
+
   // Right panel collapse state
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
 
@@ -452,6 +456,41 @@ export default function App({ mode = "practice" }) {
     setIsSplitScreenVisible(false);
   }, []);
 
+  // Save code progress to the backend
+  const handleSaveCode = useCallback(async () => {
+    const userId = effectiveUser?.id || authUser?.uid;
+    if (!userId || !currentProblemId) return;
+
+    setSaveStatus("saving");
+    if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
+
+    try {
+      await saveUserCode({ userId, problemId: currentProblemId, code });
+      setSaveStatus("saved");
+      saveStatusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2500);
+    } catch (e) {
+      console.error("Save failed:", e);
+      setSaveStatus("error");
+      saveStatusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 3000);
+    }
+  }, [effectiveUser, authUser, currentProblemId, code]);
+
+  // Load saved code when switching to a problem
+  const loadSavedCodeForProblem = useCallback(async (problemId, fallbackCode) => {
+    const userId = effectiveUser?.id || authUser?.uid;
+    if (!userId) return fallbackCode;
+
+    try {
+      const data = await loadUserCode({ userId, problemId });
+      if (data?.code != null && data.code !== "") {
+        return data.code;
+      }
+    } catch {
+      // Silently fall back to starter code
+    }
+    return fallbackCode;
+  }, [effectiveUser, authUser]);
+
   const editorOptions = useMemo(
     () => ({
       minimap: { enabled: false },
@@ -510,6 +549,24 @@ export default function App({ mode = "practice" }) {
       setReplaySession(createRecordingSession(currentProblem.id, currentProblem.starterCode));
     }
   }, [currentProblem, replaySession, isLocked]);
+
+  // Load saved code on initial mount (only once)
+  const hasLoadedSavedCodeRef = useRef(false);
+  useEffect(() => {
+    if (hasLoadedSavedCodeRef.current) return;
+    if (!currentProblem) return;
+    const userId = effectiveUser?.id || authUser?.uid;
+    if (!userId) return;
+
+    hasLoadedSavedCodeRef.current = true;
+    loadSavedCodeForProblem(currentProblem.id, currentProblem.starterCode).then(
+      (savedCode) => {
+        if (savedCode !== currentProblem.starterCode) {
+          setCode(savedCode);
+        }
+      }
+    );
+  }, [currentProblem, effectiveUser, authUser, loadSavedCodeForProblem]);
 
   // Toast helper function
   const addToast = useCallback((toast) => {
@@ -1328,6 +1385,13 @@ export default function App({ mode = "practice" }) {
     
     setCurrentProblemId(problemId);
     setCode(problem.starterCode);
+    setSaveStatus("idle");
+
+    // Attempt to load any previously saved code for this problem
+    loadSavedCodeForProblem(problemId, problem.starterCode).then((savedCode) => {
+      setCode(savedCode);
+    });
+
     setHintsRevealed(0);
     setHintsUsed(0);
     setTestsPassed(0);
@@ -1374,7 +1438,7 @@ export default function App({ mode = "practice" }) {
       const best = getPersonalBest(problemId);
       setPersonalBest(best);
     }
-  }, [isLocked, user, initializeReplayRecording]);
+  }, [isLocked, user, initializeReplayRecording, loadSavedCodeForProblem]);
 
   const handleRevealHint = useCallback((hintNumber) => {
     if (!currentProblem || hintNumber > currentProblem.hints.length) return;
@@ -1516,9 +1580,14 @@ export default function App({ mode = "practice" }) {
     }, 100);
   }, [code, isRunning, isEditorDisabled]);
 
-  // Add keyboard shortcut for running code and focus mode
+  // Add keyboard shortcuts for running code, saving, and focus mode
   useEffect(() => {
     const handleKeyDown = (event) => {
+      // Ctrl/Cmd + S to save code
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s" && !event.shiftKey) {
+        event.preventDefault();
+        handleSaveCode();
+      }
       // Ctrl/Cmd + Enter to run code
       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
         event.preventDefault();
@@ -1538,7 +1607,7 @@ export default function App({ mode = "practice" }) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleRunCode, toggleFocusMode, disableFocusMode, focusSettings.isEnabled]);
+  }, [handleRunCode, handleSaveCode, toggleFocusMode, disableFocusMode, focusSettings.isEnabled]);
 
   const timeScore = useMemo(
     () => getTimeScore(elapsedSeconds, TOTAL_SECONDS),
@@ -1773,6 +1842,8 @@ export default function App({ mode = "practice" }) {
                       onUndo={handleUndo}
                       onRedo={handleRedo}
                       onRun={handleRunCode}
+                      onSave={effectiveUser ? handleSaveCode : undefined}
+                      saveStatus={saveStatus}
                       onEditorMount={handleEditorMount}
                       onCodeChange={handleEditorChange}
                       editorOptions={editorOptions}
@@ -1856,6 +1927,8 @@ export default function App({ mode = "practice" }) {
                       onUndo={handleUndo}
                       onRedo={handleRedo}
                       onRun={handleRunCode}
+                      onSave={effectiveUser ? handleSaveCode : undefined}
+                      saveStatus={saveStatus}
                       onEditorMount={handleEditorMount}
                       onCodeChange={handleEditorChange}
                       editorOptions={editorOptions}

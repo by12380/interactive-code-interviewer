@@ -38,6 +38,54 @@ export async function getCodeHints({ code, problemTitle, problemDescription, sta
 }
 
 /**
+ * Save user code progress for a specific problem
+ */
+export async function saveUserCode({ userId, problemId, code, language = "javascript" }) {
+  const response = await fetch("/api/saved-code", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userId, problemId, code, language })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || "Save failed");
+  }
+
+  return response.json();
+}
+
+/**
+ * Load previously saved code for a user + problem combination.
+ * Returns { code, savedAt, ... } or { code: null } if nothing saved.
+ */
+export async function loadUserCode({ userId, problemId }) {
+  const response = await fetch(`/api/saved-code/${encodeURIComponent(userId)}/${encodeURIComponent(problemId)}`);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || "Load failed");
+  }
+
+  return response.json();
+}
+
+/**
+ * List all saved code entries for a user (for the "Resume" dashboard section).
+ * Returns an array of { userId, problemId, code, savedAt, language }.
+ */
+export async function listUserSavedCode({ userId }) {
+  const response = await fetch(`/api/saved-code/${encodeURIComponent(userId)}`);
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || "Failed to load saved code list");
+  }
+
+  return response.json();
+}
+
+/**
  * Translate code between programming languages
  * @param {Object} params - Translation parameters
  * @param {string} params.code - Source code to translate

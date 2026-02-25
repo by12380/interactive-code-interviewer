@@ -23,7 +23,21 @@ import {
 } from "../services/userService.js";
 import GamificationPanel from "../components/GamificationPanel.jsx";
 import UserProfile from "../components/UserProfile.jsx";
-import { PROBLEMS } from "../data/problems.js";
+import { PROBLEMS, getProblemById } from "../data/problems.js";
+import { listUserSavedCode } from "../api.js";
+
+function getTimeAgo(date) {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString();
+}
 
 const ONBOARDING_QUESTIONS = [
   {
@@ -105,6 +119,9 @@ export default function PracticeDashboard() {
   const [activeCategory, setActiveCategory] = useState("all");
   const [activeDifficulty, setActiveDifficulty] = useState("all");
 
+  // Saved code (resume) entries
+  const [savedEntries, setSavedEntries] = useState([]);
+
   // Gamification data
   const gamification = user?.gamification || {};
   const xp = gamification.xp || 0;
@@ -145,6 +162,32 @@ export default function PracticeDashboard() {
 
   const categories = useMemo(() => [...new Set(PROBLEMS.map((p) => p.category))], []);
   const difficulties = ["Easy", "Medium", "Hard"];
+
+  // Fetch saved code entries so we can show "Resume" cards
+  useEffect(() => {
+    const userId = effectiveUser?.id || authUser?.uid;
+    if (!userId) return;
+
+    let cancelled = false;
+    listUserSavedCode({ userId })
+      .then((items) => {
+        if (cancelled) return;
+        // Resolve each entry to its problem metadata
+        const resolved = items
+          .map((entry) => {
+            const problem = getProblemById(entry.problemId);
+            if (!problem) return null;
+            return { ...entry, problem };
+          })
+          .filter(Boolean);
+        setSavedEntries(resolved);
+      })
+      .catch(() => {
+        // Silently ignore — user just won't see resume cards
+      });
+
+    return () => { cancelled = true; };
+  }, [effectiveUser, authUser]);
 
   // Handlers
   const handleOnboardingAnswer = useCallback((questionId, value) => {
@@ -553,6 +596,48 @@ export default function PracticeDashboard() {
                       </div>
                     </div>
                     <span className="practice-dash__rec-arrow">&rarr;</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* Resume Where You Left Off */}
+        {savedEntries.length > 0 && (
+          <section className="practice-dash__resume">
+            <div className="practice-dash__section-header">
+              <h2>Resume Where You Left Off</h2>
+            </div>
+            <div className="practice-dash__resume-grid">
+              {savedEntries.map((entry) => {
+                const isCompleted = problemsCompleted.includes(entry.problemId);
+                const savedDate = new Date(entry.savedAt);
+                const timeAgo = getTimeAgo(savedDate);
+                return (
+                  <button
+                    key={entry.problemId}
+                    type="button"
+                    className="practice-dash__resume-card"
+                    onClick={() => handleStartProblem(entry.problemId)}
+                  >
+                    <div className="practice-dash__resume-icon-col">
+                      <span className="practice-dash__resume-icon">&#x1F4DD;</span>
+                    </div>
+                    <div className="practice-dash__resume-body">
+                      <div className="practice-dash__resume-title-row">
+                        <h3 className="practice-dash__resume-title">{entry.problem.title}</h3>
+                        <span className={`practice-dash__resume-diff practice-dash__resume-diff--${entry.problem.difficulty.toLowerCase()}`}>
+                          {entry.problem.difficulty}
+                        </span>
+                        {isCompleted && <span className="practice-dash__resume-solved">Solved</span>}
+                      </div>
+                      <div className="practice-dash__resume-meta">
+                        <span className="practice-dash__resume-cat">{entry.problem.category}</span>
+                        <span className="practice-dash__resume-time">Saved {timeAgo}</span>
+                      </div>
+                    </div>
+                    <span className="practice-dash__resume-arrow">Resume &rarr;</span>
                   </button>
                 );
               })}
