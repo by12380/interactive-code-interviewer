@@ -1,7 +1,7 @@
 // Firebase client-side configuration
 // Replace with your own Firebase project config before deploying.
 import { initializeApp } from "firebase/app";
-import { getAuth, connectAuthEmulator, browserSessionPersistence, setPersistence } from "firebase/auth";
+import { getAuth, connectAuthEmulator, browserLocalPersistence, setPersistence } from "firebase/auth";
 import { getFirestore, connectFirestoreEmulator } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -17,10 +17,7 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-// Use session persistence so the login page always shows on fresh visits.
-// The session survives page refreshes within the same tab but clears when
-// the browser / tab is closed, ensuring users see login on next launch.
-setPersistence(auth, browserSessionPersistence).catch(() => {
+setPersistence(auth, browserLocalPersistence).catch(() => {
   // Fallback: default persistence will be used
 });
 
