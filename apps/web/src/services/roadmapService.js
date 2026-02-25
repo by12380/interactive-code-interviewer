@@ -41,28 +41,12 @@ export const ASSESSMENT_QUESTIONS = [
     difficulty: 'easy'
   },
   {
-    id: 'q2',
-    category: 'arrays-hashing',
-    question: 'Which data structure is best for finding duplicate elements in O(n) time?',
-    options: ['Array', 'Hash Set', 'Linked List', 'Binary Tree'],
-    correct: 1,
-    difficulty: 'easy'
-  },
-  {
     id: 'q3',
     category: 'binary-search',
     question: 'Binary search works on which type of data?',
     options: ['Unsorted data', 'Sorted data', 'Any data', 'Only integers'],
     correct: 1,
     difficulty: 'easy'
-  },
-  {
-    id: 'q4',
-    category: 'binary-search',
-    question: 'What is the time complexity of binary search?',
-    options: ['O(n)', 'O(log n)', 'O(n log n)', 'O(1)'],
-    correct: 1,
-    difficulty: 'medium'
   },
   {
     id: 'q5',
@@ -73,26 +57,10 @@ export const ASSESSMENT_QUESTIONS = [
     difficulty: 'easy'
   },
   {
-    id: 'q6',
-    category: 'linked-lists',
-    question: 'How do you detect a cycle in a linked list efficiently?',
-    options: ['Hash set', 'Two pointers (Floyd\'s)', 'Recursion', 'Both A and B work'],
-    correct: 3,
-    difficulty: 'medium'
-  },
-  {
     id: 'q7',
     category: 'stack',
     question: 'Which principle does a stack follow?',
     options: ['FIFO', 'LIFO', 'Random Access', 'Priority Based'],
-    correct: 1,
-    difficulty: 'easy'
-  },
-  {
-    id: 'q8',
-    category: 'stack',
-    question: 'Which problem type is typically solved using a stack?',
-    options: ['Shortest path', 'Balanced parentheses', 'Sorting', 'Finding median'],
     correct: 1,
     difficulty: 'easy'
   },
@@ -102,14 +70,6 @@ export const ASSESSMENT_QUESTIONS = [
     question: 'What is the time complexity of searching in a balanced BST?',
     options: ['O(n)', 'O(log n)', 'O(1)', 'O(n log n)'],
     correct: 1,
-    difficulty: 'medium'
-  },
-  {
-    id: 'q10',
-    category: 'trees',
-    question: 'Which traversal visits nodes in sorted order for a BST?',
-    options: ['Preorder', 'Postorder', 'Inorder', 'Level order'],
-    correct: 2,
     difficulty: 'medium'
   },
   {
@@ -126,96 +86,12 @@ export const ASSESSMENT_QUESTIONS = [
     difficulty: 'medium'
   },
   {
-    id: 'q12',
-    category: 'dynamic-programming',
-    question: 'What technique reduces time complexity in recursive DP solutions?',
-    options: ['Sorting', 'Memoization', 'Binary Search', 'Hashing'],
-    correct: 1,
-    difficulty: 'medium'
-  },
-  {
     id: 'q13',
     category: 'graphs',
     question: 'Which algorithm finds the shortest path in an unweighted graph?',
     options: ['DFS', 'BFS', 'Dijkstra', 'Bellman-Ford'],
     correct: 1,
     difficulty: 'medium'
-  },
-  {
-    id: 'q14',
-    category: 'graphs',
-    question: 'What is the time complexity of DFS on a graph with V vertices and E edges?',
-    options: ['O(V)', 'O(E)', 'O(V + E)', 'O(V * E)'],
-    correct: 2,
-    difficulty: 'medium'
-  },
-  {
-    id: 'q15',
-    category: 'two-pointers',
-    question: 'When is the two-pointer technique most useful?',
-    options: [
-      'Unsorted arrays',
-      'Sorted arrays or when elements have relationships',
-      'Only for linked lists',
-      'Graph problems'
-    ],
-    correct: 1,
-    difficulty: 'easy'
-  },
-  {
-    id: 'q16',
-    category: 'sliding-window',
-    question: 'What type of problems is the sliding window technique best for?',
-    options: [
-      'Finding shortest path',
-      'Contiguous subarray/substring problems',
-      'Tree traversals',
-      'Sorting'
-    ],
-    correct: 1,
-    difficulty: 'medium'
-  },
-  {
-    id: 'q17',
-    category: 'heap',
-    question: 'What is the time complexity of extracting the minimum from a min-heap?',
-    options: ['O(1)', 'O(log n)', 'O(n)', 'O(n log n)'],
-    correct: 1,
-    difficulty: 'medium'
-  },
-  {
-    id: 'q18',
-    category: 'greedy',
-    question: 'When does a greedy algorithm work correctly?',
-    options: [
-      'Always',
-      'When local optimal choices lead to global optimal',
-      'Only for sorting problems',
-      'When the problem has cycles'
-    ],
-    correct: 1,
-    difficulty: 'medium'
-  },
-  {
-    id: 'q19',
-    category: 'backtracking',
-    question: 'Which problem type typically uses backtracking?',
-    options: [
-      'Sorting arrays',
-      'Finding permutations/combinations',
-      'Hash table operations',
-      'Binary search'
-    ],
-    correct: 1,
-    difficulty: 'medium'
-  },
-  {
-    id: 'q20',
-    category: 'arrays-hashing',
-    question: 'What happens when two keys hash to the same index?',
-    options: ['Error', 'Collision', 'Overflow', 'Underflow'],
-    correct: 1,
-    difficulty: 'easy'
   }
 ];
 
