@@ -225,6 +225,56 @@ export const isLoggedIn = () => {
 };
 
 /**
+ * Bridge a Firebase Auth user into the localStorage user system.
+ * If a localStorage user already exists for this UID, return it (migrated).
+ * Otherwise create a new entry so that onboarding, roadmap, gamification, etc.
+ * are persisted and keyed to the Firebase UID.
+ *
+ * @param {{ uid: string, email?: string, displayName?: string }} firebaseUser
+ * @returns {object} The localStorage user (safe, no passwordHash)
+ */
+export const ensureLocalUser = (firebaseUser) => {
+  if (!firebaseUser?.uid) return null;
+
+  const users = getUsers();
+  let user = users[firebaseUser.uid];
+
+  if (user) {
+    user = migrateUser(user);
+    users[firebaseUser.uid] = user;
+    saveUsers(users);
+    const { passwordHash, ...safeUser } = user;
+    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(safeUser));
+    return safeUser;
+  }
+
+  const newUser = {
+    id: firebaseUser.uid,
+    username: firebaseUser.displayName || firebaseUser.email?.split("@")[0] || "User",
+    email: (firebaseUser.email || "").toLowerCase(),
+    createdAt: new Date().toISOString(),
+    stats: {
+      totalInterviews: 0,
+      problemsAttempted: [],
+      problemsCompleted: [],
+      totalScore: 0,
+      averageScore: 0,
+      bestGrade: null,
+      totalTimeSpent: 0,
+    },
+    interviewHistory: [],
+    personalBests: {},
+    gamification: getDefaultGamificationState(),
+    roadmap: getDefaultRoadmapState(),
+  };
+
+  users[firebaseUser.uid] = newUser;
+  saveUsers(users);
+  localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newUser));
+  return newUser;
+};
+
+/**
  * Save interview result for the current user
  * @param {object} interviewData 
  * @returns {{ success: boolean, error?: string }}
@@ -916,6 +966,7 @@ export default {
   logout,
   getCurrentUser,
   isLoggedIn,
+  ensureLocalUser,
   saveInterviewResult,
   getInterviewHistory,
   getPersonalBest,

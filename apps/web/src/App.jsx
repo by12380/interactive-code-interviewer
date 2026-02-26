@@ -34,6 +34,7 @@ import { PROBLEMS, getProblemById } from "./data/problems.js";
 import { 
   getCurrentUser, 
   logout as logoutUser, 
+  ensureLocalUser,
   saveInterviewResult,
   getPersonalBest,
   updateGamification,
@@ -254,7 +255,19 @@ export default function App({ mode = "practice" }) {
 
   // User authentication state
   // localStorage-based user for gamification/profile features
-  const [user, setUser] = useState(() => getCurrentUser());
+  const [user, setUser] = useState(() => {
+    const local = getCurrentUser();
+    if (local) return local;
+    if (authUser) return ensureLocalUser(authUser);
+    return null;
+  });
+
+  useEffect(() => {
+    if (!user && authUser) {
+      setUser(ensureLocalUser(authUser));
+    }
+  }, [authUser, user]);
+
   // Effective user: prefer localStorage user, fall back to Firebase auth user
   // so the UI (logout button, sidebar avatar) always reflects the signed-in state.
   const effectiveUser = user || (authUser ? {

@@ -20,6 +20,7 @@ import {
 import {
   getCurrentUser,
   logout as logoutUser,
+  ensureLocalUser,
 } from "../services/userService.js";
 import GamificationPanel from "../components/GamificationPanel.jsx";
 import UserProfile from "../components/UserProfile.jsx";
@@ -91,7 +92,19 @@ export default function PracticeDashboard() {
   const { user: authUser, logOut: firebaseLogOut } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
-  const [user, setUser] = useState(() => getCurrentUser());
+  const [user, setUser] = useState(() => {
+    const local = getCurrentUser();
+    if (local) return local;
+    if (authUser) return ensureLocalUser(authUser);
+    return null;
+  });
+
+  useEffect(() => {
+    if (!user && authUser) {
+      setUser(ensureLocalUser(authUser));
+    }
+  }, [authUser, user]);
+
   const effectiveUser = user || (authUser ? {
     id: authUser.uid,
     username: authUser.displayName || authUser.email?.split("@")[0] || "User",
@@ -238,11 +251,12 @@ export default function PracticeDashboard() {
         assessmentDate: new Date().toISOString(),
       };
 
-      const updatedUser = { ...user, roadmap: updatedRoadmap };
+      const baseUser = user || (authUser ? ensureLocalUser(authUser) : null);
+      const updatedUser = { ...baseUser, roadmap: updatedRoadmap };
       localStorage.setItem("code_interviewer_current_user", JSON.stringify(updatedUser));
       const users = JSON.parse(localStorage.getItem("code_interviewer_users") || "{}");
-      if (users[user?.id]) {
-        users[user.id] = { ...users[user.id], roadmap: updatedRoadmap };
+      if (updatedUser.id && users[updatedUser.id]) {
+        users[updatedUser.id] = { ...users[updatedUser.id], roadmap: updatedRoadmap };
         localStorage.setItem("code_interviewer_users", JSON.stringify(users));
       }
 
