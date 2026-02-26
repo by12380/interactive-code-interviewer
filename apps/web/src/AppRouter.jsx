@@ -14,16 +14,14 @@ import CandidateSession from "./pages/CandidateSession.jsx";
 import SessionResults from "./pages/SessionResults.jsx";
 
 export default function AppRouter() {
-  const { isAuthenticated, loading, user } = useAuth();
-
-  const homeRoute = user?.role === "interviewer" ? "/interviewer" : "/";
+  const { isAuthenticated, loading } = useAuth();
 
   return (
     <Routes>
       <Route
         path="/login"
         element={
-          loading ? null : isAuthenticated ? <Navigate to={homeRoute} replace /> : <LoginPage />
+          loading ? null : isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />
         }
       />
 
@@ -53,11 +51,11 @@ export default function AppRouter() {
       {/* Interview hub – public, no account needed to take an interview */}
       <Route path="/interview" element={<InterviewHub />} />
 
-      {/* Interviewer routes – require auth + interviewer role */}
+      {/* Interviewer routes – require auth (any user can host sessions) */}
       <Route
         path="/interviewer"
         element={
-          <ProtectedRoute requiredRole="interviewer">
+          <ProtectedRoute>
             <InterviewerDashboard />
           </ProtectedRoute>
         }
@@ -65,7 +63,7 @@ export default function AppRouter() {
       <Route
         path="/interviewer/create"
         element={
-          <ProtectedRoute requiredRole="interviewer">
+          <ProtectedRoute>
             <SessionCreator />
           </ProtectedRoute>
         }
@@ -73,7 +71,7 @@ export default function AppRouter() {
       <Route
         path="/interviewer/session/:id"
         element={
-          <ProtectedRoute requiredRole="interviewer">
+          <ProtectedRoute>
             <LiveMonitor />
           </ProtectedRoute>
         }
@@ -81,7 +79,7 @@ export default function AppRouter() {
       <Route
         path="/interviewer/results/:id"
         element={
-          <ProtectedRoute requiredRole="interviewer">
+          <ProtectedRoute>
             <SessionResults />
           </ProtectedRoute>
         }

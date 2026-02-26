@@ -111,7 +111,7 @@ export default function SessionCreator() {
               Go to Monitor
             </button>
             <button className="iv-btn" onClick={() => navigate("/interviewer")}>
-              Back to Dashboard
+              Back to My Sessions
             </button>
           </div>
         </div>
@@ -123,7 +123,7 @@ export default function SessionCreator() {
     <div className="iv-dashboard">
       <header className="iv-header">
         <h1>Create Interview Session</h1>
-        <button className="iv-btn" onClick={() => navigate("/interviewer")}>Cancel</button>
+        <button className="iv-btn" onClick={() => navigate("/interviewer")}>Back to My Sessions</button>
       </header>
 
       <section className="iv-section">

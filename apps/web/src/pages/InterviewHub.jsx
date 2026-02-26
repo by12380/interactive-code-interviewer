@@ -188,6 +188,43 @@ export default function InterviewHub() {
             </ul>
             <span className="interview-hub__card-cta">Join Session &rarr;</span>
           </button>
+
+          <button
+            type="button"
+            className="interview-hub__card interview-hub__card--host"
+            onClick={() => {
+              if (isAuthenticated) {
+                navigate("/interviewer");
+              } else {
+                navigate("/login");
+              }
+            }}
+          >
+            <div className="interview-hub__card-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <line x1="19" y1="8" x2="19" y2="14" />
+                <line x1="16" y1="11" x2="22" y2="11" />
+              </svg>
+            </div>
+            <h2 className="interview-hub__card-title">Create &amp; Host Session</h2>
+            <p className="interview-hub__card-desc">
+              Set up a live interview session, pick questions, and share a code with candidates to join. Monitor their progress in real time.
+            </p>
+            <ul className="interview-hub__card-features">
+              <li>Pick from a question bank or add custom ones</li>
+              <li>Set time limits and permissions</li>
+              <li>Share a session code with candidates</li>
+              <li>Monitor code in real time and end when ready</li>
+            </ul>
+            {!isAuthenticated && (
+              <span className="interview-hub__card-note">Requires a free account</span>
+            )}
+            <span className="interview-hub__card-cta">
+              {isAuthenticated ? "Create Session \u2192" : "Sign In to Host \u2192"}
+            </span>
+          </button>
         </div>
       </main>
 

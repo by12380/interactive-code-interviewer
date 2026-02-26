@@ -43,13 +43,13 @@ export default function InterviewerDashboard() {
   return (
     <div className="iv-dashboard">
       <header className="iv-header">
-        <h1>Interviewer Dashboard</h1>
+        <h1>My Sessions</h1>
         <div className="iv-header__actions">
           <button className="iv-btn iv-btn--primary" onClick={() => navigate("/interviewer/create")}>
             + New Session
           </button>
-          <button className="iv-btn" onClick={() => navigate("/")}>
-            Back to Practice
+          <button className="iv-btn" onClick={() => navigate("/interview")}>
+            Back to Interview Panel
           </button>
           <button
             className="iv-btn iv-btn--danger"

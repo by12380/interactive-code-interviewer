@@ -2,54 +2,17 @@ import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext.jsx";
 
-const ROLES = [
-  {
-    id: "candidate",
-    label: "Candidate",
-    description: "Practice coding skills or take AI-powered interviews",
-    icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" />
-        <path d="M9 9l3 3-3 3" />
-        <line x1="14" y1="15" x2="18" y2="15" />
-      </svg>
-    ),
-  },
-  {
-    id: "interviewer",
-    label: "Interviewer",
-    description: "Create sessions and monitor candidates live",
-    icon: (
-      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-        <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-      </svg>
-    ),
-  },
-];
-
 export default function LoginPage() {
   const navigate = useNavigate();
   const { signUp, logIn, loading: authLoading } = useAuth();
 
   const [mode, setMode] = useState("login"); // "login" | "signup"
-  const [role, setRole] = useState("candidate");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-
-  const redirectForRole = useCallback(
-    (r) => {
-      if (r === "interviewer") navigate("/interviewer", { replace: true });
-      else navigate("/", { replace: true });
-    },
-    [navigate]
-  );
 
   const handleSubmit = useCallback(
     async (e) => {
@@ -74,17 +37,15 @@ export default function LoginPage() {
       setBusy(true);
       try {
         if (mode === "signup") {
-          const u = await signUp({
+          await signUp({
             email,
             password,
             displayName: displayName.trim(),
-            role,
           });
-          redirectForRole(u.role || role);
         } else {
-          const u = await logIn({ email, password });
-          redirectForRole(u.role || "candidate");
+          await logIn({ email, password });
         }
+        navigate("/", { replace: true });
       } catch (err) {
         const msg = err?.message || "Something went wrong.";
         if (msg.includes("auth/email-already-in-use")) {
@@ -104,7 +65,7 @@ export default function LoginPage() {
         setBusy(false);
       }
     },
-    [mode, email, password, confirmPassword, displayName, role, signUp, logIn, redirectForRole]
+    [mode, email, password, confirmPassword, displayName, signUp, logIn, navigate]
   );
 
   const switchMode = useCallback(() => {
@@ -168,28 +129,6 @@ export default function LoginPage() {
         </div>
 
         <form className="login-page__form" onSubmit={handleSubmit} noValidate>
-          {/* Role selector (signup only) */}
-          {mode === "signup" && (
-            <div className="login-page__roles">
-              <label className="login-page__label">I am a&hellip;</label>
-              <div className="login-page__role-cards">
-                {ROLES.map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    className={`login-page__role-card ${role === r.id ? "login-page__role-card--selected" : ""}`}
-                    onClick={() => setRole(r.id)}
-                    aria-pressed={role === r.id}
-                  >
-                    <span className="login-page__role-icon">{r.icon}</span>
-                    <span className="login-page__role-label">{r.label}</span>
-                    <span className="login-page__role-desc">{r.description}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Name field (signup only) */}
           {mode === "signup" && (
             <div className="login-page__field">

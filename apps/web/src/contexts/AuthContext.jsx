@@ -21,10 +21,10 @@ export function AuthProvider({ children }) {
     return unsub;
   }, []);
 
-  const signUp = useCallback(async ({ email, password, displayName, role }) => {
+  const signUp = useCallback(async ({ email, password, displayName }) => {
     setError(null);
     try {
-      const u = await firebaseSignUp({ email, password, displayName, role });
+      const u = await firebaseSignUp({ email, password, displayName });
       setUser(u);
       return u;
     } catch (e) {

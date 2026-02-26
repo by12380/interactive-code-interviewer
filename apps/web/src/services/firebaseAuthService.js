@@ -18,14 +18,13 @@ import { auth, db } from "../firebase.js";
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-async function ensureUserDoc(uid, { displayName, email, role }) {
+async function ensureUserDoc(uid, { displayName, email }) {
   const ref = doc(db, "users", uid);
   const snap = await getDoc(ref);
   if (!snap.exists()) {
     await setDoc(ref, {
       displayName: displayName || "",
       email: email || "",
-      role: role || "candidate",
       createdAt: serverTimestamp(),
     });
   }
@@ -34,10 +33,10 @@ async function ensureUserDoc(uid, { displayName, email, role }) {
 
 // ─── Public API ─────────────────────────────────────────────────────
 
-export async function firebaseSignUp({ email, password, displayName, role }) {
+export async function firebaseSignUp({ email, password, displayName }) {
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   await updateProfile(cred.user, { displayName });
-  const userData = await ensureUserDoc(cred.user.uid, { displayName, email, role });
+  const userData = await ensureUserDoc(cred.user.uid, { displayName, email });
   return { uid: cred.user.uid, email, displayName, ...userData };
 }
 
