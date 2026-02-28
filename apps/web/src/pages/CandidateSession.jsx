@@ -1,11 +1,13 @@
 // CandidateSession – focused coding view for a candidate inside a live session.
-// Features: Monaco editor with inline AI hints, problem panel, timer, code auto-sync.
+// Features: Monaco editor with inline AI hints, AI chat panel, problem panel, timer, code auto-sync.
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import EditorPanel from "../components/EditorPanel.jsx";
+import ConsolePanel from "../components/ConsolePanel.jsx";
+import ChatPanel from "../components/ChatPanel.jsx";
 import { getSession, pushCode } from "../services/sessionService.js";
-import { getCodeHints } from "../api.js";
+import { sendChat, getCodeHints } from "../api.js";
 import { analyzeCode, createAnalyzerState } from "../services/codeAnalyzer.js";
 import { QUESTION_BANK } from "../data/questionBank.js";
 import "../styles/candidate.css";
@@ -40,6 +42,24 @@ export default function CandidateSession() {
   const lastLocalCodeRef = useRef("");
   const lastAiCodeRef = useRef("");
   const lastThrottleCodeRef = useRef("");
+
+  // Chat state
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([
+    {
+      role: "assistant",
+      content: "I'm here if you have any questions about the problem. Go ahead and start coding whenever you're ready."
+    }
+  ]);
+  const [chatInput, setChatInput] = useState("");
+  const [isSending, setIsSending] = useState(false);
+  const llmMessagesRef = useRef([]);
+  const lastCodeSentRef = useRef("");
+
+  // Console state
+  const [consoleLogs, setConsoleLogs] = useState([]);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isConsoleOpen, setIsConsoleOpen] = useState(false);
 
   // Code sync refs
   const codeRef = useRef("");
@@ -141,8 +161,120 @@ export default function CandidateSession() {
     });
   }, []);
 
+  // ── Chat helpers (must be declared before effects that reference them) ──
+  const addInterruptionToChat = useCallback((message) => {
+    setChatMessages((prev) => [...prev, { role: "assistant", content: message, isInterruption: true }]);
+  }, []);
+
+  const buildCodeMessage = useCallback(
+    (nextCode) => ({ role: "user", content: `[code update]\n${nextCode || "// No code provided"}` }),
+    []
+  );
+
+  const appendCodeUpdateIfNeeded = useCallback((nextCode, messageList) => {
+    if (nextCode === lastCodeSentRef.current) return messageList;
+    lastCodeSentRef.current = nextCode;
+    return [...messageList, buildCodeMessage(nextCode)];
+  }, [buildCodeMessage]);
+
+  const handleChatToggle = useCallback(() => {
+    setChatOpen((prev) => !prev);
+  }, []);
+
+  const handleChatInputChange = useCallback((e) => {
+    setChatInput(e.target.value);
+  }, []);
+
+  const handleChatSend = useCallback(async () => {
+    const trimmed = chatInput.trim();
+    if (!trimmed || isSending) return;
+
+    const nextMessages = [...chatMessages, { role: "user", content: trimmed }];
+    setChatMessages(nextMessages);
+    setChatInput("");
+    setIsSending(true);
+
+    try {
+      const withCode = appendCodeUpdateIfNeeded(code, llmMessagesRef.current);
+      const llmMessages = [...withCode, { role: "user", content: trimmed }];
+      llmMessagesRef.current = llmMessages;
+
+      const data = await sendChat({ messages: llmMessages, mode: "chat", practiceMode: false });
+      setChatMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
+      llmMessagesRef.current = [...llmMessagesRef.current, { role: "assistant", content: data.reply }];
+    } catch (error) {
+      setChatMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: `Error: ${error.message || "Unable to reach the server."}` }
+      ]);
+    } finally {
+      setIsSending(false);
+    }
+  }, [appendCodeUpdateIfNeeded, chatInput, chatMessages, code, isSending]);
+
+  const handleChatKeyDown = useCallback((e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleChatSend();
+    }
+  }, [handleChatSend]);
+
+  const handleClearConsole = useCallback(() => {
+    setConsoleLogs([]);
+  }, []);
+
+  const handleToggleConsole = useCallback(() => {
+    setIsConsoleOpen((prev) => !prev);
+  }, []);
+
+  const handleRunCode = useCallback(() => {
+    if (isRunning || submitted) return;
+
+    setIsRunning(true);
+    setConsoleLogs([]);
+    setIsConsoleOpen(true);
+
+    setTimeout(() => {
+      const logs = [];
+
+      const captureConsole = {
+        log: (...args) => {
+          logs.push({ type: "log", value: args.length === 1 ? args[0] : args });
+        },
+        error: (...args) => {
+          logs.push({ type: "error", value: args.length === 1 ? args[0] : args });
+        },
+        warn: (...args) => {
+          logs.push({ type: "warn", value: args.length === 1 ? args[0] : args });
+        },
+        info: (...args) => {
+          logs.push({ type: "info", value: args.length === 1 ? args[0] : args });
+        },
+        clear: () => {
+          logs.length = 0;
+        },
+      };
+
+      try {
+        const runCode = new Function("console", `"use strict";\n${code}`);
+        const result = runCode(captureConsole);
+        if (result !== undefined) {
+          logs.push({ type: "result", value: result });
+        }
+      } catch (error) {
+        logs.push({ type: "error", value: `${error.name}: ${error.message}` });
+      }
+
+      if (logs.length === 0) {
+        logs.push({ type: "info", value: "Code executed successfully (no output). Use console.log() to see values." });
+      }
+
+      setConsoleLogs(logs);
+      setIsRunning(false);
+    }, 100);
+  }, [code, isRunning, submitted]);
+
   // ── LOCAL PATTERN ANALYSIS (4s debounce) ──────────────────────────
-  // Free, zero API cost. Catches wrong approaches and common mistakes.
   useEffect(() => {
     if (submitted || !question) return;
     if (!(session?.settings?.aiInterruptionsEnabled !== false)) return;
@@ -168,14 +300,14 @@ export default function CandidateSession() {
           severity: result.displaySeverity || "warning",
           message: result.message,
         }]);
+        addInterruptionToChat(result.message);
       }
     }, LOCAL_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [code, question, submitted, session, fireHint]);
+  }, [code, question, submitted, session, fireHint, addInterruptionToChat]);
 
   // ── AI-POWERED HINTS (10s debounce) ───────────────────────────────
-  // Fires when user pauses for 10s. Uses /api/code-hints for line-targeted hints.
   useEffect(() => {
     if (submitted || !question) return;
     if (!(session?.settings?.aiInterruptionsEnabled !== false)) return;
@@ -204,6 +336,8 @@ export default function CandidateSession() {
           aiHintCountRef.current++;
           analyzerStateRef.current.markInterrupted("ai-hint-" + Date.now());
           fireHint(data.hints);
+          const summary = data.hints.map(h => h.message).join(" ");
+          addInterruptionToChat(summary);
         }
       } catch {
         // silently ignore
@@ -213,17 +347,14 @@ export default function CandidateSession() {
     }, AI_DEBOUNCE_MS);
 
     return () => clearTimeout(timer);
-  }, [code, question, submitted, session, fireHint]);
+  }, [code, question, submitted, session, fireHint, addInterruptionToChat]);
 
   // ── THROTTLE INTERVAL (every 12s, even during continuous typing) ──
-  // This is the key fix: if the user never stops typing, debounce-based
-  // timers never fire. This interval checks periodically regardless.
   useEffect(() => {
     if (submitted || !question) return;
     if (!(session?.settings?.aiInterruptionsEnabled !== false)) return;
 
     const interval = setInterval(async () => {
-      // Skip if code hasn't changed meaningfully since last throttle check
       if (code === lastThrottleCodeRef.current) return;
       if (hintInFlightRef.current) return;
       if (!analyzerStateRef.current.canInterrupt()) return;
@@ -233,7 +364,6 @@ export default function CandidateSession() {
 
       lastThrottleCodeRef.current = code;
 
-      // First try local analysis (free)
       const localResult = analyzeCode(
         code,
         question.id,
@@ -249,10 +379,10 @@ export default function CandidateSession() {
           severity: localResult.displaySeverity || "warning",
           message: localResult.message,
         }]);
+        addInterruptionToChat(localResult.message);
         return;
       }
 
-      // If local found nothing and AI budget remains, try AI
       if (aiHintCountRef.current >= MAX_AI_HINTS) return;
       if (!analyzerStateRef.current.canAffordAPICall()) return;
 
@@ -269,6 +399,8 @@ export default function CandidateSession() {
           aiHintCountRef.current++;
           analyzerStateRef.current.markInterrupted("throttle-hint-" + Date.now());
           fireHint(data.hints);
+          const summary = data.hints.map(h => h.message).join(" ");
+          addInterruptionToChat(summary);
         }
       } catch {
         // silently ignore
@@ -278,7 +410,7 @@ export default function CandidateSession() {
     }, THROTTLE_INTERVAL_MS);
 
     return () => clearInterval(interval);
-  }, [code, question, submitted, session, fireHint]);
+  }, [code, question, submitted, session, fireHint, addInterruptionToChat]);
 
   // Reset hints when switching questions
   const handleNext = () => {
@@ -294,6 +426,11 @@ export default function CandidateSession() {
       lastThrottleCodeRef.current = "";
       aiHintCountRef.current = 0;
       analyzerStateRef.current.reset();
+      llmMessagesRef.current = [];
+      lastCodeSentRef.current = "";
+      setChatMessages([
+        { role: "assistant", content: "New question loaded. Take your time and start whenever you're ready." }
+      ]);
     }
   };
 
@@ -353,6 +490,14 @@ export default function CandidateSession() {
           <span className={remaining < 300 ? "cs-timer--warn" : ""}>
             Time remaining: {fmtTime(remaining)}
           </span>
+          <button
+            type="button"
+            className={`cs-chat-toggle ${chatOpen ? "cs-chat-toggle--active" : ""}`}
+            onClick={handleChatToggle}
+            aria-label={chatOpen ? "Hide AI chat" : "Show AI chat"}
+          >
+            &#x1F4AC; {chatOpen ? "Hide Chat" : "AI Chat"}
+          </button>
         </div>
       </header>
 
@@ -388,15 +533,15 @@ export default function CandidateSession() {
         </aside>
 
         {/* ── Center: Editor with inline AI hints ─────────────── */}
-        <main className="cs-session__editor">
+        <main className={`cs-session__editor ${chatOpen ? "cs-session__editor--with-chat" : ""}`}>
           <EditorPanel
             canUndo={true}
             canRedo={true}
             isEditorDisabled={submitted}
-            isRunning={false}
+            isRunning={isRunning}
             onUndo={() => editorRef.current?.trigger("toolbar", "undo", null)}
             onRedo={() => editorRef.current?.trigger("toolbar", "redo", null)}
-            onRun={() => {}}
+            onRun={handleRunCode}
             onEditorMount={handleEditorMount}
             onCodeChange={handleCodeChange}
             editorOptions={{
@@ -409,7 +554,31 @@ export default function CandidateSession() {
             interviewerHint={editorHint}
             onDismissHint={handleDismissHint}
           />
+          <ConsolePanel
+            logs={consoleLogs}
+            onClear={handleClearConsole}
+            isRunning={isRunning}
+            isOpen={isConsoleOpen}
+            onToggle={handleToggleConsole}
+          />
         </main>
+
+        {/* ── Right: AI Chat (interview mode) ─────────────────── */}
+        {chatOpen && (
+          <aside className="cs-session__chat">
+            <ChatPanel
+              messages={chatMessages}
+              input={chatInput}
+              isLocked={submitted}
+              isPaused={false}
+              isSending={isSending}
+              onInputChange={handleChatInputChange}
+              onKeyDown={handleChatKeyDown}
+              onSend={handleChatSend}
+              showVoiceControls={false}
+            />
+          </aside>
+        )}
       </div>
 
       {/* ── Bottom bar ────────────────────────────────────────── */}
