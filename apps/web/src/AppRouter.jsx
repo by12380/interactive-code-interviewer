@@ -4,7 +4,6 @@ import App from "./App.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
 import HomePage from "./pages/HomePage.jsx";
 import PracticeDashboard from "./pages/PracticeDashboard.jsx";
-import InterviewHub from "./pages/InterviewHub.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
 import InterviewerDashboard from "./pages/InterviewerDashboard.jsx";
 import SessionCreator from "./pages/SessionCreator.jsx";
@@ -25,10 +24,13 @@ export default function AppRouter() {
         }
       />
 
-      {/* Home dashboard – public, anyone can see it */}
+      {/* Home — interview-first hub with quick join, create, mock, and practice */}
       <Route path="/" element={<HomePage />} />
 
-      {/* Practice hub – personalized dashboard with onboarding & roadmap */}
+      {/* Legacy /interview route redirects to home (all actions live there now) */}
+      <Route path="/interview" element={<Navigate to="/" replace />} />
+
+      {/* Practice hub — personalized dashboard with onboarding & roadmap */}
       <Route
         path="/practice"
         element={
@@ -38,7 +40,7 @@ export default function AppRouter() {
         }
       />
 
-      {/* Practice IDE – full-screen coding workspace, no sidebar */}
+      {/* Practice IDE — full-screen coding workspace */}
       <Route
         path="/practice/solve/:problemId"
         element={
@@ -48,10 +50,7 @@ export default function AppRouter() {
         }
       />
 
-      {/* Interview hub – public, no account needed to take an interview */}
-      <Route path="/interview" element={<InterviewHub />} />
-
-      {/* Interviewer routes – require auth (any user can host sessions) */}
+      {/* Interviewer routes — require auth (any user can host sessions) */}
       <Route
         path="/interviewer"
         element={
@@ -85,7 +84,7 @@ export default function AppRouter() {
         }
       />
 
-      {/* Candidate live session routes – public, guests enter name + code */}
+      {/* Candidate live session routes — public, guests enter name + code */}
       <Route path="/join" element={<JoinSession />} />
       <Route path="/join/:code" element={<JoinSession />} />
       <Route path="/session/:sessionId/:candidateId" element={<CandidateSession />} />

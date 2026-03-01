@@ -174,8 +174,8 @@ export default function JoinSession() {
           {joining ? "Joining..." : "Join Session"}
         </button>
 
-        <button className="cs-btn cs-btn--ghost" onClick={() => navigate("/interview")}>
-          &larr; Back to Interview Center
+        <button className="cs-btn cs-btn--ghost" onClick={() => navigate("/")}>
+          &larr; Back to Home
         </button>
       </div>
     </div>

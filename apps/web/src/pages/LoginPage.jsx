@@ -234,9 +234,9 @@ export default function LoginPage() {
           <button
             type="button"
             className="login-page__switch"
-            onClick={() => navigate("/interview")}
+            onClick={() => navigate("/")}
           >
-            Go to Interviews &rarr;
+            Go to Home &rarr;
           </button>
         </div>
       </div>

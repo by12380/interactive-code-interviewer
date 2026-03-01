@@ -203,11 +203,11 @@ function Sidebar({
           <button
             type="button"
             className="sidebar__nav-item"
-            onClick={() => navigate("/interview")}
-            aria-label="Go to interviews"
+            onClick={() => navigate("/")}
+            aria-label="Go to home"
           >
             <span className="sidebar__nav-icon">&#x1F3AF;</span>
-            {!isCollapsed && <span className="sidebar__nav-text">Interviews</span>}
+            {!isCollapsed && <span className="sidebar__nav-text">Home</span>}
           </button>
 
           <button

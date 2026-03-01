@@ -48,8 +48,8 @@ export default function InterviewerDashboard() {
           <button className="iv-btn iv-btn--primary" onClick={() => navigate("/interviewer/create")}>
             + New Session
           </button>
-          <button className="iv-btn" onClick={() => navigate("/interview")}>
-            Back to Interview Panel
+          <button className="iv-btn" onClick={() => navigate("/")}>
+            Back to Home
           </button>
           <button
             className="iv-btn iv-btn--danger"
