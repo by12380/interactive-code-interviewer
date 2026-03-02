@@ -11,7 +11,6 @@ import {
   getRandomSystemDesignProblem
 } from "../data/interviewConfig.js";
 import EditorPanel from "./EditorPanel.jsx";
-import ConsolePanel from "./ConsolePanel.jsx";
 import ChatPanel from "./ChatPanel.jsx";
 import BehavioralQuestion from "./BehavioralQuestion.jsx";
 import SystemDesignPanel from "./SystemDesignPanel.jsx";
@@ -999,13 +998,10 @@ export default function InterviewSimulation({
                 code={code}
                 interviewerHint={editorHint}
                 onDismissHint={handleDismissHint}
-              />
-              <ConsolePanel
-                logs={consoleLogs}
-                onClear={handleClearConsole}
-                isRunning={isRunning}
-                isOpen={true}
-                onToggle={() => {}}
+                consoleLogs={consoleLogs}
+                onClearConsole={handleClearConsole}
+                isConsoleOpen={true}
+                onToggleConsole={() => {}}
               />
             </div>
             <div className="interview-sim__chat-area">

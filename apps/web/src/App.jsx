@@ -6,7 +6,6 @@ import Header from "./components/Header.jsx";
 import PracticeHeader from "./components/PracticeHeader.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import EditorPanel from "./components/EditorPanel.jsx";
-import ConsolePanel from "./components/ConsolePanel.jsx";
 import ChatPanel from "./components/ChatPanel.jsx";
 import SessionMetrics from "./components/SessionMetrics.jsx";
 import ScoreReport from "./components/ScoreReport.jsx";
@@ -1866,13 +1865,10 @@ export default function App({ mode = "practice" }) {
                       onRecordCursorMove={handleRecordCursorMove}
                       onRecordSelection={handleRecordSelection}
                       isRecording={!!replaySession && !isLocked}
-                    />
-                    <ConsolePanel
-                      logs={consoleLogs}
-                      onClear={handleClearConsole}
-                      isRunning={isRunning}
-                      isOpen={isConsoleOpen}
-                      onToggle={handleToggleConsole}
+                      consoleLogs={consoleLogs}
+                      onClearConsole={handleClearConsole}
+                      isConsoleOpen={isConsoleOpen}
+                      onToggleConsole={handleToggleConsole}
                     />
                   </main>
                 </div>
@@ -1951,16 +1947,11 @@ export default function App({ mode = "practice" }) {
                       onRecordCursorMove={handleRecordCursorMove}
                       onRecordSelection={handleRecordSelection}
                       isRecording={!!replaySession && !isLocked}
+                      consoleLogs={isZenMode ? undefined : consoleLogs}
+                      onClearConsole={isZenMode ? undefined : handleClearConsole}
+                      isConsoleOpen={!isZenMode && isConsoleOpen}
+                      onToggleConsole={isZenMode ? undefined : handleToggleConsole}
                     />
-                    {!isZenMode && (
-                      <ConsolePanel
-                        logs={consoleLogs}
-                        onClear={handleClearConsole}
-                        isRunning={isRunning}
-                        isOpen={true}
-                        onToggle={() => {}}
-                      />
-                    )}
                   </div>
                   {!shouldHideChat && !isZenMode && (
                     <div className={`app__sidebar ${isRightPanelCollapsed ? "app__sidebar--collapsed" : ""}`} id="chat-panel">

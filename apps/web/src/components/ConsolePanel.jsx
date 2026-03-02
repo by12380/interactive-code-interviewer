@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef } from "react";
+import "../styles/ide.css";
 
 function ConsolePanel({ logs, onClear, isRunning, isOpen, onToggle }) {
   const logsEndRef = useRef(null);
@@ -22,21 +23,21 @@ function ConsolePanel({ logs, onClear, isRunning, isOpen, onToggle }) {
 
   const getLogClass = (type) => {
     switch (type) {
-      case "error": return "console__log--error";
-      case "warn": return "console__log--warn";
-      case "info": return "console__log--info";
-      case "result": return "console__log--result";
+      case "error": return "ide-console__log--error";
+      case "warn": return "ide-console__log--warn";
+      case "info": return "ide-console__log--info";
+      case "result": return "ide-console__log--result";
       default: return "";
     }
   };
 
   const getLogPrefix = (type) => {
     switch (type) {
-      case "error": return "✕";
-      case "warn": return "⚠";
-      case "result": return "←";
-      case "info": return "ℹ";
-      default: return "›";
+      case "error": return "\u2715";
+      case "warn": return "\u26A0";
+      case "result": return "\u2190";
+      case "info": return "\u2139";
+      default: return "\u203A";
     }
   };
 
@@ -54,12 +55,12 @@ function ConsolePanel({ logs, onClear, isRunning, isOpen, onToggle }) {
 
   return (
     <section
-      className={`console-panel ${isOpen ? "console-panel--open" : "console-panel--closed"}`}
+      className={`ide-console ${isOpen ? "ide-console--open" : "ide-console--closed"}`}
       aria-labelledby="console-heading"
       role="region"
     >
       <div
-        className="console-panel__bar"
+        className="ide-console__bar"
         id="console-heading"
         onClick={onToggle}
         role="button"
@@ -68,26 +69,26 @@ function ConsolePanel({ logs, onClear, isRunning, isOpen, onToggle }) {
         aria-label={isOpen ? "Collapse console" : "Expand console"}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onToggle(); } }}
       >
-        <div className="console-panel__bar-left">
-          <span className="console-panel__chevron">{isOpen ? "▼" : "▲"}</span>
-          <span className="console-panel__title">Terminal</span>
-          {isRunning && <span className="console-panel__running-dot" />}
+        <div className="ide-console__bar-left">
+          <span className="ide-console__chevron">{"\u25BC"}</span>
+          <span className="ide-console__title">Console</span>
+          {isRunning && <span className="ide-console__running-dot" />}
           {errorCount > 0 && (
-            <span className="console-panel__error-badge">
+            <span className="ide-console__error-badge">
               {errorCount}
             </span>
           )}
           {!isOpen && logs.length > 0 && !isRunning && errorCount === 0 && (
-            <span className="console-panel__preview">
+            <span className="ide-console__preview">
               {logs[logs.length - 1] ? formatValue(logs[logs.length - 1].value).substring(0, 60) : ""}
             </span>
           )}
         </div>
-        <div className="console-panel__bar-right" onClick={(e) => e.stopPropagation()}>
+        <div className="ide-console__bar-right" onClick={(e) => e.stopPropagation()}>
           {isOpen && (
             <button
               type="button"
-              className="console-panel__action"
+              className="ide-console__action"
               onClick={onClear}
               disabled={logs.length === 0}
               aria-label="Clear console"
@@ -98,26 +99,26 @@ function ConsolePanel({ logs, onClear, isRunning, isOpen, onToggle }) {
           )}
           <button
             type="button"
-            className="console-panel__action console-panel__action--toggle"
+            className="ide-console__action"
             onClick={onToggle}
             aria-label={isOpen ? "Minimize console" : "Open console"}
             title={isOpen ? "Minimize" : "Open"}
           >
-            {isOpen ? "—" : "□"}
+            {isOpen ? "\u2014" : "\u25A1"}
           </button>
         </div>
       </div>
 
       {isOpen && (
         <div
-          className="console-panel__output"
+          className="ide-console__output"
           role="log"
           aria-live="polite"
           tabIndex={0}
         >
           {logs.length === 0 && !isRunning ? (
-            <div className="console-panel__empty">
-              <span className="console-panel__prompt">$</span>
+            <div className="ide-console__empty">
+              <span className="ide-console__prompt">$</span>
               <span>Waiting for output...</span>
             </div>
           ) : (
@@ -125,18 +126,18 @@ function ConsolePanel({ logs, onClear, isRunning, isOpen, onToggle }) {
               {logs.map((log, index) => (
                 <div
                   key={index}
-                  className={`console-panel__log ${getLogClass(log.type)}`}
+                  className={`ide-console__log ${getLogClass(log.type)}`}
                   role={log.type === "error" ? "alert" : undefined}
                 >
-                  <span className="console-panel__log-prefix" aria-hidden="true">
+                  <span className="ide-console__log-prefix" aria-hidden="true">
                     {getLogPrefix(log.type)}
                   </span>
-                  <pre className="console-panel__log-content">{formatValue(log.value)}</pre>
+                  <pre className="ide-console__log-content">{formatValue(log.value)}</pre>
                 </div>
               ))}
               {isRunning && (
-                <div className="console-panel__log console-panel__log--running">
-                  <span className="console-panel__log-prefix">⟳</span>
+                <div className="ide-console__log ide-console__log--running">
+                  <span className="ide-console__log-prefix">{"\u27F3"}</span>
                   <span>Running...</span>
                 </div>
               )}

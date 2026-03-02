@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import Editor from "@monaco-editor/react";
-import { useTheme } from "../contexts/ThemeContext.jsx";
 import { PROBLEMS, getProblemById } from "../data/problems.js";
+import "../styles/ide.css";
 import {
   createMultiProblemSession,
   addProblemToSession,
@@ -93,13 +93,47 @@ const estimateEfficiency = (code) => {
   return "O(n^3)";
 };
 
+function definePlaycodeTheme(monaco) {
+  monaco.editor.defineTheme("playcode-dark", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [
+      { token: "", foreground: "cdd6f4", background: "1e1e2e" },
+      { token: "comment", foreground: "6c7086", fontStyle: "italic" },
+      { token: "keyword", foreground: "cba6f7" },
+      { token: "string", foreground: "a6e3a1" },
+      { token: "number", foreground: "fab387" },
+      { token: "type", foreground: "f9e2af" },
+      { token: "function", foreground: "89b4fa" },
+      { token: "delimiter", foreground: "9399b2" },
+      { token: "operator", foreground: "89dceb" },
+    ],
+    colors: {
+      "editor.background": "#1e1e2e",
+      "editor.foreground": "#cdd6f4",
+      "editor.lineHighlightBackground": "#2a2b3d",
+      "editor.lineHighlightBorder": "#00000000",
+      "editor.selectionBackground": "#45475a80",
+      "editorCursor.foreground": "#cba6f7",
+      "editorLineNumber.foreground": "#585b70",
+      "editorLineNumber.activeForeground": "#cba6f7",
+      "editorIndentGuide.background": "#313244",
+      "editorBracketMatch.background": "#cba6f720",
+      "editorBracketMatch.border": "#cba6f760",
+      "editorWidget.background": "#1e1e2e",
+      "editorSuggestWidget.background": "#1e1e2e",
+      "scrollbar.shadow": "#00000000",
+      "scrollbarSlider.background": "#585b7040",
+    },
+  });
+}
+
 export default function SplitScreenPanel({
   onClose,
   problems = PROBLEMS,
   user,
   onSelectProblem,
 }) {
-  const { theme } = useTheme();
   const [session, setSession] = useState(() =>
     createMultiProblemSession([problems[0]?.id])
   );
@@ -693,15 +727,25 @@ export default function SplitScreenPanel({
               <Editor
                 height="200px"
                 defaultLanguage="javascript"
-                theme={theme === "dark" ? "vs-dark" : "light"}
+                theme="playcode-dark"
                 value={slot.code}
                 onChange={(value) => handleCodeChange(index, value || "")}
+                beforeMount={(monaco) => definePlaycodeTheme(monaco)}
                 options={{
                   minimap: { enabled: false },
-                  fontSize: 12,
+                  fontSize: 13,
+                  fontFamily: "'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, monospace",
                   scrollBeyondLastLine: false,
                   wordWrap: "on",
                   lineNumbers: "on",
+                  padding: { top: 8, bottom: 8 },
+                  lineHeight: 20,
+                  cursorBlinking: "smooth",
+                  cursorSmoothCaretAnimation: "on",
+                  smoothScrolling: true,
+                  bracketPairColorization: { enabled: true },
+                  overviewRulerBorder: false,
+                  scrollbar: { verticalScrollbarSize: 6, useShadows: false },
                 }}
               />
             </div>
@@ -782,14 +826,24 @@ export default function SplitScreenPanel({
               <Editor
                 height="350px"
                 defaultLanguage="javascript"
-                theme={theme === "dark" ? "vs-dark" : "light"}
+                theme="playcode-dark"
                 value={slot.code}
                 onChange={(value) => handleCodeChange(index, value || "")}
+                beforeMount={(monaco) => definePlaycodeTheme(monaco)}
                 options={{
                   minimap: { enabled: false },
                   fontSize: 14,
+                  fontFamily: "'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, monospace",
                   scrollBeyondLastLine: false,
                   wordWrap: "on",
+                  padding: { top: 12, bottom: 12 },
+                  lineHeight: 22,
+                  cursorBlinking: "smooth",
+                  cursorSmoothCaretAnimation: "on",
+                  smoothScrolling: true,
+                  bracketPairColorization: { enabled: true },
+                  overviewRulerBorder: false,
+                  scrollbar: { verticalScrollbarSize: 8, useShadows: false },
                 }}
               />
             </div>

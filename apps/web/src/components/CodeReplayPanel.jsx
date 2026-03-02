@@ -1,6 +1,5 @@
 import { memo, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import Editor from "@monaco-editor/react";
-import { useTheme } from "../contexts/ThemeContext.jsx";
 import {
   getStateAtTimestamp,
   generateHeatmapData,
@@ -11,13 +10,42 @@ import {
 
 const PLAYBACK_SPEEDS = [0.5, 1, 1.5, 2, 4];
 
+function definePlaycodeTheme(monaco) {
+  monaco.editor.defineTheme("playcode-dark", {
+    base: "vs-dark",
+    inherit: true,
+    rules: [
+      { token: "", foreground: "cdd6f4", background: "1e1e2e" },
+      { token: "comment", foreground: "6c7086", fontStyle: "italic" },
+      { token: "keyword", foreground: "cba6f7" },
+      { token: "string", foreground: "a6e3a1" },
+      { token: "number", foreground: "fab387" },
+      { token: "type", foreground: "f9e2af" },
+      { token: "function", foreground: "89b4fa" },
+      { token: "delimiter", foreground: "9399b2" },
+      { token: "operator", foreground: "89dceb" },
+    ],
+    colors: {
+      "editor.background": "#1e1e2e",
+      "editor.foreground": "#cdd6f4",
+      "editor.lineHighlightBackground": "#2a2b3d",
+      "editor.lineHighlightBorder": "#00000000",
+      "editor.selectionBackground": "#45475a80",
+      "editorCursor.foreground": "#cba6f7",
+      "editorLineNumber.foreground": "#585b70",
+      "editorLineNumber.activeForeground": "#cba6f7",
+      "scrollbar.shadow": "#00000000",
+      "scrollbarSlider.background": "#585b7040",
+    },
+  });
+}
+
 function CodeReplayPanel({
   replay,
   onClose,
   problemTitle = "Problem",
-  allReplays = [], // For comparison feature
+  allReplays = [],
 }) {
-  const { theme } = useTheme();
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [playbackSpeed, setPlaybackSpeed] = useState(1);
@@ -272,16 +300,25 @@ function CodeReplayPanel({
                 <Editor
                   height="400px"
                   defaultLanguage="javascript"
-                  theme={theme === 'dark' ? 'vs-dark' : 'light'}
+                  theme="playcode-dark"
                   value={currentState.code}
                   onMount={handleEditorMount}
+                  beforeMount={(monaco) => definePlaycodeTheme(monaco)}
                   options={{
                     readOnly: true,
                     minimap: { enabled: true },
                     fontSize: 14,
+                    fontFamily: "'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, monospace",
                     scrollBeyondLastLine: false,
                     wordWrap: 'on',
                     glyphMargin: showHeatmap,
+                    padding: { top: 12, bottom: 12 },
+                    lineHeight: 22,
+                    cursorBlinking: "smooth",
+                    smoothScrolling: true,
+                    bracketPairColorization: { enabled: true },
+                    overviewRulerBorder: false,
+                    scrollbar: { verticalScrollbarSize: 8, useShadows: false },
                   }}
                 />
                 

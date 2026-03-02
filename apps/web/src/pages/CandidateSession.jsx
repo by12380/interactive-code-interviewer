@@ -4,7 +4,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import EditorPanel from "../components/EditorPanel.jsx";
-import ConsolePanel from "../components/ConsolePanel.jsx";
 import ChatPanel from "../components/ChatPanel.jsx";
 import { getSession, pushCode } from "../services/sessionService.js";
 import { sendChat, getCodeHints } from "../api.js";
@@ -553,13 +552,10 @@ export default function CandidateSession() {
             code={code}
             interviewerHint={editorHint}
             onDismissHint={handleDismissHint}
-          />
-          <ConsolePanel
-            logs={consoleLogs}
-            onClear={handleClearConsole}
-            isRunning={isRunning}
-            isOpen={isConsoleOpen}
-            onToggle={handleToggleConsole}
+            consoleLogs={consoleLogs}
+            onClearConsole={handleClearConsole}
+            isConsoleOpen={isConsoleOpen}
+            onToggleConsole={handleToggleConsole}
           />
         </main>
 

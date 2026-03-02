@@ -330,54 +330,12 @@ textarea {
   flex-shrink: 0;
 }
 
-.panel__header--editor {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.panel__actions {
-  display: flex;
-  gap: 8px;
-}
-
-.panel__action-button {
-  border: 1px solid #c7d2fe;
-  background: #ffffff;
-  color: #1e293b;
-  padding: 6px 12px;
-  border-radius: 10px;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 13px;
-  box-shadow: 0 6px 12px rgba(99, 102, 241, 0.12);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.panel__action-button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 8px 14px rgba(99, 102, 241, 0.18);
-}
-
-.panel__action-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  box-shadow: none;
-  transform: none;
-}
-
+/* Legacy panel editor styles — now replaced by .ide (see ide.css) */
+.panel__header--editor,
+.panel__actions,
+.panel__action-button,
 .panel--editor {
-  min-height: 0;
-  position: relative;
-  overflow: visible; /* Allow the interviewer hint widget to float above */
-}
-
-/* Re-clip the editor content itself so it respects the rounded corners */
-.panel--editor > .monaco-editor-wrapper,
-.panel--editor > div:last-child {
-  overflow: hidden;
-  border-radius: 0 0 16px 16px;
+  /* Retained as empty selectors so old markup doesn't break */
 }
 
 .panel--metrics {
@@ -449,41 +407,7 @@ textarea {
   box-shadow: none;
 }
 
-.panel--editor .monaco-editor,
-.panel--editor .monaco-editor-background,
-.panel--editor .monaco-editor .margin {
-  background: #f8fafc;
-}
-
-.panel--editor .monaco-editor {
-  border-radius: 0 0 16px 16px;
-}
-
-.panel--editor .monaco-editor .margin {
-  color: #94a3b8;
-}
-
-.panel--editor .monaco-editor .current-line,
-.panel--editor .monaco-editor .current-line-margin {
-  background: rgba(99, 102, 241, 0.1);
-}
-
-.panel--editor .monaco-editor .cursor {
-  background: #4f46e5;
-  box-shadow: 0 0 6px rgba(79, 70, 229, 0.35);
-}
-
-.panel--editor .monaco-editor .view-overlays .rangeHighlight {
-  background: rgba(99, 102, 241, 0.12);
-}
-
-.panel--editor .monaco-editor .scrollbar .slider {
-  background: rgba(148, 163, 184, 0.35);
-}
-
-.panel--editor .monaco-editor .scrollbar .slider:hover {
-  background: rgba(148, 163, 184, 0.55);
-}
+/* Legacy panel--editor Monaco overrides removed — handled by playcode-dark theme in ide.css */
 
 .chat {
   display: flex;
@@ -594,247 +518,8 @@ textarea {
   margin-right: 6px;
 }
 
-/* ===== Interviewer Hint Widget (floating fallback for non-line hints) ===== */
-.interviewer-hint-widget {
-  position: absolute;
-  top: 48px;
-  right: 24px;
-  background: #ffffff;
-  border: 1px solid #e0e7ef;
-  border-left: 3px solid #3b82f6;
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.10), 0 1px 3px rgba(15, 23, 42, 0.06);
-  width: 340px;
-  max-width: calc(100% - 48px);
-  font-family: "Inter", system-ui, -apple-system, sans-serif;
-  z-index: 50;
-  animation: hintSlideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-  overflow: hidden;
-  pointer-events: auto;
-  opacity: 0.97;
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.interviewer-hint-widget--entering {
-  opacity: 0;
-  transform: translateY(-8px);
-}
-
-.interviewer-hint-widget:hover {
-  opacity: 1;
-}
-
-@keyframes hintSlideIn {
-  0% {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  100% {
-    opacity: 0.97;
-    transform: translateY(0);
-  }
-}
-
-.interviewer-hint-widget__header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.interviewer-hint-widget__icon {
-  font-size: 13px;
-  line-height: 1;
-}
-
-.interviewer-hint-widget__title {
-  flex: 1;
-  font-weight: 600;
-  font-size: 11px;
-  color: #3b82f6;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.interviewer-hint-widget__close {
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: 3px;
-  font-size: 14px;
-  color: #94a3b8;
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.interviewer-hint-widget__close:hover {
-  background: rgba(15, 23, 42, 0.08);
-  color: #475569;
-}
-
-.interviewer-hint-widget__content {
-  padding: 8px 12px;
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: #334155;
-  max-height: 100px;
-  overflow-y: auto;
-}
-
-.interviewer-hint-widget__content p {
-  margin: 0;
-}
-
-.interviewer-hint-widget__footer {
-  padding: 5px 10px;
-  background: #f8fafc;
-  border-top: 1px solid #f1f5f9;
-  font-size: 10px;
-  color: #94a3b8;
-  text-align: center;
-}
-
-/* ===== Inline Hint Zone (injected below the target line via Monaco ViewZone) ===== */
-.ai-hint-zone {
-  padding: 0 0 0 60px;
-  font-family: "Inter", system-ui, -apple-system, sans-serif;
-  animation: hintZoneFadeIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes hintZoneFadeIn {
-  0% {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.ai-hint-zone__inner {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  line-height: 1.5;
-  max-width: 90%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.ai-hint-zone__inner--info {
-  background: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  color: #1e40af;
-}
-
-.ai-hint-zone__inner--warning {
-  background: rgba(245, 158, 11, 0.08);
-  border: 1px solid rgba(245, 158, 11, 0.25);
-  color: #92400e;
-}
-
-.ai-hint-zone__inner--error {
-  background: rgba(239, 68, 68, 0.08);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  color: #991b1b;
-}
-
-.ai-hint-zone__icon {
-  flex-shrink: 0;
-  font-size: 12px;
-  line-height: 1;
-}
-
-.ai-hint-zone__label {
-  flex-shrink: 0;
-  font-weight: 600;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.7;
-}
-
-.ai-hint-zone__text {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-}
-
-.ai-hint-zone__dismiss {
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: 2px;
-  font-size: 13px;
-  color: inherit;
-  cursor: pointer;
-  opacity: 0.5;
-  transition: all 0.15s ease;
-  margin-left: 4px;
-}
-
-.ai-hint-zone__dismiss:hover {
-  opacity: 1;
-  background: rgba(0, 0, 0, 0.08);
-}
-
-/* ===== Monaco Glyph Margin Icons (gutter lightbulb/warning icons) ===== */
-.ai-hint-glyph {
-  display: flex !important;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-
-.ai-hint-glyph--info::after {
-  content: "💡";
-  font-size: 12px;
-}
-
-.ai-hint-glyph--warning::after {
-  content: "⚠️";
-  font-size: 11px;
-}
-
-.ai-hint-glyph--error::after {
-  content: "❌";
-  font-size: 10px;
-}
-
-/* ===== Monaco Line Highlight Decorations ===== */
-.ai-hint-line {
-  transition: background-color 0.3s ease;
-}
-
-.ai-hint-line--info {
-  background: rgba(59, 130, 246, 0.06) !important;
-}
-
-.ai-hint-line--warning {
-  background: rgba(245, 158, 11, 0.06) !important;
-}
-
-.ai-hint-line--error {
-  background: rgba(239, 68, 68, 0.06) !important;
-}
+/* Old interviewer-hint-widget, ai-hint-zone, and ai-hint-line/glyph styles
+   removed — now handled by ide.css with playcode-dark theme colors. */
 
 .chat__role {
   font-size: 12px;
@@ -1315,332 +1000,25 @@ textarea {
 .app__editor-section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  position: relative; /* For toast positioning */
+  gap: 0;
+  position: relative;
   min-height: 0;
   overflow: hidden;
 }
 
-.app__editor-section .panel--editor {
+.app__editor-section .ide {
   flex: 1;
   min-height: 0;
+  border-radius: 12px;
 }
 
-/* Console Panel Styles */
-.panel__action-button--save {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  color: #ffffff;
-  border-color: #2563eb;
-  transition: background 0.2s, box-shadow 0.2s, opacity 0.2s;
-}
-
-.panel__action-button--save:hover:not(:disabled) {
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
-  box-shadow: 0 8px 14px rgba(59, 130, 246, 0.22);
-}
-
-.panel__action-button--save-ok {
-  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-  border-color: #16a34a;
-}
-
-.panel__action-button--save-ok:hover:not(:disabled) {
-  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
-  box-shadow: 0 8px 14px rgba(34, 197, 94, 0.22);
-}
-
-.panel__action-button--run {
-  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-  color: #ffffff;
-  border-color: #16a34a;
-}
-
-.panel__action-button--run:hover:not(:disabled) {
-  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
-  box-shadow: 0 8px 14px rgba(34, 197, 94, 0.22);
-}
+/* Legacy panel action-button styles removed — now using .ide__action-btn in ide.css */
 
 /* ===================================================================
    VS-Code-style Console Panel (collapsible terminal)
    =================================================================== */
 
-.console-panel {
-  display: flex;
-  flex-direction: column;
-  background: #0d1117;
-  transition: height 0.2s ease, max-height 0.2s ease;
-  overflow: hidden;
-}
-
-.console-panel--closed {
-  height: 34px;
-  min-height: 34px;
-  max-height: 34px;
-  flex-shrink: 0;
-}
-
-.console-panel--open {
-  min-height: 140px;
-  max-height: 45vh;
-  height: 220px;
-  flex-shrink: 0;
-}
-
-/* ── Top bar (always visible, acts as toggle) ────────────────────── */
-.console-panel__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-  height: 34px;
-  min-height: 34px;
-  background: #161b22;
-  border-top: 1px solid #30363d;
-  cursor: pointer;
-  user-select: none;
-  flex-shrink: 0;
-}
-
-.console-panel__bar:hover {
-  background: #1c2129;
-}
-
-.console-panel__bar-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  overflow: hidden;
-}
-
-.console-panel__chevron {
-  font-size: 9px;
-  color: #484f58;
-  transition: transform 0.2s;
-}
-
-.console-panel__title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #e6edf3;
-}
-
-.console-panel__running-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #3fb950;
-  animation: consoleDotPulse 1s ease-in-out infinite;
-}
-
-@keyframes consoleDotPulse {
-  0%, 100% { opacity: 0.4; transform: scale(0.8); }
-  50% { opacity: 1; transform: scale(1.2); }
-}
-
-.console-panel__error-badge {
-  font-size: 10px;
-  font-weight: 700;
-  color: #fff;
-  background: #da3633;
-  padding: 0 6px;
-  border-radius: 10px;
-  line-height: 18px;
-  min-width: 18px;
-  text-align: center;
-}
-
-.console-panel__preview {
-  font-size: 11px;
-  color: #484f58;
-  font-family: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 300px;
-}
-
-.console-panel__bar-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.console-panel__action {
-  padding: 2px 10px;
-  border-radius: 4px;
-  border: none;
-  background: transparent;
-  color: #8b949e;
-  font-size: 11px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.12s;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-}
-
-.console-panel__action:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
-  color: #e6edf3;
-}
-
-.console-panel__action:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.console-panel__action--toggle {
-  font-size: 14px;
-  padding: 2px 6px;
-  line-height: 1;
-}
-
-/* ── Output area ─────────────────────────────────────────────────── */
-.console-panel__output {
-  flex: 1;
-  padding: 10px 14px;
-  overflow-y: auto;
-  background: #0d1117;
-  font-family: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
-  font-size: 13px;
-  line-height: 1.7;
-  color: #e6edf3;
-  animation: consoleSlideOpen 0.2s ease;
-}
-
-@keyframes consoleSlideOpen {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.console-panel__output::-webkit-scrollbar {
-  width: 6px;
-}
-
-.console-panel__output::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.console-panel__output::-webkit-scrollbar-thumb {
-  background: #30363d;
-  border-radius: 999px;
-}
-
-.console-panel__output::-webkit-scrollbar-thumb:hover {
-  background: #484f58;
-}
-
-.console-panel__empty {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #484f58;
-  padding: 4px 0;
-}
-
-.console-panel__prompt {
-  color: #3fb950;
-  font-weight: 700;
-}
-
-.console-panel__log {
-  display: flex;
-  gap: 10px;
-  padding: 4px 0;
-  border-bottom: 1px solid rgba(48, 54, 61, 0.4);
-  align-items: flex-start;
-}
-
-.console-panel__log:last-of-type {
-  border-bottom: none;
-}
-
-.console-panel__log-prefix {
-  color: #484f58;
-  flex-shrink: 0;
-  width: 16px;
-  text-align: center;
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.console-panel__log-content {
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-  flex: 1;
-  font-family: inherit;
-}
-
-.console-panel__log--error {
-  color: #ff7b72;
-  background: rgba(248, 81, 73, 0.06);
-  margin: 2px -14px;
-  padding: 4px 14px;
-  border-radius: 3px;
-}
-
-.console-panel__log--error .console-panel__log-prefix {
-  color: #f85149;
-}
-
-.console-panel__log--warn {
-  color: #d29922;
-  background: rgba(210, 153, 34, 0.06);
-  margin: 2px -14px;
-  padding: 4px 14px;
-  border-radius: 3px;
-}
-
-.console-panel__log--warn .console-panel__log-prefix {
-  color: #d29922;
-}
-
-.console-panel__log--info {
-  color: #58a6ff;
-}
-
-.console-panel__log--info .console-panel__log-prefix {
-  color: #388bfd;
-}
-
-.console-panel__log--result {
-  color: #d2a8ff;
-}
-
-.console-panel__log--result .console-panel__log-prefix {
-  color: #bc8cff;
-}
-
-.console-panel__log--running {
-  color: #8b949e;
-  animation: consolePulse 1s ease-in-out infinite;
-}
-
-.console-panel__log--running .console-panel__log-prefix {
-  animation: consoleSpin 1s linear infinite;
-}
-
-@keyframes consolePulse {
-  0%, 100% { opacity: 0.5; }
-  50% { opacity: 1; }
-}
-
-@keyframes consoleSpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-@media (max-width: 1024px) {
-  .app__editor-section .panel--editor {
-    min-height: 0;
-  }
-  
-  .console-panel--open {
-    max-height: 200px;
-  }
-}
+/* Old console-panel styles removed — now using .ide-console in ide.css */
 
 /* Problem Selector Styles */
 .problem-selector {
@@ -6889,13 +6267,7 @@ body.theme-dark .report__chart {
   border-color: #334155;
 }
 
-body.theme-dark .console-panel__output {
-  background: #0d1117;
-}
-
-body.theme-dark .console-panel {
-  background: #0d1117;
-}
+/* Old dark theme console-panel overrides removed — handled by ide.css */
 
 body.theme-dark .problem-selector__dropdown {
   background: #1e293b;
@@ -6999,84 +6371,8 @@ body.theme-dark .onboarding-tour__content {
   color: #cbd5e1;
 }
 
-/* Monaco Editor Dark Theme Override */
-body.theme-dark .panel--editor .monaco-editor,
-body.theme-dark .panel--editor .monaco-editor-background,
-body.theme-dark .panel--editor .monaco-editor .margin {
-  background: #0f172a !important;
-}
-
-/* Interviewer Hint Widget - Dark Theme */
-body.theme-dark .interviewer-hint-widget {
-  background: #1e293b;
-  border-color: #334155;
-  border-left-color: #60a5fa;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
-}
-
-body.theme-dark .interviewer-hint-widget__header {
-  background: #0f172a;
-  border-bottom-color: #334155;
-}
-
-body.theme-dark .interviewer-hint-widget__title {
-  color: #60a5fa;
-}
-
-body.theme-dark .interviewer-hint-widget__close {
-  color: #64748b;
-}
-
-body.theme-dark .interviewer-hint-widget__close:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: #94a3b8;
-}
-
-body.theme-dark .interviewer-hint-widget__content {
-  color: #cbd5e1;
-}
-
-body.theme-dark .interviewer-hint-widget__footer {
-  background: #0f172a;
-  border-top-color: #1e293b;
-  color: #475569;
-}
-
-/* Inline Hint Zone - Dark Theme */
-body.theme-dark .ai-hint-zone__inner--info {
-  background: rgba(59, 130, 246, 0.12);
-  border-color: rgba(59, 130, 246, 0.25);
-  color: #93c5fd;
-}
-
-body.theme-dark .ai-hint-zone__inner--warning {
-  background: rgba(245, 158, 11, 0.12);
-  border-color: rgba(245, 158, 11, 0.25);
-  color: #fcd34d;
-}
-
-body.theme-dark .ai-hint-zone__inner--error {
-  background: rgba(239, 68, 68, 0.12);
-  border-color: rgba(239, 68, 68, 0.25);
-  color: #fca5a5;
-}
-
-body.theme-dark .ai-hint-zone__dismiss:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-/* Monaco Line Highlights - Dark Theme */
-body.theme-dark .ai-hint-line--info {
-  background: rgba(59, 130, 246, 0.08) !important;
-}
-
-body.theme-dark .ai-hint-line--warning {
-  background: rgba(245, 158, 11, 0.08) !important;
-}
-
-body.theme-dark .ai-hint-line--error {
-  background: rgba(239, 68, 68, 0.08) !important;
-}
+/* Old dark theme overrides for Monaco, hint widgets, hint zones removed
+   — the IDE now uses a fixed playcode-dark theme in ide.css regardless of page theme. */
 
 /* ===================================
    HIGH CONTRAST MODE
@@ -16217,7 +15513,7 @@ body.theme-dark .templates-import-export__close:hover {
   min-height: calc(100vh - 100px);
 }
 
-.app__main--no-problem.app__main--no-chat .panel--editor {
+.app__main--no-problem.app__main--no-chat .ide {
   min-height: calc(100vh - 180px);
 }
 
@@ -16275,7 +15571,7 @@ body.theme-dark .templates-import-export__close:hover {
   min-height: calc(100vh - 100px);
 }
 
-.app__editor-section--zen .panel--editor {
+.app__editor-section--zen .ide {
   min-height: calc(100vh - 140px);
 }
 
@@ -21446,7 +20742,7 @@ body.theme-dark .interview-hub__name-btn--ghost:hover {
   flex-direction: column;
 }
 
-.practice-session__editor .panel--editor {
+.practice-session__editor .ide {
   flex: 1;
   min-height: 0;
   border-radius: 0;
@@ -21468,14 +20764,7 @@ body.theme-dark .interview-hub__name-btn--ghost:hover {
   border-radius: 6px;
 }
 
-.practice-session__editor .panel--editor .monaco-editor {
-  border-radius: 0;
-}
-
-.practice-session__editor .panel--editor > .monaco-editor-wrapper,
-.practice-session__editor .panel--editor > div:last-child {
-  border-radius: 0;
-}
+/* IDE in practice session uses full-bleed rounded corners from .ide itself */
 
 .practice-session__editor .console-panel {
   border-radius: 0;
@@ -21650,11 +20939,7 @@ body.theme-dark .practice-session__problem {
 }
 
 body.theme-dark .practice-session__editor {
-  background: #1e293b;
-}
-
-body.theme-dark .practice-session__editor .console-panel {
-  border-color: #30363d;
+  background: transparent;
 }
 
 body.theme-dark .practice-session__chat-overlay {
