@@ -76,6 +76,7 @@ export default function LiveMonitor() {
   }, []);
 
   const question = QUESTION_BANK.find((q) => q.id === currentQid);
+  const sessionLanguage = session?.settings?.language || "javascript";
   const fmtTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
   // AI analysis (on-demand)
@@ -117,6 +118,7 @@ Evaluate: approach, correctness, time/space complexity, code quality. Be concise
         <div className="iv-monitor__meta">
           <span>Code: <strong>{session?.shareCode}</strong></span>
           <span>{candidates.length} candidate(s)</span>
+          <span>{({ javascript: "JavaScript", python: "Python", java: "Java", cpp: "C++" })[sessionLanguage] || "JavaScript"}</span>
           <span>Elapsed: {fmtTime(elapsed)}</span>
         </div>
         <div className="iv-monitor__header-actions">
@@ -168,7 +170,8 @@ Evaluate: approach, correctness, time/space complexity, code quality. Be concise
           </div>
           <Editor
             height="100%"
-            defaultLanguage="javascript"
+            defaultLanguage={sessionLanguage === "cpp" ? "cpp" : sessionLanguage}
+            language={sessionLanguage === "cpp" ? "cpp" : sessionLanguage}
             theme="playcode-dark"
             value={code}
             beforeMount={(monaco) => {

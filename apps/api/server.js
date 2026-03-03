@@ -91,13 +91,16 @@ app.get("/api/health", (_req, res) => res.json({ ok: true }));
 app.post("/api/chat", async (req, res) => {
   if (!OPENAI_API_KEY) return res.status(500).send("Missing OPENAI_API_KEY on the server.");
 
-  const { messages, mode = "chat", interruptContext = null, practiceMode = false } = req.body || {};
+  const { messages, mode = "chat", interruptContext = null, practiceMode = false, language = "javascript" } = req.body || {};
   if (!Array.isArray(messages)) return res.status(400).send("messages must be an array.");
+
+  const langNames = { javascript: "JavaScript", python: "Python", java: "Java", cpp: "C++" };
+  const langLabel = langNames[language] || "JavaScript";
 
   let systemPrompt;
   if (practiceMode) {
     if (mode === "interrupt") {
-      systemPrompt = `You are a friendly AI coding tutor helping someone practice.
+      systemPrompt = `You are a friendly AI coding tutor helping someone practice in ${langLabel}.
 You've noticed something in the learner's code worth mentioning.
 CONTEXT: ${interruptContext?.detectedIssue || "General observation"}
 Severity: ${interruptContext?.severity || "approach"}
@@ -105,40 +108,43 @@ Rules:
 - Be encouraging and supportive: "Hey, quick tip..." or "I noticed something..."
 - Be direct but gentle – 2-3 sentences max
 - Give more guidance than you would in an interview — it's okay to be more helpful
-- Ground feedback in the current code
+- Ground feedback in the current ${langLabel} code
+- Use ${langLabel}-specific terminology and idioms when giving advice
 - If they seem stuck, offer a concrete next step`;
     } else if (mode === "proactive") {
-      systemPrompt = `You are a supportive AI coding tutor observing code in real-time during a practice session.
+      systemPrompt = `You are a supportive AI coding tutor observing ${langLabel} code in real-time during a practice session.
 Look for learning opportunities: inefficient approaches, wrong data structures, common mistakes, signs of being stuck.
 If something is worth mentioning: start with "Tip:" or "Quick thought..." (1-2 sentences).
 Be encouraging — this is practice, not an interview. It's okay to give more direct guidance.
+Use ${langLabel}-specific best practices and idioms in your feedback.
 Ground feedback in the current code. If no feedback is needed respond with EXACTLY an empty string "".`;
     } else {
-      systemPrompt = `You are a friendly and supportive AI coding tutor. The user is practicing — not in an interview.
+      systemPrompt = `You are a friendly and supportive AI coding tutor. The user is practicing ${langLabel} — not in an interview.
 Be helpful, explain concepts clearly, give hints freely, and encourage learning.
-If they ask for help, guide them step by step. It's okay to show code examples.
+If they ask for help, guide them step by step. It's okay to show ${langLabel} code examples.
 Be concise but thorough. Celebrate progress and correct mistakes gently.`;
     }
   } else {
     if (mode === "interrupt") {
-      systemPrompt = `You are a senior technical interviewer conducting a live coding interview.
-You've noticed a SIGNIFICANT issue in the candidate's code that warrants a brief interruption.
+      systemPrompt = `You are a senior technical interviewer conducting a live ${langLabel} coding interview.
+You've noticed a SIGNIFICANT issue in the candidate's ${langLabel} code that warrants a brief interruption.
 CONTEXT: ${interruptContext?.detectedIssue || "General observation"}
 Severity: ${interruptContext?.severity || "approach"}
 Rules:
 - ONLY interrupt for real problems: wrong algorithm choice, critical bugs, fundamentally flawed approach, or infinite loops
 - Do NOT interrupt for minor style issues, variable naming, or small optimizations
 - Do NOT ask the candidate to explain their approach — they're in an interview, let them work
-- Do NOT ask beginner-level questions like "do you know what a hash map is?"
-- Be brief and precise: "That approach has O(n^2) complexity here — there's a linear solution using..." (1-2 sentences)
+- Do NOT ask beginner-level questions
+- Be brief and precise: use ${langLabel}-specific terminology (1-2 sentences)
 - Never give the full solution, but point them in the right direction
-- Ground feedback in the specific code they wrote`;
+- Ground feedback in the specific ${langLabel} code they wrote`;
     } else if (mode === "proactive") {
-      systemPrompt = `You are a senior technical interviewer silently observing a live coding interview.
+      systemPrompt = `You are a senior technical interviewer silently observing a live ${langLabel} coding interview.
 Your bar for intervention is HIGH. Only speak up if:
 - The candidate is heading toward a fundamentally wrong approach that will waste significant time
 - There's a critical bug (off-by-one that breaks all test cases, wrong data structure entirely)
 - The candidate appears completely stuck (no meaningful progress for a while)
+- The candidate is using non-idiomatic ${langLabel} patterns that indicate a fundamental misunderstanding
 
 Do NOT speak up for:
 - Minor inefficiencies they might fix later
@@ -149,15 +155,16 @@ Do NOT speak up for:
 If intervention IS warranted, be precise and brief (1 sentence max): "Heads up — that won't handle negative inputs." 
 If no feedback is needed respond with EXACTLY an empty string "".`;
     } else {
-      systemPrompt = `You are a senior technical interviewer in a live coding interview. The candidate is asking you a question or clarifying something.
+      systemPrompt = `You are a senior technical interviewer in a live ${langLabel} coding interview. The candidate is asking you a question or clarifying something.
 Rules:
-- Answer their question concisely and professionally
+- Answer their question concisely and professionally, using ${langLabel}-specific terminology
 - Do NOT over-explain or lecture — treat them as a competent engineer
 - It's okay to confirm their approach is reasonable or point out a flaw if asked
 - Do NOT volunteer the solution unless they're completely stuck and explicitly ask for major help
 - Do NOT ask them beginner questions or quiz them on fundamentals
 - Keep responses short (2-3 sentences max) — this is a real interview, not a tutoring session
-- If they ask a clarifying question about the problem, answer it directly`;
+- If they ask a clarifying question about the problem, answer it directly
+- Any code examples you provide must be in ${langLabel}`;
     }
   }
 
@@ -427,8 +434,11 @@ app.post("/api/sessions/:sid/candidates/:cid/hint", async (req, res) => {
     if (!session.settings?.hintsEnabled) return res.status(403).json({ error: "Hints are disabled for this session." });
 
     const question = questionBank.find((q) => q.id === questionId);
-    const prompt = `You are a coding interview coach. The candidate is working on "${question?.title || questionId}".
-Give ONE helpful hint (1-2 sentences) based on their code so far. Don't give the answer.`;
+    const sessionLang = session.settings?.language || "javascript";
+    const langNames = { javascript: "JavaScript", python: "Python", java: "Java", cpp: "C++" };
+    const langLabel = langNames[sessionLang] || "JavaScript";
+    const prompt = `You are a coding interview coach. The candidate is working on "${question?.title || questionId}" in ${langLabel}.
+Give ONE helpful hint (1-2 sentences) based on their ${langLabel} code so far. Don't give the answer. Use ${langLabel}-specific guidance.`;
     const reply = await llm(prompt, [{ role: "user", content: `Current code:\n${code || "// empty"}` }]);
     res.json({ hint: reply });
   } catch (e) {
@@ -452,11 +462,18 @@ app.post("/api/sessions/:sid/evaluate", async (req, res) => {
     const submissions = {};
     subSnap.forEach((d) => { submissions[d.id] = d.data(); });
 
+    const sessionSnap2 = await withTimeout(getDoc(doc(db, "sessions", sid)));
+    const sessionData = sessionSnap2.exists() ? sessionSnap2.data() : {};
+    const evalLang = sessionData.settings?.language || "javascript";
+    const evalLangNames = { javascript: "JavaScript", python: "Python", java: "Java", cpp: "C++" };
+    const evalLangLabel = evalLangNames[evalLang] || "JavaScript";
+
     const evaluations = {};
     for (const [qid, sub] of Object.entries(submissions)) {
       const question = questionBank.find((q) => q.id === qid);
-      const prompt = `Evaluate this candidate's solution for "${question?.title || qid}".
+      const prompt = `Evaluate this candidate's ${evalLangLabel} solution for "${question?.title || qid}".
 Score on: correctness (0-40), efficiency (0-25), code quality (0-20), communication (0-15).
+Consider ${evalLangLabel}-specific best practices, idiomatic patterns, and language features in the code quality score.
 Return JSON: { "correctness": N, "efficiency": N, "codeQuality": N, "communication": N, "total": N, "feedback": "..." }`;
       const reply = await llm(prompt, [{ role: "user", content: sub.code || "// no code" }], { maxTokens: 500 });
       try {
@@ -542,6 +559,10 @@ async function generateFullReport(sid) {
   if (!sessionSnap.exists()) throw new Error("Session not found.");
   const session = { id: sid, ...sessionSnap.data() };
 
+  const reportLang = session.settings?.language || "javascript";
+  const reportLangNames = { javascript: "JavaScript", python: "Python", java: "Java", cpp: "C++" };
+  const reportLangLabel = reportLangNames[reportLang] || "JavaScript";
+
   const candSnap = await withTimeout(getDocs(collection(db, "sessions", sid, "candidates")));
   const candidates = [];
   for (const cdoc of candSnap.docs) {
@@ -554,8 +575,9 @@ async function generateFullReport(sid) {
     const evaluations = {};
     for (const [qid, sub] of Object.entries(submissions)) {
       const question = questionBank.find((q) => q.id === qid);
-      const prompt = `Evaluate this candidate's solution for "${question?.title || qid}".
+      const prompt = `Evaluate this candidate's ${reportLangLabel} solution for "${question?.title || qid}".
 Score on: correctness (0-40), efficiency (0-25), code quality (0-20), communication (0-15).
+Consider ${reportLangLabel}-specific best practices and idiomatic patterns in the code quality score.
 Return JSON: { "correctness": N, "efficiency": N, "codeQuality": N, "communication": N, "total": N, "feedback": "..." }`;
       const reply = await llm(prompt, [{ role: "user", content: sub.code || "// no code" }], { maxTokens: 500 });
       try {
@@ -579,13 +601,15 @@ Return JSON: { "correctness": N, "efficiency": N, "codeQuality": N, "communicati
   const reportPrompt = `You are a senior technical interviewer writing a comprehensive post-interview report.
 
 Session: "${session.title}"
+Programming Language: ${reportLangLabel}
 Number of candidates: ${candidates.length}
 Questions: ${(session.questionIds || []).map((qid) => {
     const q = questionBank.find((x) => x.id === qid);
     return q?.title || qid;
   }).join(", ")}
 
-For each candidate you have their code submissions and per-question evaluation scores.
+For each candidate you have their ${reportLangLabel} code submissions and per-question evaluation scores.
+Evaluate their use of ${reportLangLabel}-specific features, idioms, and best practices.
 
 Generate a DETAILED JSON report with this exact structure:
 {
@@ -988,15 +1012,18 @@ app.delete("/api/saved-code/:userId/:problemId", async (req, res) => {
 app.post("/api/code-hints", async (req, res) => {
   if (!OPENAI_API_KEY) return res.status(500).send("Missing OPENAI_API_KEY on the server.");
 
-  const { code, problemTitle, problemDescription, starterCode, practiceMode = false } = req.body || {};
+  const { code, problemTitle, problemDescription, starterCode, practiceMode = false, language = "javascript" } = req.body || {};
   if (!code || typeof code !== "string") return res.status(400).send("code required.");
 
+  const langNames = { javascript: "JavaScript", python: "Python", java: "Java", cpp: "C++" };
+  const langLabel = langNames[language] || "JavaScript";
+
   const tone = practiceMode
-    ? "You are a friendly coding tutor. Be encouraging but point out issues clearly."
-    : "You are a senior technical interviewer. Only flag significant issues — wrong algorithm choice, critical bugs, or fundamentally flawed approaches. Ignore minor style issues or small inefficiencies.";
+    ? `You are a friendly ${langLabel} coding tutor. Be encouraging but point out issues clearly.`
+    : `You are a senior technical interviewer evaluating ${langLabel} code. Only flag significant issues — wrong algorithm choice, critical bugs, or fundamentally flawed approaches. Ignore minor style issues or small inefficiencies.`;
 
   const systemPrompt = `${tone}
-Analyze the following code for a problem titled "${problemTitle || "coding challenge"}".
+Analyze the following ${langLabel} code for a problem titled "${problemTitle || "coding challenge"}".
 ${problemDescription ? `Problem: ${problemDescription}\n` : ""}
 Return a JSON object with this EXACT structure (no markdown, no code fences):
 {

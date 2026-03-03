@@ -8,6 +8,7 @@ import ChatPanel from "../components/ChatPanel.jsx";
 import { getSession, pushCode } from "../services/sessionService.js";
 import { sendChat, getCodeHints } from "../api.js";
 import { analyzeCode, createAnalyzerState } from "../services/codeAnalyzer.js";
+import { convertStarterCode } from "../services/starterCodeService.js";
 import { QUESTION_BANK } from "../data/questionBank.js";
 import "../styles/candidate.css";
 
@@ -76,14 +77,16 @@ export default function CandidateSession() {
           setSubmitted(true);
           return;
         }
+        const lang = s.settings?.language || "javascript";
         const qs = (s.questionIds || []).map((qid) => {
           const fromBank = QUESTION_BANK.find((q) => q.id === qid);
           return fromBank || { id: qid, title: qid, description: "", starterCode: "" };
         });
         setQuestions(qs);
         if (qs.length) {
-          setCode(qs[0].starterCode || "");
-          codeRef.current = qs[0].starterCode || "";
+          const starter = convertStarterCode(qs[0].starterCode || "", lang);
+          setCode(starter);
+          codeRef.current = starter;
         }
       })
       .catch(() => {});
@@ -133,6 +136,7 @@ export default function CandidateSession() {
   }, [sessionId, candidateId, currentIdx, questions]);
 
   const question = questions[currentIdx] || null;
+  const sessionLanguage = session?.settings?.language || "javascript";
   const timeLimit = session?.settings?.timeLimitSeconds || 1800;
   const remaining = Math.max(0, timeLimit - elapsed);
   const fmtTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -198,7 +202,7 @@ export default function CandidateSession() {
       const llmMessages = [...withCode, { role: "user", content: trimmed }];
       llmMessagesRef.current = llmMessages;
 
-      const data = await sendChat({ messages: llmMessages, mode: "chat", practiceMode: false });
+      const data = await sendChat({ messages: llmMessages, mode: "chat", practiceMode: false, language: sessionLanguage });
       setChatMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
       llmMessagesRef.current = [...llmMessagesRef.current, { role: "assistant", content: data.reply }];
     } catch (error) {
@@ -329,6 +333,7 @@ export default function CandidateSession() {
           problemTitle: question.title,
           problemDescription: question.description,
           starterCode: question.starterCode,
+          language: sessionLanguage,
         });
 
         if (data?.hasIssue && data.hints?.length > 0) {
@@ -392,6 +397,7 @@ export default function CandidateSession() {
           problemTitle: question.title,
           problemDescription: question.description,
           starterCode: question.starterCode,
+          language: sessionLanguage,
         });
 
         if (data?.hasIssue && data.hints?.length > 0) {
@@ -416,8 +422,9 @@ export default function CandidateSession() {
     if (currentIdx < questions.length - 1) {
       const nextIdx = currentIdx + 1;
       setCurrentIdx(nextIdx);
-      setCode(questions[nextIdx]?.starterCode || "");
-      codeRef.current = questions[nextIdx]?.starterCode || "";
+      const nextStarter = convertStarterCode(questions[nextIdx]?.starterCode || "", sessionLanguage);
+      setCode(nextStarter);
+      codeRef.current = nextStarter;
       lastPushedRef.current = "";
       setEditorHint(null);
       lastLocalCodeRef.current = "";
@@ -550,6 +557,7 @@ export default function CandidateSession() {
               wordWrap: "on",
             }}
             code={code}
+            language={sessionLanguage}
             interviewerHint={editorHint}
             onDismissHint={handleDismissHint}
             consoleLogs={consoleLogs}

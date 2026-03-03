@@ -9,6 +9,8 @@ const LANGUAGE_META = {
   javascript: { icon: "JS", iconClass: "ide__tab-icon--js", label: "JavaScript", ext: ".js" },
   typescript: { icon: "TS", iconClass: "ide__tab-icon--ts", label: "TypeScript", ext: ".ts" },
   python:     { icon: "PY", iconClass: "ide__tab-icon--py", label: "Python", ext: ".py" },
+  java:       { icon: "JV", iconClass: "ide__tab-icon--java", label: "Java", ext: ".java" },
+  cpp:        { icon: "C+", iconClass: "ide__tab-icon--cpp", label: "C++", ext: ".cpp" },
 };
 
 function definePlaycodeTheme(monaco) {
@@ -536,6 +538,7 @@ function EditorPanel({
         <Editor
           height="100%"
           defaultLanguage={language}
+          language={language}
           theme="playcode-dark"
           value={code}
           onChange={onCodeChange}

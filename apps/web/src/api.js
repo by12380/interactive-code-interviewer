@@ -1,5 +1,5 @@
-export async function sendChat({ messages, mode = "chat", interruptContext = null, practiceMode = false }) {
-  const body = { messages, mode, practiceMode };
+export async function sendChat({ messages, mode = "chat", interruptContext = null, practiceMode = false, language = "javascript" }) {
+  const body = { messages, mode, practiceMode, language };
   
   if (interruptContext) {
     body.interruptContext = interruptContext;
@@ -22,11 +22,11 @@ export async function sendChat({ messages, mode = "chat", interruptContext = nul
 /**
  * Request AI-powered inline code hints (IDE-style diagnostics)
  */
-export async function getCodeHints({ code, problemTitle, problemDescription, starterCode, practiceMode = false }) {
+export async function getCodeHints({ code, problemTitle, problemDescription, starterCode, practiceMode = false, language = "javascript" }) {
   const response = await fetch("/api/code-hints", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code, problemTitle, problemDescription, starterCode, practiceMode })
+    body: JSON.stringify({ code, problemTitle, problemDescription, starterCode, practiceMode, language })
   });
 
   if (!response.ok) {

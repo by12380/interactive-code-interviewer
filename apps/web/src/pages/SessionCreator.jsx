@@ -22,12 +22,20 @@ export default function SessionCreator() {
   const [title, setTitle] = useState("");
   const [interviewerEmail, setInterviewerEmail] = useState(user?.email || "");
   const [selectedIds, setSelectedIds] = useState([]);
+  const [language, setLanguage] = useState("javascript");
   const [settings, setSettings] = useState({
     hintsEnabled: true,
     aiInterruptionsEnabled: true,
     showTestCases: true,
     timeLimitSeconds: 30 * 60,
   });
+
+  const LANGUAGE_OPTIONS = [
+    { value: "javascript", label: "JavaScript" },
+    { value: "python",     label: "Python" },
+    { value: "java",       label: "Java" },
+    { value: "cpp",        label: "C++" },
+  ];
 
   // Custom question form
   const [showCustom, setShowCustom] = useState(false);
@@ -86,7 +94,7 @@ export default function SessionCreator() {
       const session = await createSession({
         title,
         questionIds: selectedIds,
-        settings,
+        settings: { ...settings, language },
         createdBy: user?.uid || null,
         interviewerEmail: interviewerEmail || null,
       });
@@ -106,6 +114,7 @@ export default function SessionCreator() {
           <p>Share this link with candidates:</p>
           <code className="iv-share-code">{window.location.origin}/join/{created.shareCode}</code>
           <p>Session code: <strong>{created.shareCode}</strong></p>
+          <p>Language: <strong>{LANGUAGE_OPTIONS.find(l => l.value === language)?.label || language}</strong></p>
           <div className="iv-success-card__actions">
             <button className="iv-btn iv-btn--primary" onClick={() => navigate(`/interviewer/session/${created.id}`)}>
               Go to Monitor
@@ -131,6 +140,21 @@ export default function SessionCreator() {
         <input className="iv-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Frontend Eng Round 1" />
         <label className="iv-label" style={{ marginTop: 12 }}>Your Email (for receiving the AI report)</label>
         <input className="iv-input" type="email" value={interviewerEmail} onChange={(e) => setInterviewerEmail(e.target.value)} placeholder="interviewer@company.com" />
+
+        <label className="iv-label" style={{ marginTop: 12 }}>Programming Language</label>
+        <div className="iv-lang-picker">
+          {LANGUAGE_OPTIONS.map((lang) => (
+            <button
+              key={lang.value}
+              type="button"
+              className={`iv-lang-option ${language === lang.value ? "iv-lang-option--selected" : ""}`}
+              onClick={() => setLanguage(lang.value)}
+            >
+              <span className="iv-lang-option__icon">{lang.value === "javascript" ? "JS" : lang.value === "python" ? "PY" : lang.value === "java" ? "JV" : "C+"}</span>
+              <span>{lang.label}</span>
+            </button>
+          ))}
+        </div>
       </section>
 
       {/* ── Permissions ─────────────────────────────────────────── */}
