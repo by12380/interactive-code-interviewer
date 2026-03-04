@@ -20652,6 +20652,40 @@ body.theme-dark .interview-hub__name-btn--ghost:hover {
   border-radius: 6px;
 }
 
+.practice-session__lang-select {
+  padding: 5px 28px 5px 10px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e2e8f0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  outline: none;
+  font-family: inherit;
+}
+
+.practice-session__lang-select:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+  border-color: rgba(99, 102, 241, 0.4);
+}
+
+.practice-session__lang-select:focus-visible {
+  border-color: rgba(99, 102, 241, 0.6);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+}
+
+.practice-session__lang-select option {
+  background: #1e1e2e;
+  color: #e2e8f0;
+}
+
 .practice-session__hdr-btn {
   display: inline-flex;
   align-items: center;

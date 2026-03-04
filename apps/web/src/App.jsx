@@ -16,7 +16,6 @@ import AuthModal from "./components/AuthModal.jsx";
 import UserProfile from "./components/UserProfile.jsx";
 import Leaderboard from "./components/Leaderboard.jsx";
 import SettingsPanel from "./components/SettingsPanel.jsx";
-import OnboardingTour from "./components/OnboardingTour.jsx";
 import SkipLinks from "./components/SkipLinks.jsx";
 import GamificationPanel from "./components/GamificationPanel.jsx";
 import UnlockToast from "./components/UnlockToast.jsx";
@@ -30,6 +29,7 @@ import { useTheme } from "./contexts/ThemeContext.jsx";
 import { useFocusMode } from "./contexts/FocusModeContext.jsx";
 import "./styles/candidate.css";
 import { PROBLEMS, getProblemById } from "./data/problems.js";
+import { convertStarterCode } from "./services/starterCodeService.js";
 import { 
   getCurrentUser, 
   logout as logoutUser, 
@@ -282,14 +282,9 @@ export default function App({ mode = "practice" }) {
   // Gamification/toast state
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
-  
-  
-  // Onboarding state
-  const [isOnboardingVisible, setIsOnboardingVisible] = useState(() => {
-    const onboardingComplete = localStorage.getItem("onboardingComplete");
-    const neverShow = localStorage.getItem("onboardingNeverShow");
-    return !onboardingComplete && !neverShow;
-  });
+
+  // Language state for practice mode multi-language support
+  const [language, setLanguage] = useState("javascript");
   
   // Problem management state — prefer problem from URL in practice mode
   const [currentProblemId, setCurrentProblemId] = useState(() => {
@@ -301,7 +296,10 @@ export default function App({ mode = "practice" }) {
   });
   const currentProblem = useMemo(() => getProblemById(currentProblemId), [currentProblemId]);
   
-  const [code, setCode] = useState(currentProblem?.starterCode || "");
+  const [code, setCode] = useState(() => {
+    const starter = currentProblem?.starterCode || "";
+    return convertStarterCode(starter, language);
+  });
   const [input, setInput] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -477,7 +475,7 @@ export default function App({ mode = "practice" }) {
     if (saveStatusTimerRef.current) clearTimeout(saveStatusTimerRef.current);
 
     try {
-      await saveUserCode({ userId, problemId: currentProblemId, code });
+      await saveUserCode({ userId, problemId: currentProblemId, code, language });
       setSaveStatus("saved");
       saveStatusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 2500);
     } catch (e) {
@@ -485,7 +483,7 @@ export default function App({ mode = "practice" }) {
       setSaveStatus("error");
       saveStatusTimerRef.current = setTimeout(() => setSaveStatus("idle"), 3000);
     }
-  }, [effectiveUser, authUser, currentProblemId, code]);
+  }, [effectiveUser, authUser, currentProblemId, code, language]);
 
   // Load saved code when switching to a problem
   const loadSavedCodeForProblem = useCallback(async (problemId, fallbackCode) => {
@@ -727,7 +725,7 @@ export default function App({ mode = "practice" }) {
       const llmMessages = [...withCode, { role: "user", content: prompt }];
       llmMessagesRef.current = llmMessages;
 
-      const data = await sendChat({ messages: llmMessages, mode: "chat", practiceMode: isPracticeMode });
+      const data = await sendChat({ messages: llmMessages, mode: "chat", practiceMode: isPracticeMode, language });
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: data.reply }
@@ -747,7 +745,7 @@ export default function App({ mode = "practice" }) {
     } finally {
       setIsSending(false);
     }
-  }, [appendCodeUpdateIfNeeded, code, isSending, messages, isPracticeMode]);
+  }, [appendCodeUpdateIfNeeded, code, isSending, messages, isPracticeMode, language]);
 
   const updateUndoRedoState = useCallback(() => {
     const editor = editorRef.current;
@@ -870,6 +868,7 @@ export default function App({ mode = "practice" }) {
               messages: nextMessages,
               mode: "interrupt",
               practiceMode: isPracticeMode,
+              language,
               interruptContext: {
                 detectedIssue: analysisResult.message,
                 severity: analysisResult.severity,
@@ -943,6 +942,7 @@ export default function App({ mode = "practice" }) {
           problemDescription: currentProblem.description,
           starterCode: currentProblem.starterCode,
           practiceMode: isPracticeMode,
+          language,
         });
 
         if (hintData?.hasIssue && hintData.hints?.length > 0) {
@@ -976,7 +976,8 @@ export default function App({ mode = "practice" }) {
         const data = await sendChat({
           messages: nextMessages,
           mode: "proactive",
-          practiceMode: isPracticeMode
+          practiceMode: isPracticeMode,
+          language,
         });
 
         if (!data?.reply) return;
@@ -1000,7 +1001,7 @@ export default function App({ mode = "practice" }) {
     }, 10000); // 10 seconds — short enough to feel responsive when user pauses
 
     return () => clearTimeout(idleTimer);
-  }, [code, currentProblem, isLocked, isPaused, appendCodeUpdateIfNeeded, isPracticeMode]);
+  }, [code, currentProblem, isLocked, isPaused, appendCodeUpdateIfNeeded, isPracticeMode, language]);
 
   // ── EFFECT C: Throttle interval (every 12s, even during continuous typing) ─
   // Debounce-based effects never fire if the user types non-stop. This interval
@@ -1065,6 +1066,7 @@ export default function App({ mode = "practice" }) {
           problemDescription: currentProblem.description,
           starterCode: currentProblem.starterCode,
           practiceMode: isPracticeMode,
+          language,
         });
 
         if (data?.hasIssue && data.hints?.length > 0) {
@@ -1087,7 +1089,7 @@ export default function App({ mode = "practice" }) {
     }, 12000); // Check every 12 seconds regardless of typing
 
     return () => clearInterval(interval);
-  }, [code, currentProblem, isLocked, isPaused, appendCodeUpdateIfNeeded, isPracticeMode]);
+  }, [code, currentProblem, isLocked, isPaused, appendCodeUpdateIfNeeded, isPracticeMode, language]);
 
   const handleSend = useCallback(async () => {
     const trimmed = input.trim();
@@ -1112,7 +1114,7 @@ export default function App({ mode = "practice" }) {
       const llmMessages = [...withCode, { role: "user", content: trimmed }];
       llmMessagesRef.current = llmMessages;
 
-      const data = await sendChat({ messages: llmMessages, mode: "chat", practiceMode: isPracticeMode });
+      const data = await sendChat({ messages: llmMessages, mode: "chat", practiceMode: isPracticeMode, language });
       setMessages((prev) => [
         ...prev,
         { role: "assistant", content: data.reply }
@@ -1132,7 +1134,7 @@ export default function App({ mode = "practice" }) {
     } finally {
       setIsSending(false);
     }
-  }, [appendCodeUpdateIfNeeded, code, input, isSending, messages, isPracticeMode]);
+  }, [appendCodeUpdateIfNeeded, code, input, isSending, messages, isPracticeMode, language]);
 
   const handleEditorChange = useCallback((value) => {
     const newCode = value ?? "";
@@ -1154,6 +1156,21 @@ export default function App({ mode = "practice" }) {
   const handleRedo = useCallback(() => {
     editorRef.current?.trigger("toolbar", "redo", null);
   }, []);
+
+  const handleLanguageChange = useCallback((newLang) => {
+    if (newLang === language || isLocked) return;
+    setLanguage(newLang);
+    const starter = currentProblem?.starterCode || "";
+    const converted = convertStarterCode(starter, newLang);
+    setCode(converted);
+    setConsoleLogs([]);
+    setEditorHint(null);
+    lastAnalyzedCodeRef.current = "";
+    lastIdleCodeRef.current = "";
+    lastThrottleCodeRef.current = "";
+    llmMessagesRef.current = [];
+    lastCodeSentRef.current = "";
+  }, [language, isLocked, currentProblem]);
 
   const handleDifficultyChange = useCallback((value) => {
     setDifficulty(value);
@@ -1396,11 +1413,12 @@ export default function App({ mode = "practice" }) {
     if (!problem || isLocked) return;
     
     setCurrentProblemId(problemId);
-    setCode(problem.starterCode);
+    const converted = convertStarterCode(problem.starterCode, language);
+    setCode(converted);
     setSaveStatus("idle");
 
     // Attempt to load any previously saved code for this problem
-    loadSavedCodeForProblem(problemId, problem.starterCode).then((savedCode) => {
+    loadSavedCodeForProblem(problemId, converted).then((savedCode) => {
       setCode(savedCode);
     });
 
@@ -1509,19 +1527,6 @@ export default function App({ mode = "practice" }) {
   }, []);
 
 
-  // Onboarding handlers
-  const handleCloseOnboarding = useCallback(() => {
-    setIsOnboardingVisible(false);
-  }, []);
-
-  const handleNeverShowOnboarding = useCallback(() => {
-    setIsOnboardingVisible(false);
-  }, []);
-
-  const handleStartOnboarding = useCallback(() => {
-    setIsOnboardingVisible(true);
-  }, []);
-
   const handleClearConsole = useCallback(() => {
     setConsoleLogs([]);
   }, []);
@@ -1537,11 +1542,21 @@ export default function App({ mode = "practice" }) {
     setConsoleLogs([]);
     setIsConsoleOpen(true);
 
-    // Small delay to show the running state
+    if (language !== "javascript") {
+      const langNames = { python: "Python", java: "Java", cpp: "C++", typescript: "TypeScript" };
+      setTimeout(() => {
+        setConsoleLogs([
+          { type: "info", value: `Client-side execution is only available for JavaScript. You're writing in ${langNames[language] || language}.` },
+          { type: "info", value: "The AI assistant can still review your code, give hints, and evaluate your approach." },
+        ]);
+        setIsRunning(false);
+      }, 100);
+      return;
+    }
+
     setTimeout(() => {
       const logs = [];
 
-      // Create custom console methods to capture output
       const captureConsole = {
         log: (...args) => {
           logs.push({ type: "log", value: args.length === 1 ? args[0] : args });
@@ -1561,7 +1576,6 @@ export default function App({ mode = "practice" }) {
       };
 
       try {
-        // Create a function that runs the code with our custom console
         const runCode = new Function(
           "console",
           `"use strict";
@@ -1569,10 +1583,8 @@ export default function App({ mode = "practice" }) {
           `
         );
 
-        // Execute the code
         const result = runCode(captureConsole);
 
-        // If there's a return value, show it
         if (result !== undefined) {
           logs.push({ type: "result", value: result });
         }
@@ -1590,7 +1602,7 @@ export default function App({ mode = "practice" }) {
       setConsoleLogs(logs);
       setIsRunning(false);
     }, 100);
-  }, [code, isRunning, isEditorDisabled]);
+  }, [code, isRunning, isEditorDisabled, language]);
 
   // Add keyboard shortcuts for running code, saving, and focus mode
   useEffect(() => {
@@ -1786,6 +1798,18 @@ export default function App({ mode = "practice" }) {
                     )}
                   </div>
                   <div className="cs-session__meta practice-session__header-right">
+                    <select
+                      className="practice-session__lang-select"
+                      value={language}
+                      onChange={(e) => handleLanguageChange(e.target.value)}
+                      disabled={isLocked}
+                      aria-label="Select programming language"
+                    >
+                      <option value="javascript">JavaScript</option>
+                      <option value="python">Python</option>
+                      <option value="java">Java</option>
+                      <option value="cpp">C++</option>
+                    </select>
                     <span className="practice-session__timer-display">
                       {fmtElapsed(elapsedSeconds)}
                     </span>
@@ -1860,6 +1884,7 @@ export default function App({ mode = "practice" }) {
                       onCodeChange={handleEditorChange}
                       editorOptions={editorOptions}
                       code={code}
+                      language={language}
                       interviewerHint={editorHint}
                       onDismissHint={handleDismissEditorHint}
                       onRecordCursorMove={handleRecordCursorMove}
@@ -2165,13 +2190,6 @@ export default function App({ mode = "practice" }) {
       <Tutorial isVisible={isTutorialVisible} onClose={handleCloseTutorial} />
       
       {/* Settings Panel is now an inline screen, rendered in main content above */}
-      
-      {/* Onboarding Tour */}
-      <OnboardingTour 
-        isVisible={isOnboardingVisible} 
-        onClose={handleCloseOnboarding}
-        onNeverShow={handleNeverShowOnboarding}
-      />
       
       {/* Auth Modal */}
       {isAuthModalVisible && (
