@@ -13,12 +13,12 @@ async function json(res) {
 
 // ─── Sessions ───────────────────────────────────────────────────────
 
-export async function createSession({ title, questionIds, settings, createdBy, interviewerEmail }) {
+export async function createSession({ title, questionIds, settings, createdBy, interviewerEmail, candidateEmail, scheduledAt }) {
   return json(
     await fetch(`${API}/sessions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, questionIds, settings, createdBy, interviewerEmail }),
+      body: JSON.stringify({ title, questionIds, settings, createdBy, interviewerEmail, candidateEmail, scheduledAt }),
     })
   );
 }
@@ -49,6 +49,12 @@ export async function deleteSession(sessionId) {
 }
 
 // ─── Candidates (join / list) ───────────────────────────────────────
+
+export async function lookupSessionByCode(shareCode) {
+  return json(
+    await fetch(`${API}/sessions/lookup/${encodeURIComponent(shareCode)}`)
+  );
+}
 
 export async function joinSession(shareCode, { userId, displayName }) {
   return json(

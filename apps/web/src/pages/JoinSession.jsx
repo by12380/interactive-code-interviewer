@@ -1,10 +1,24 @@
 // JoinSession – Candidate enters a share code, pastes a link, or lands via /join/:code.
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext.jsx";
-import { joinSession } from "../services/sessionService.js";
+import { joinSession, lookupSessionByCode } from "../services/sessionService.js";
 import "../styles/candidate.css";
+
+function formatCountdown(ms) {
+  const totalSec = Math.ceil(ms / 1000);
+  const d = Math.floor(totalSec / 86400);
+  const h = Math.floor((totalSec % 86400) / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const parts = [];
+  if (d > 0) parts.push(`${d}d`);
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  parts.push(`${s}s`);
+  return parts.join(" ");
+}
 
 /**
  * Extract a share code from user input. Handles:
@@ -34,6 +48,12 @@ export default function JoinSession() {
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState("");
 
+  // Schedule gating
+  const [sessionMeta, setSessionMeta] = useState(null);
+  const [scheduleChecked, setScheduleChecked] = useState(false);
+  const [timeRemaining, setTimeRemaining] = useState(null);
+  const timerRef = useRef(null);
+
   // Quick inline auth state
   const [authMode, setAuthMode] = useState("none"); // none | login | signup
   const [email, setEmail] = useState("");
@@ -46,6 +66,52 @@ export default function JoinSession() {
   useEffect(() => {
     if (user?.displayName) setDisplayName(user.displayName);
   }, [user?.displayName]);
+
+  // Look up session metadata when share code is valid (6 chars)
+  useEffect(() => {
+    if (shareCode.length < 4) {
+      setSessionMeta(null);
+      setScheduleChecked(false);
+      return;
+    }
+    let cancelled = false;
+    lookupSessionByCode(shareCode)
+      .then((meta) => {
+        if (!cancelled) {
+          setSessionMeta(meta);
+          setScheduleChecked(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSessionMeta(null);
+          setScheduleChecked(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [shareCode]);
+
+  // Countdown timer for scheduled sessions
+  useEffect(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (!sessionMeta?.scheduledAt) {
+      setTimeRemaining(null);
+      return;
+    }
+    const target = new Date(sessionMeta.scheduledAt).getTime();
+    const EARLY_BUFFER_MS = 5 * 60 * 1000; // allow joining 5 min early
+
+    const tick = () => {
+      const diff = target - EARLY_BUFFER_MS - Date.now();
+      setTimeRemaining(diff > 0 ? diff : 0);
+    };
+    tick();
+    timerRef.current = setInterval(tick, 1000);
+    return () => clearInterval(timerRef.current);
+  }, [sessionMeta?.scheduledAt]);
+
+  const isScheduled = !!sessionMeta?.scheduledAt;
+  const canJoinNow = !isScheduled || timeRemaining === 0;
 
   const handleInputChange = useCallback((e) => {
     const val = e.target.value;
@@ -170,8 +236,42 @@ export default function JoinSession() {
 
         {error && <p className="cs-error">{error}</p>}
 
-        <button className="cs-btn cs-btn--primary cs-btn--lg" onClick={handleJoin} disabled={joining || !shareCode}>
-          {joining ? "Joining..." : "Join Session"}
+        {scheduleChecked && isScheduled && (
+          <div className="cs-schedule-banner" style={{
+            background: canJoinNow ? "#f0fdf4" : "#fef3c7",
+            border: `1px solid ${canJoinNow ? "#bbf7d0" : "#fde68a"}`,
+            borderRadius: 10,
+            padding: "12px 16px",
+            marginBottom: 12,
+            textAlign: "center",
+          }}>
+            <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: 14, color: canJoinNow ? "#166534" : "#92400e" }}>
+              {canJoinNow ? "The interview is ready — you may join now!" : "This interview is scheduled for:"}
+            </p>
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#1e293b" }}>
+              {new Date(sessionMeta.scheduledAt).toLocaleString(undefined, {
+                weekday: "long", year: "numeric", month: "long", day: "numeric",
+                hour: "numeric", minute: "2-digit", hour12: true,
+              })}
+            </p>
+            {!canJoinNow && timeRemaining != null && (
+              <p style={{ margin: "8px 0 0", fontSize: 13, color: "#92400e" }}>
+                Opens in {formatCountdown(timeRemaining)}
+              </p>
+            )}
+          </div>
+        )}
+
+        <button
+          className="cs-btn cs-btn--primary cs-btn--lg"
+          onClick={handleJoin}
+          disabled={joining || !shareCode || (scheduleChecked && isScheduled && !canJoinNow)}
+        >
+          {joining
+            ? "Joining..."
+            : scheduleChecked && isScheduled && !canJoinNow
+              ? "Not Yet Available"
+              : "Join Session"}
         </button>
 
         <button className="cs-btn cs-btn--ghost" onClick={() => navigate("/")}>

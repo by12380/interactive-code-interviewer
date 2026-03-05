@@ -249,11 +249,120 @@ app.post("/api/questions", async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
+//  CANDIDATE INVITATION EMAIL
+// ═══════════════════════════════════════════════════════════════════
+
+function buildInvitationHTML({ title, shareCode, scheduledAt, joinUrl }) {
+  const scheduledLabel = scheduledAt
+    ? new Date(scheduledAt).toLocaleString("en-US", {
+        weekday: "long",
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      })
+    : null;
+
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <div style="max-width:560px;margin:0 auto;padding:40px 20px;">
+    <div style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+      <div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:32px 28px;text-align:center;">
+        <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">You're Invited to an Interview</h1>
+      </div>
+
+      <div style="padding:28px;">
+        <p style="margin:0 0 20px;color:#334155;font-size:15px;line-height:1.6;">
+          You have been scheduled for an interview session. Here are the details:
+        </p>
+
+        <div style="background:#f1f5f9;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+          <table style="width:100%;border-collapse:collapse;">
+            <tr>
+              <td style="padding:6px 0;color:#64748b;font-size:13px;font-weight:600;vertical-align:top;width:110px;">Session</td>
+              <td style="padding:6px 0;color:#1e293b;font-size:14px;font-weight:600;">${title}</td>
+            </tr>
+            ${scheduledLabel ? `
+            <tr>
+              <td style="padding:6px 0;color:#64748b;font-size:13px;font-weight:600;vertical-align:top;">Scheduled</td>
+              <td style="padding:6px 0;color:#1e293b;font-size:14px;font-weight:600;">${scheduledLabel}</td>
+            </tr>` : ""}
+            <tr>
+              <td style="padding:6px 0;color:#64748b;font-size:13px;font-weight:600;vertical-align:top;">Session Code</td>
+              <td style="padding:6px 0;color:#4f46e5;font-size:18px;font-weight:700;letter-spacing:2px;">${shareCode}</td>
+            </tr>
+          </table>
+        </div>
+
+        ${scheduledLabel
+          ? `<p style="margin:0 0 20px;color:#64748b;font-size:13px;line-height:1.5;">
+              The join button below will become active at the scheduled time. Please be ready a few minutes early.
+            </p>`
+          : ""}
+
+        <div style="text-align:center;margin:24px 0;">
+          <a href="${joinUrl}" style="display:inline-block;padding:14px 36px;background:#4f46e5;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;border-radius:10px;">
+            Join Interview
+          </a>
+        </div>
+
+        <p style="margin:0;color:#94a3b8;font-size:12px;text-align:center;line-height:1.5;">
+          Or paste this link in your browser:<br>
+          <a href="${joinUrl}" style="color:#4f46e5;word-break:break-all;">${joinUrl}</a>
+        </p>
+      </div>
+
+      <div style="background:#f8fafc;padding:16px 28px;text-align:center;border-top:1px solid #e2e8f0;">
+        <p style="margin:0;color:#94a3b8;font-size:11px;">AI Interview Platform</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+async function sendCandidateInvitation({ candidateEmail, shareCode, title, scheduledAt }) {
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+
+  if (!smtpUser || !smtpPass) {
+    console.warn("SMTP not configured — skipping candidate invitation email.");
+    return;
+  }
+
+  const clientOrigin = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+  const joinUrl = `${clientOrigin}/join/${shareCode}`;
+  const html = buildInvitationHTML({ title, shareCode, scheduledAt, joinUrl });
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST || "smtp.gmail.com",
+    port: parseInt(process.env.SMTP_PORT || "587", 10),
+    secure: parseInt(process.env.SMTP_PORT || "587", 10) === 465,
+    auth: { user: smtpUser, pass: smtpPass },
+  });
+
+  const scheduledLabel = scheduledAt
+    ? ` — ${new Date(scheduledAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true })}`
+    : "";
+
+  await transporter.sendMail({
+    from: `"AI Interview Platform" <${process.env.SMTP_FROM || smtpUser}>`,
+    to: candidateEmail,
+    subject: `Interview Invitation: ${title}${scheduledLabel}`,
+    html,
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  SESSIONS
 // ═══════════════════════════════════════════════════════════════════
 
 app.post("/api/sessions", async (req, res) => {
-  const { title, questionIds, settings, createdBy, interviewerEmail } = req.body || {};
+  const { title, questionIds, settings, createdBy, interviewerEmail, candidateEmail, scheduledAt } = req.body || {};
   if (!title) return res.status(400).send("title required.");
   const shareCode = randomCode();
   const session = {
@@ -268,6 +377,8 @@ app.post("/api/sessions", async (req, res) => {
     },
     createdBy: createdBy || null,
     interviewerEmail: interviewerEmail || null,
+    candidateEmail: candidateEmail || null,
+    scheduledAt: scheduledAt || null,
     shareCode,
     status: "draft",
     createdAt: new Date().toISOString(),
@@ -275,6 +386,13 @@ app.post("/api/sessions", async (req, res) => {
   try {
     const ref = await withTimeout(addDoc(collection(db, "sessions"), session));
     console.log("Session created:", ref.id);
+
+    if (candidateEmail) {
+      sendCandidateInvitation({ candidateEmail, shareCode, title, scheduledAt })
+        .then(() => console.log(`Invitation sent to ${candidateEmail}`))
+        .catch((err) => console.error(`Failed to send invitation to ${candidateEmail}:`, err.message));
+    }
+
     res.json({ id: ref.id, ...session });
   } catch (e) {
     console.error("POST /api/sessions error:", e);
@@ -341,6 +459,28 @@ app.delete("/api/sessions/:id", async (req, res) => {
     await withTimeout(deleteDoc(doc(db, "sessions", req.params.id)));
     res.json({ ok: true });
   } catch (e) {
+    res.status(500).send(e.message);
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  SESSION LOOKUP (by share code — public, returns minimal info)
+// ═══════════════════════════════════════════════════════════════════
+
+app.get("/api/sessions/lookup/:code", async (req, res) => {
+  try {
+    const code = (req.params.code || "").toUpperCase();
+    const q = query(collection(db, "sessions"), where("shareCode", "==", code), limit(1));
+    const snap = await withTimeout(getDocs(q));
+    if (snap.empty) return res.status(404).send("Session not found.");
+    const data = snap.docs[0].data();
+    res.json({
+      title: data.title,
+      scheduledAt: data.scheduledAt || null,
+      status: data.status,
+    });
+  } catch (e) {
+    console.error("GET /api/sessions/lookup error:", e);
     res.status(500).send(e.message);
   }
 });

@@ -21,6 +21,9 @@ export default function SessionCreator() {
   // Session config
   const [title, setTitle] = useState("");
   const [interviewerEmail, setInterviewerEmail] = useState(user?.email || "");
+  const [candidateEmail, setCandidateEmail] = useState("");
+  const [scheduledDate, setScheduledDate] = useState("");
+  const [scheduledTime, setScheduledTime] = useState("");
   const [selectedIds, setSelectedIds] = useState([]);
   const [language, setLanguage] = useState("javascript");
   const [settings, setSettings] = useState({
@@ -91,12 +94,19 @@ export default function SessionCreator() {
     setSubmitting(true);
     setCreateError("");
     try {
+      const scheduledAt =
+        scheduledDate && scheduledTime
+          ? new Date(`${scheduledDate}T${scheduledTime}`).toISOString()
+          : null;
+
       const session = await createSession({
         title,
         questionIds: selectedIds,
         settings: { ...settings, language },
         createdBy: user?.uid || null,
         interviewerEmail: interviewerEmail || null,
+        candidateEmail: candidateEmail || null,
+        scheduledAt,
       });
       setCreated(session);
     } catch (e) {
@@ -140,6 +150,15 @@ export default function SessionCreator() {
         <input className="iv-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Frontend Eng Round 1" />
         <label className="iv-label" style={{ marginTop: 12 }}>Your Email (for receiving the AI report)</label>
         <input className="iv-input" type="email" value={interviewerEmail} onChange={(e) => setInterviewerEmail(e.target.value)} placeholder="interviewer@company.com" />
+
+        <label className="iv-label" style={{ marginTop: 12 }}>Candidate Email (invitation will be sent)</label>
+        <input className="iv-input" type="email" value={candidateEmail} onChange={(e) => setCandidateEmail(e.target.value)} placeholder="candidate@example.com" />
+
+        <label className="iv-label" style={{ marginTop: 12 }}>Scheduled Date &amp; Time</label>
+        <div className="iv-row" style={{ gap: 8 }}>
+          <input className="iv-input" type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} min={new Date().toISOString().split("T")[0]} />
+          <input className="iv-input" type="time" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} />
+        </div>
 
         <label className="iv-label" style={{ marginTop: 12 }}>Programming Language</label>
         <div className="iv-lang-picker">
