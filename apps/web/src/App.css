@@ -19647,6 +19647,58 @@ body.theme-dark .interview-hub__name-btn--ghost:hover {
   border-radius: 4px;
 }
 
+.practice-dash__skill-rating {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--bg-secondary, #f1f5f9);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.practice-dash__skill-gen {
+  font-size: 9px;
+  font-weight: 700;
+  color: #7c3aed;
+  background: #ede9fe;
+  padding: 1px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.practice-dash__adaptive-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #7c3aed;
+  background: #ede9fe;
+  padding: 3px 10px;
+  border-radius: 999px;
+  letter-spacing: 0.3px;
+}
+
+.practice-dash__rec-ai {
+  font-size: 10px;
+  font-weight: 700;
+  color: #7c3aed;
+  background: #ede9fe;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.practice-dash__rec-card--generating {
+  opacity: 0.6;
+  pointer-events: none;
+  border-style: dashed;
+  animation: pulse-generating 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-generating {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
 /* Recommendations */
 .practice-dash__recommended {
   margin-bottom: 36px;

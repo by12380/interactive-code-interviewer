@@ -1250,6 +1250,174 @@ app.post("/api/translate", async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════
+//  ADAPTIVE LEARNING — AI QUESTION GENERATION
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/generate-question", async (req, res) => {
+  if (!OPENAI_API_KEY) return res.status(500).send("Missing OPENAI_API_KEY on the server.");
+
+  const {
+    skillId,
+    targetDifficulty = "Medium",
+    userRating = 1200,
+    completedProblemTitles = [],
+    language = "javascript",
+  } = req.body || {};
+
+  if (!skillId) return res.status(400).send("skillId required.");
+
+  const langNames = { javascript: "JavaScript", python: "Python", java: "Java", cpp: "C++" };
+  const langLabel = langNames[language] || "JavaScript";
+
+  const categoryNames = {
+    "arrays-hashing": "Arrays & Hashing",
+    "two-pointers": "Two Pointers",
+    "sliding-window": "Sliding Window",
+    "stack": "Stack",
+    "binary-search": "Binary Search",
+    "linked-lists": "Linked Lists",
+    "trees": "Trees",
+    "graphs": "Graphs",
+    "dynamic-programming": "Dynamic Programming",
+    "backtracking": "Backtracking",
+    "greedy": "Greedy Algorithms",
+    "heap": "Heap / Priority Queue",
+  };
+
+  const categoryName = categoryNames[skillId] || skillId;
+  const avoidList = completedProblemTitles.slice(0, 30).join(", ");
+
+  const systemPrompt = `You are an expert coding problem designer. Generate a NOVEL ${langLabel} coding interview problem.
+
+REQUIREMENTS:
+- Category: ${categoryName}
+- Difficulty: ${targetDifficulty}
+- User skill rating: ${userRating}/2000 (Elo-like scale; 1000=beginner, 1400=intermediate, 1800=advanced)
+- Language: ${langLabel}
+- The problem MUST be DIFFERENT from these already-solved problems: ${avoidList || "none"}
+- Create something fresh — don't just rename existing LeetCode problems. Combine concepts, use real-world scenarios, or add twists.
+- For ${targetDifficulty === "Hard" ? "Hard" : targetDifficulty === "Easy" ? "Easy" : "Medium"} difficulty, calibrate complexity appropriately.
+
+Return a JSON object with this EXACT structure (no markdown, no code fences):
+{
+  "id": "generated-<unique-slug>",
+  "title": "<descriptive title>",
+  "difficulty": "${targetDifficulty}",
+  "category": "${categoryName}",
+  "description": "<clear problem statement with examples, using markdown>",
+  "starterCode": "<${langLabel} function signature with placeholder>",
+  "testCases": [
+    { "input": { <param>: <value> }, "expected": <value> },
+    { "input": { <param>: <value> }, "expected": <value> },
+    { "input": { <param>: <value> }, "expected": <value> }
+  ],
+  "hints": ["<hint1>", "<hint2>"],
+  "solution": "<complete working ${langLabel} solution>",
+  "optimalComplexity": "<e.g. O(n)>",
+  "isGenerated": true,
+  "generatedAt": "<ISO timestamp>"
+}
+
+CRITICAL:
+- testCases must have at least 3 entries with valid, correct expected values
+- starterCode must be valid ${langLabel}
+- solution must actually solve the problem correctly
+- Return ONLY valid JSON`;
+
+  try {
+    const reply = await llm(
+      systemPrompt,
+      [{ role: "user", content: `Generate a ${targetDifficulty} ${categoryName} problem for a user with rating ${userRating}.` }],
+      { maxTokens: 2000, temperature: 0.8 }
+    );
+
+    let question;
+    try {
+      const cleaned = reply.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      question = JSON.parse(cleaned);
+    } catch {
+      return res.status(500).json({ error: "Failed to parse generated question", raw: reply });
+    }
+
+    // Validate and sanitize
+    if (!question.id) question.id = "generated-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    if (!question.title) return res.status(500).json({ error: "Generated question missing title" });
+    question.isGenerated = true;
+    question.generatedAt = question.generatedAt || new Date().toISOString();
+    question.difficulty = targetDifficulty;
+    question.category = categoryName;
+
+    // Persist to Firestore for reuse
+    try {
+      await withTimeout(setDoc(doc(db, "generatedQuestions", question.id), {
+        ...question,
+        skillId,
+        userRating,
+        language,
+      }));
+    } catch { /* non-critical — question still returned to client */ }
+
+    res.json(question);
+  } catch (e) {
+    console.error("POST /api/generate-question error:", e);
+    res.status(500).send(e.message || "Question generation failed.");
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  ADAPTIVE LEARNING — SKILL ANALYSIS
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/analyze-skills", async (req, res) => {
+  if (!OPENAI_API_KEY) return res.status(500).send("Missing OPENAI_API_KEY on the server.");
+
+  const { ratings = {}, attemptHistory = [], categorySuccessRate = {} } = req.body || {};
+
+  const systemPrompt = `You are a coding interview coach analyzing a student's performance data.
+
+Given their Elo-like skill ratings (1000=beginner, 1400=mid, 1800=advanced) and recent attempt history,
+provide actionable learning insights.
+
+Return JSON (no markdown, no code fences):
+{
+  "weakestAreas": [{ "skillId": "...", "reason": "..." }],
+  "strongestAreas": [{ "skillId": "...", "reason": "..." }],
+  "nextSteps": ["<action1>", "<action2>", "<action3>"],
+  "overallAssessment": "<1-2 sentence summary>",
+  "suggestedFocus": "<skillId to focus on next>",
+  "estimatedReadiness": "<beginner|intermediate|interview-ready|advanced>"
+}`;
+
+  const recentAttempts = (attemptHistory || []).slice(0, 20).map((a) => ({
+    category: a.category,
+    difficulty: a.difficulty,
+    score: a.score,
+    hintsUsed: a.hintsUsed,
+  }));
+
+  try {
+    const reply = await llm(
+      systemPrompt,
+      [{ role: "user", content: JSON.stringify({ ratings, recentAttempts, categorySuccessRate }) }],
+      { maxTokens: 600, temperature: 0.3 }
+    );
+
+    let analysis;
+    try {
+      const cleaned = reply.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      analysis = JSON.parse(cleaned);
+    } catch {
+      analysis = { raw: reply };
+    }
+
+    res.json(analysis);
+  } catch (e) {
+    console.error("POST /api/analyze-skills error:", e);
+    res.status(500).send(e.message || "Skill analysis failed.");
+  }
+});
+
 // ─── Start ──────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {

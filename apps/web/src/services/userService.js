@@ -2,6 +2,7 @@
 
 import { getDefaultGamificationState } from './gamificationService.js';
 import { getDefaultRoadmapState } from './roadmapService.js';
+import { getDefaultAdaptiveState, recordAttempt } from './adaptiveService.js';
 
 const USERS_KEY = 'code_interviewer_users';
 const CURRENT_USER_KEY = 'code_interviewer_current_user';
@@ -66,7 +67,6 @@ const migrateUser = (user) => {
   if (!user.roadmap) {
     user.roadmap = getDefaultRoadmapState();
   } else {
-    // Ensure all roadmap fields exist
     const roadmapDefaults = getDefaultRoadmapState();
     user.roadmap = {
       ...roadmapDefaults,
@@ -76,6 +76,11 @@ const migrateUser = (user) => {
         ...(user.roadmap.preferences || {})
       }
     };
+  }
+
+  // Add adaptive learning state if missing
+  if (!user.adaptive) {
+    user.adaptive = getDefaultAdaptiveState();
   }
   
   return user;
@@ -266,6 +271,7 @@ export const ensureLocalUser = (firebaseUser) => {
     personalBests: {},
     gamification: getDefaultGamificationState(),
     roadmap: getDefaultRoadmapState(),
+    adaptive: getDefaultAdaptiveState(),
   };
 
   users[firebaseUser.uid] = newUser;
@@ -358,6 +364,22 @@ export const saveInterviewResult = (interviewData) => {
       date: new Date().toISOString(),
     };
   }
+
+  // ── Evolve adaptive skill model ──
+  if (!user.adaptive) user.adaptive = getDefaultAdaptiveState();
+  try {
+    const category = interviewData.category || 'Arrays & Hashing';
+    user.adaptive = recordAttempt(user.adaptive, {
+      problemId,
+      category,
+      difficulty: difficulty || 'Medium',
+      score,
+      timeSpent,
+      testsPassed: testsPassed || 0,
+      testsTotal: testsTotal || 0,
+      hintsUsed: hintsUsed || 0,
+    });
+  } catch { /* adaptive update is non-critical */ }
   
   saveUsers(users);
   
@@ -799,6 +821,79 @@ export const getRoadmapStats = () => {
   };
 };
 
+// ===== ADAPTIVE LEARNING FUNCTIONS =====
+
+/**
+ * Get the user's current adaptive learning state
+ * @returns {object|null}
+ */
+export const getAdaptiveState = () => {
+  const user = getCurrentUser();
+  return user?.adaptive || null;
+};
+
+/**
+ * Update the user's adaptive learning state
+ * @param {object} adaptiveUpdates - Partial adaptive state updates
+ * @returns {{ success: boolean, user?: object, error?: string }}
+ */
+export const updateAdaptive = (adaptiveUpdates) => {
+  const currentUser = getCurrentUser();
+  if (!currentUser) return { success: false, error: 'No user logged in.' };
+
+  const users = getUsers();
+  const user = users[currentUser.id];
+  if (!user) return { success: false, error: 'User not found.' };
+
+  if (!user.adaptive) user.adaptive = getDefaultAdaptiveState();
+  user.adaptive = { ...user.adaptive, ...adaptiveUpdates };
+
+  saveUsers(users);
+  const { passwordHash, ...safeUser } = user;
+  localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(safeUser));
+  return { success: true, user: safeUser };
+};
+
+/**
+ * Store an AI-generated question on the user profile so it persists across sessions
+ * @param {object} question - The generated question object
+ * @returns {{ success: boolean }}
+ */
+export const saveGeneratedQuestion = (question) => {
+  const currentUser = getCurrentUser();
+  if (!currentUser) return { success: false };
+
+  const users = getUsers();
+  const user = users[currentUser.id];
+  if (!user) return { success: false };
+
+  if (!user.adaptive) user.adaptive = getDefaultAdaptiveState();
+  if (!user.adaptive.generatedQuestions) user.adaptive.generatedQuestions = [];
+
+  // Avoid duplicates
+  if (!user.adaptive.generatedQuestions.some((q) => q.id === question.id)) {
+    user.adaptive.generatedQuestions.push(question);
+    // Cap stored generated questions at 50
+    if (user.adaptive.generatedQuestions.length > 50) {
+      user.adaptive.generatedQuestions = user.adaptive.generatedQuestions.slice(-50);
+    }
+  }
+
+  saveUsers(users);
+  const { passwordHash, ...safeUser } = user;
+  localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(safeUser));
+  return { success: true, user: safeUser };
+};
+
+/**
+ * Get all AI-generated questions cached for this user
+ * @returns {Array}
+ */
+export const getGeneratedQuestions = () => {
+  const user = getCurrentUser();
+  return user?.adaptive?.generatedQuestions || [];
+};
+
 // ===== LEADERBOARD FUNCTIONS =====
 
 /**
@@ -991,4 +1086,8 @@ export default {
   saveStudyPlan,
   updatePlanTask,
   getRoadmapStats,
+  getAdaptiveState,
+  updateAdaptive,
+  saveGeneratedQuestion,
+  getGeneratedQuestions,
 };

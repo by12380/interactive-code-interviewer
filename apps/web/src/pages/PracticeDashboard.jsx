@@ -12,6 +12,7 @@ import {
   generateStudyPlan,
   getDailyRecommendations,
   calculateProgress,
+  updateSkillsFromPerformance,
 } from "../services/roadmapService.js";
 import {
   calculateLevel,
@@ -21,7 +22,16 @@ import {
   getCurrentUser,
   logout as logoutUser,
   ensureLocalUser,
+  getGeneratedQuestions,
+  saveGeneratedQuestion,
 } from "../services/userService.js";
+import {
+  mergeSkills,
+  getPoolCoverage,
+  shouldGenerateQuestions,
+  getAdaptiveRecommendations,
+} from "../services/adaptiveService.js";
+import { generateQuestion } from "../services/sessionService.js";
 import GamificationPanel from "../components/GamificationPanel.jsx";
 import UserProfile from "../components/UserProfile.jsx";
 import { PROBLEMS, getProblemById } from "../data/problems.js";
@@ -141,17 +151,82 @@ export default function PracticeDashboard() {
   const level = useMemo(() => calculateLevel(xp), [xp]);
   const levelProgress = useMemo(() => getLevelProgress(xp), [xp]);
   const streak = gamification?.streak?.current || 0;
-  const skills = roadmapData.skills || {};
 
-  // Recommendations
+  // Adaptive learning state
+  const adaptiveState = user?.adaptive || null;
+
+  // Skills: merge initial assessment with live adaptive ratings
+  const skills = useMemo(() => {
+    const baseSkills = roadmapData.skills || {};
+    if (!adaptiveState) return baseSkills;
+    return mergeSkills(baseSkills, adaptiveState);
+  }, [roadmapData.skills, adaptiveState]);
+
+  // Pool coverage — how much of the static pool has the user solved?
+  const poolCoverage = useMemo(
+    () => getPoolCoverage(user?.stats?.problemsCompleted || []),
+    [user?.stats?.problemsCompleted]
+  );
+
+  // AI-generated questions cached on the user
+  const [generatedQuestions, setGeneratedQuestions] = useState(() => getGeneratedQuestions());
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  // Recommendations: use adaptive engine when available, fall back to static
   const recommendations = useMemo(() => {
     if (!assessmentComplete || Object.keys(skills).length === 0) return [];
+
+    if (adaptiveState && (adaptiveState.totalAttempts || 0) >= 3) {
+      const { staticRecs } = getAdaptiveRecommendations(
+        adaptiveState,
+        user?.stats?.problemsCompleted || [],
+        generatedQuestions,
+        6
+      );
+      return staticRecs;
+    }
+
     return getDailyRecommendations({
       skills,
       problemsCompleted: user?.stats?.problemsCompleted || [],
+      generatedQuestions,
       limit: 6,
     });
-  }, [skills, assessmentComplete, user?.stats?.problemsCompleted]);
+  }, [skills, assessmentComplete, user?.stats?.problemsCompleted, adaptiveState, generatedQuestions]);
+
+  // Auto-generate questions when pool runs low
+  useEffect(() => {
+    if (!adaptiveState || isGenerating) return;
+    const needs = shouldGenerateQuestions(adaptiveState, user?.stats?.problemsCompleted || []);
+    if (needs.length === 0) return;
+
+    // Only generate if we don't already have unsolved generated questions for this category
+    const unsolvedGenerated = generatedQuestions.filter(
+      (q) => !(user?.stats?.problemsCompleted || []).includes(q.id)
+    );
+    if (unsolvedGenerated.length >= 3) return;
+
+    const top = needs[0];
+    const completedTitles = (user?.stats?.problemsCompleted || [])
+      .map((id) => getProblemById(id)?.title)
+      .filter(Boolean);
+
+    setIsGenerating(true);
+    generateQuestion({
+      skillId: top.skillId,
+      targetDifficulty: top.targetDifficulty,
+      userRating: top.rating,
+      completedProblemTitles: completedTitles,
+    })
+      .then((q) => {
+        if (q && q.id) {
+          saveGeneratedQuestion(q);
+          setGeneratedQuestions((prev) => [...prev, q]);
+        }
+      })
+      .catch(() => { /* non-critical */ })
+      .finally(() => setIsGenerating(false));
+  }, [adaptiveState, user?.stats?.problemsCompleted, generatedQuestions, isGenerating]);
 
   // Weak areas
   const weakAreas = useMemo(() => {
@@ -552,6 +627,8 @@ export default function PracticeDashboard() {
               {SKILL_CATEGORIES.slice(0, 8).map((skill) => {
                 const data = skills[skill.id] || { score: 0, level: "beginner" };
                 const isWeak = weakAreas.includes(skill.id);
+                const coverage = poolCoverage[skill.id];
+                const hasRating = data.rating && adaptiveState?.totalAttempts >= 3;
                 return (
                   <div
                     key={skill.id}
@@ -560,6 +637,11 @@ export default function PracticeDashboard() {
                     <div className="practice-dash__skill-top">
                       <span className="practice-dash__skill-icon">{skill.icon}</span>
                       <span className="practice-dash__skill-name">{skill.name}</span>
+                      {hasRating && (
+                        <span className="practice-dash__skill-rating" title="Adaptive Elo rating">
+                          {data.rating}
+                        </span>
+                      )}
                     </div>
                     <div className="practice-dash__skill-bar">
                       <div
@@ -570,6 +652,11 @@ export default function PracticeDashboard() {
                     <div className="practice-dash__skill-meta">
                       <span className="practice-dash__skill-level">{data.level}</span>
                       {isWeak && <span className="practice-dash__skill-focus">Focus Area</span>}
+                      {coverage && coverage.exhaustionRate >= 0.75 && (
+                        <span className="practice-dash__skill-gen" title="AI questions being generated for this area">
+                          AI+
+                        </span>
+                      )}
                     </div>
                   </div>
                 );
@@ -583,10 +670,16 @@ export default function PracticeDashboard() {
           <section className="practice-dash__recommended">
             <div className="practice-dash__section-header">
               <h2>Recommended For You</h2>
+              {adaptiveState && (adaptiveState.totalAttempts || 0) >= 3 && (
+                <span className="practice-dash__adaptive-badge" title="Recommendations are personalized by your adaptive skill model">
+                  Adaptive
+                </span>
+              )}
             </div>
             <div className="practice-dash__recs-grid">
               {recommendations.map((rec, i) => {
                 const isCompleted = problemsCompleted.includes(rec.problem.id);
+                const isAI = rec.isGenerated || rec.problem.isGenerated;
                 return (
                   <button
                     key={rec.problem.id}
@@ -594,7 +687,13 @@ export default function PracticeDashboard() {
                     className={`practice-dash__rec-card practice-dash__rec-card--${rec.priority}`}
                     onClick={() => handleStartProblem(rec.problem.id)}
                   >
-                    <div className="practice-dash__rec-rank">#{i + 1}</div>
+                    <div className="practice-dash__rec-rank">
+                      {isAI ? (
+                        <span title="AI-generated question" style={{ fontSize: "0.7em", lineHeight: 1 }}>AI</span>
+                      ) : (
+                        `#${i + 1}`
+                      )}
+                    </div>
                     <div className="practice-dash__rec-body">
                       <div className="practice-dash__rec-title-row">
                         <h3 className="practice-dash__rec-title">{rec.problem.title}</h3>
@@ -607,12 +706,28 @@ export default function PracticeDashboard() {
                         <span>{rec.problem.category}</span>
                         <span>~{Math.round((rec.problem.timeLimit || 1800) / 60)} min</span>
                         {isCompleted && <span className="practice-dash__rec-solved">Solved</span>}
+                        {isAI && <span className="practice-dash__rec-ai">AI Generated</span>}
                       </div>
                     </div>
                     <span className="practice-dash__rec-arrow">&rarr;</span>
                   </button>
                 );
               })}
+              {isGenerating && (
+                <div className="practice-dash__rec-card practice-dash__rec-card--generating">
+                  <div className="practice-dash__rec-rank" style={{ opacity: 0.5 }}>
+                    <span style={{ fontSize: "0.7em" }}>AI</span>
+                  </div>
+                  <div className="practice-dash__rec-body">
+                    <h3 className="practice-dash__rec-title" style={{ opacity: 0.6 }}>
+                      Generating a new challenge...
+                    </h3>
+                    <p className="practice-dash__rec-reason" style={{ opacity: 0.5 }}>
+                      Crafting a problem tailored to your skill level
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         )}

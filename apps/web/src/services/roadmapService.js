@@ -449,11 +449,9 @@ export const adjustPlanForPerformance = (plan, performanceData) => {
   
   // Adjust pace based on performance
   if (avgScore >= 85 && completionRate >= 0.9) {
-    // User is doing great - speed up
     adjustedPlan.adaptiveSettings.paceMultiplier = Math.min(1.5, plan.adaptiveSettings.paceMultiplier + 0.1);
     adjustedPlan.adaptiveSettings.recommendation = 'increase_difficulty';
   } else if (avgScore < 60 || completionRate < 0.5) {
-    // User is struggling - slow down
     adjustedPlan.adaptiveSettings.paceMultiplier = Math.max(0.5, plan.adaptiveSettings.paceMultiplier - 0.1);
     adjustedPlan.adaptiveSettings.recommendation = 'more_practice';
   }
@@ -467,33 +465,70 @@ export const adjustPlanForPerformance = (plan, performanceData) => {
 };
 
 /**
- * Get daily problem recommendations based on weak areas
- * @param {Object} params - { skills, problemsCompleted, company, limit }
+ * Update skill levels from real performance data (called after each problem attempt).
+ * Blends the initial assessment baseline with live Elo-based adaptive ratings.
+ *
+ * @param {Object} currentSkills - Existing skill levels from assessment
+ * @param {Object} adaptiveRatings - Elo ratings from adaptiveService
+ * @param {number} totalAttempts - How many problems the user has attempted
+ * @returns {Object} Updated skills object
+ */
+export const updateSkillsFromPerformance = (currentSkills, adaptiveRatings, totalAttempts) => {
+  if (!adaptiveRatings || totalAttempts < 3) return currentSkills;
+
+  const weight = Math.min(1, (totalAttempts - 3) / 15);
+  const updated = {};
+
+  SKILL_CATEGORIES.forEach((skill) => {
+    const assess = currentSkills?.[skill.id] || { score: 50, level: 'intermediate' };
+    const rating = adaptiveRatings[skill.id] || 1200;
+
+    let adaptiveScore;
+    if (rating >= 1600) adaptiveScore = Math.min(100, 70 + Math.round(((rating - 1600) / 400) * 30));
+    else if (rating >= 1300) adaptiveScore = 40 + Math.round(((rating - 1300) / 300) * 30);
+    else adaptiveScore = Math.max(5, Math.round(((rating - 800) / 500) * 40));
+
+    const blended = Math.round(assess.score * (1 - weight) + adaptiveScore * weight);
+    updated[skill.id] = {
+      score: Math.min(100, Math.max(5, blended)),
+      level: blended >= 70 ? 'advanced' : blended >= 40 ? 'intermediate' : 'beginner',
+      rating,
+    };
+  });
+
+  return updated;
+};
+
+/**
+ * Get daily problem recommendations based on weak areas.
+ * Now accepts an optional generatedQuestions array so AI-crafted problems
+ * can be blended into recommendations when the static pool runs low.
+ *
+ * @param {Object} params - { skills, problemsCompleted, company, limit, generatedQuestions }
  * @returns {Array} - Recommended problems with reasons
  */
 export const getDailyRecommendations = ({
   skills,
   problemsCompleted = [],
   company = null,
-  limit = 3
+  limit = 3,
+  generatedQuestions = [],
 }) => {
   const weakAreas = getWeakAreas(skills);
   const companyFocus = company ? COMPANY_FOCUS[company] : null;
   
-  // Get problems that match weak areas and haven't been completed
   const recommendations = [];
+  const completedSet = new Set(problemsCompleted);
   
-  // Map skill categories to problem categories
-  const relevantProblems = PROBLEMS.filter(problem => {
-    // Skip completed problems
-    if (problemsCompleted.includes(problem.id)) return false;
-    
-    // Check if problem category matches any weak area
+  // Combine static + generated questions
+  const allProblems = [...PROBLEMS, ...generatedQuestions.filter(q => !PROBLEMS.some(p => p.id === q.id))];
+
+  const relevantProblems = allProblems.filter(problem => {
+    if (completedSet.has(problem.id)) return false;
     const problemSkillId = categoryMapping[problem.category];
     return weakAreas.includes(problemSkillId);
   });
   
-  // Sort by relevance (matching weaker areas first)
   relevantProblems.sort((a, b) => {
     const aSkillId = categoryMapping[a.category];
     const bSkillId = categoryMapping[b.category];
@@ -502,14 +537,15 @@ export const getDailyRecommendations = ({
     return aWeakIndex - bWeakIndex;
   });
   
-  // Add recommendations with reasons
   relevantProblems.slice(0, limit).forEach(problem => {
     const skillId = categoryMapping[problem.category];
     const skillScore = skills[skillId]?.score || 50;
     const isCompanyFocus = companyFocus?.focusAreas?.includes(skillId);
     
     let reason = '';
-    if (skillScore < 50) {
+    if (problem.isGenerated) {
+      reason = `AI-crafted challenge for your ${problem.category} skills`;
+    } else if (skillScore < 50) {
       reason = `Strengthen your ${problem.category} skills (current: ${skillScore}%)`;
     } else if (isCompanyFocus) {
       reason = `Key topic for ${companyFocus.name} interviews`;
@@ -520,22 +556,21 @@ export const getDailyRecommendations = ({
     recommendations.push({
       problem,
       reason,
-      priority: skillScore < 50 ? 'high' : isCompanyFocus ? 'medium' : 'normal',
+      priority: problem.isGenerated ? 'high' : skillScore < 50 ? 'high' : isCompanyFocus ? 'medium' : 'normal',
       skillArea: skillId
     });
   });
   
-  // If not enough recommendations, add any uncompleted problems
   if (recommendations.length < limit) {
-    const remaining = PROBLEMS
-      .filter(p => !problemsCompleted.includes(p.id) && 
+    const remaining = allProblems
+      .filter(p => !completedSet.has(p.id) && 
                    !recommendations.some(r => r.problem.id === p.id))
       .slice(0, limit - recommendations.length);
     
     remaining.forEach(problem => {
       recommendations.push({
         problem,
-        reason: 'Expand your problem-solving experience',
+        reason: problem.isGenerated ? 'Fresh AI-generated problem just for you' : 'Expand your problem-solving experience',
         priority: 'normal',
         skillArea: categoryMapping[problem.category] || 'general'
       });

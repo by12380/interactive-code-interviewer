@@ -194,3 +194,25 @@ export async function endSession(sessionId) {
     })
   );
 }
+
+// ─── Adaptive Learning ─────────────────────────────────────────────
+
+export async function generateQuestion({ skillId, targetDifficulty, userRating, completedProblemTitles, language }) {
+  return json(
+    await fetch(`${API}/generate-question`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ skillId, targetDifficulty, userRating, completedProblemTitles, language }),
+    })
+  );
+}
+
+export async function analyzeSkills({ ratings, attemptHistory, categorySuccessRate }) {
+  return json(
+    await fetch(`${API}/analyze-skills`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ratings, attemptHistory, categorySuccessRate }),
+    })
+  );
+}

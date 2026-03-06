@@ -28,7 +28,7 @@ import SplitScreenPanel from "./components/SplitScreenPanel.jsx";
 import { useTheme } from "./contexts/ThemeContext.jsx";
 import { useFocusMode } from "./contexts/FocusModeContext.jsx";
 import "./styles/candidate.css";
-import { PROBLEMS, getProblemById } from "./data/problems.js";
+import { PROBLEMS, getProblemById as getStaticProblemById } from "./data/problems.js";
 import { convertStarterCode } from "./services/starterCodeService.js";
 import { 
   getCurrentUser, 
@@ -39,7 +39,8 @@ import {
   updateGamification,
   addXP,
   unlockAchievements,
-  unlockProblems
+  unlockProblems,
+  getGeneratedQuestions,
 } from "./services/userService.js";
 import { 
   analyzeCode, 
@@ -224,6 +225,11 @@ const runTestCases = (code, testCases, problem) => {
 
   return { passed, total: testCases.length, results, note };
 };
+
+// Search static pool first, then AI-generated questions
+function getProblemById(id) {
+  return getStaticProblemById(id) || getGeneratedQuestions().find((q) => q.id === id) || null;
+}
 
 export default function App({ mode = "practice" }) {
   const isPracticeMode = mode === "practice";
@@ -1209,6 +1215,7 @@ export default function App({ mode = "practice" }) {
         problemId: currentProblem.id,
         problemTitle: currentProblem.title,
         difficulty: currentProblem.difficulty,
+        category: currentProblem.category,
         score: totalScoreVal,
         grade: gradeVal,
         timeSpent: elapsedSeconds,
