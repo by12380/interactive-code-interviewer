@@ -13,12 +13,18 @@ async function json(res) {
 
 // ─── Sessions ───────────────────────────────────────────────────────
 
-export async function createSession({ title, questionIds, settings, createdBy, interviewerEmail, candidateEmail, scheduledAt }) {
+export async function createSession({
+  title, questionIds, settings, createdBy, interviewerEmail, candidateEmail, scheduledAt,
+  sessionFormat, candidateProfile, aiGeneratedQuestions,
+}) {
   return json(
     await fetch(`${API}/sessions`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title, questionIds, settings, createdBy, interviewerEmail, candidateEmail, scheduledAt }),
+      body: JSON.stringify({
+        title, questionIds, settings, createdBy, interviewerEmail, candidateEmail, scheduledAt,
+        sessionFormat, candidateProfile, aiGeneratedQuestions,
+      }),
     })
   );
 }
@@ -215,4 +221,23 @@ export async function analyzeSkills({ ratings, attemptHistory, categorySuccessRa
       body: JSON.stringify({ ratings, attemptHistory, categorySuccessRate }),
     })
   );
+}
+
+// ─── Candidate Analysis (AI-powered session recommendation) ─────
+
+export async function analyzeCandidate({ candidateInfo, resumeFile }) {
+  const formData = new FormData();
+  if (candidateInfo) formData.append("candidateInfo", candidateInfo);
+  if (resumeFile) formData.append("resume", resumeFile);
+
+  const res = await fetch(`${API}/analyze-candidate`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "Request failed");
+    throw new Error(text);
+  }
+  return res.json();
 }

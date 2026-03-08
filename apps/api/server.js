@@ -2,6 +2,10 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import nodemailer from "nodemailer";
+import multer from "multer";
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const pdfParse = require("pdf-parse");
 import { initializeApp } from "firebase/app";
 import {
   getFirestore,
@@ -42,6 +46,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -362,7 +368,10 @@ async function sendCandidateInvitation({ candidateEmail, shareCode, title, sched
 // ═══════════════════════════════════════════════════════════════════
 
 app.post("/api/sessions", async (req, res) => {
-  const { title, questionIds, settings, createdBy, interviewerEmail, candidateEmail, scheduledAt } = req.body || {};
+  const {
+    title, questionIds, settings, createdBy, interviewerEmail, candidateEmail, scheduledAt,
+    sessionFormat, candidateProfile, aiGeneratedQuestions,
+  } = req.body || {};
   if (!title) return res.status(400).send("title required.");
   const shareCode = randomCode();
   const session = {
@@ -373,8 +382,12 @@ app.post("/api/sessions", async (req, res) => {
       aiInterruptionsEnabled: true,
       showTestCases: true,
       timeLimitSeconds: 30 * 60,
+      includeMockInterview: sessionFormat === "mock_interview" || sessionFormat === "both",
       ...(settings || {}),
     },
+    sessionFormat: sessionFormat || "coding_only",
+    candidateProfile: candidateProfile || null,
+    aiGeneratedQuestions: aiGeneratedQuestions || [],
     createdBy: createdBy || null,
     interviewerEmail: interviewerEmail || null,
     candidateEmail: candidateEmail || null,
@@ -1415,6 +1428,103 @@ Return JSON (no markdown, no code fences):
   } catch (e) {
     console.error("POST /api/analyze-skills error:", e);
     res.status(500).send(e.message || "Skill analysis failed.");
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  CANDIDATE ANALYSIS — AI-powered session format recommendation
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/analyze-candidate", upload.single("resume"), async (req, res) => {
+  if (!OPENAI_API_KEY) return res.status(500).send("Missing OPENAI_API_KEY on the server.");
+
+  let candidateInfo = req.body.candidateInfo || "";
+  let resumeText = "";
+
+  // Extract text from uploaded PDF if present
+  if (req.file) {
+    try {
+      const pdfData = await pdfParse(req.file.buffer);
+      resumeText = pdfData.text || "";
+    } catch (e) {
+      console.error("PDF parse error:", e.message);
+      return res.status(400).json({ error: "Could not parse the uploaded PDF. Please try pasting the resume text instead." });
+    }
+  }
+
+  const profileText = [candidateInfo, resumeText].filter(Boolean).join("\n\n");
+  if (!profileText.trim()) {
+    return res.status(400).send("Provide candidateInfo text or upload a resume file.");
+  }
+
+  const systemPrompt = `You are a senior technical hiring manager. Analyze the candidate profile below and recommend an interview format.
+
+Based on the candidate's experience level, tech stack, and role:
+- Recommend "mock_interview" (behavioral-only AI interview) for junior candidates, career changers, or roles emphasizing soft skills and culture fit.
+- Recommend "coding_only" for senior/staff engineers with proven track records where technical depth is the primary concern.
+- Recommend "both" (mock behavioral interview followed by coding session) for mid-level candidates, full-stack roles, or when the profile suggests both behavioral and technical assessment are valuable.
+
+Return a JSON object with this EXACT structure (no markdown, no code fences):
+{
+  "recommendedFormat": "mock_interview" | "coding_only" | "both",
+  "reasoning": "<2-3 sentence explanation of why this format was chosen>",
+  "candidateSummary": {
+    "name": "<extracted or inferred name>",
+    "experienceLevel": "junior" | "mid" | "senior" | "staff",
+    "primaryTechStack": ["<tech1>", "<tech2>"],
+    "yearsOfExperience": <number or null>
+  },
+  "suggestedBehavioralQuestions": [
+    {
+      "question": "<tailored behavioral question>",
+      "category": "Introduction" | "Problem Solving" | "Teamwork" | "Leadership" | "Growth" | "Work Style" | "Career",
+      "rationale": "<why this question is relevant for this candidate>"
+    }
+  ],
+  "suggestedCodingConfig": {
+    "difficulty": "Easy" | "Medium" | "Hard",
+    "categories": ["<relevant problem category>"],
+    "problemCount": <1-3>,
+    "focusAreas": ["<specific skill to test>"]
+  }
+}
+
+Rules:
+- Generate 3-5 behavioral questions tailored to the candidate's specific background and experience
+- Coding difficulty should match the candidate's experience level
+- Categories should align with the tech stack mentioned
+- If the profile is sparse, default to "both" with Medium difficulty
+- Return ONLY valid JSON`;
+
+  try {
+    const reply = await llm(
+      systemPrompt,
+      [{ role: "user", content: `Candidate Profile:\n${profileText}` }],
+      { maxTokens: 1200, temperature: 0.4 }
+    );
+
+    let parsed;
+    try {
+      const cleaned = reply.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      parsed = JSON.parse(cleaned);
+    } catch {
+      return res.status(500).json({ error: "Failed to parse AI recommendation", raw: reply });
+    }
+
+    if (!parsed.recommendedFormat) {
+      parsed.recommendedFormat = "both";
+    }
+    if (!Array.isArray(parsed.suggestedBehavioralQuestions)) {
+      parsed.suggestedBehavioralQuestions = [];
+    }
+    if (!parsed.suggestedCodingConfig) {
+      parsed.suggestedCodingConfig = { difficulty: "Medium", categories: [], problemCount: 2, focusAreas: [] };
+    }
+
+    res.json(parsed);
+  } catch (e) {
+    console.error("POST /api/analyze-candidate error:", e);
+    res.status(500).send(e.message || "Candidate analysis failed.");
   }
 });
 

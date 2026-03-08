@@ -1,5 +1,6 @@
 // CandidateSession – focused coding view for a candidate inside a live session.
 // Features: Monaco editor with inline AI hints, AI chat panel, problem panel, timer, code auto-sync.
+// Supports mock AI interview phase (behavioral questions) before coding when session format requires it.
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
@@ -29,6 +30,16 @@ export default function CandidateSession() {
   const [elapsed, setElapsed] = useState(0);
   const [submitted, setSubmitted] = useState(false);
   const [endedByInterviewer, setEndedByInterviewer] = useState(false);
+
+  // Mock interview phase state
+  const [phase, setPhase] = useState("loading"); // "loading" | "behavioral" | "coding"
+  const [behavioralQuestions, setBehavioralQuestions] = useState([]);
+  const [behavioralIdx, setBehavioralIdx] = useState(0);
+  const [behavioralMessages, setBehavioralMessages] = useState([]);
+  const [behavioralInput, setBehavioralInput] = useState("");
+  const [isBehavioralSending, setIsBehavioralSending] = useState(false);
+  const [behavioralElapsed, setBehavioralElapsed] = useState(0);
+  const behavioralLlmRef = useRef([]);
 
   // Editor refs
   const editorRef = useRef(null);
@@ -88,6 +99,23 @@ export default function CandidateSession() {
           setCode(starter);
           codeRef.current = starter;
         }
+
+        // Determine starting phase based on session format
+        const fmt = s.sessionFormat || "coding_only";
+        const hasBehavioral = fmt === "mock_interview" || fmt === "both";
+        const aiQs = s.aiGeneratedQuestions || [];
+
+        if (hasBehavioral && aiQs.length > 0) {
+          setBehavioralQuestions(aiQs);
+          setBehavioralIdx(0);
+          setBehavioralMessages([{
+            role: "assistant",
+            content: `Welcome to your interview! Before we move to coding, I'd like to ask you a few behavioral questions to get to know you better.\n\nHere's the first question:\n\n**${aiQs[0].question}**\n\nTake your time to think about a specific example from your experience.`,
+          }]);
+          setPhase("behavioral");
+        } else {
+          setPhase("coding");
+        }
       })
       .catch(() => {});
   }, [sessionId]);
@@ -113,15 +141,30 @@ export default function CandidateSession() {
     return () => clearInterval(sessionPollerRef.current);
   }, [sessionId, candidateId, submitted, questions, currentIdx]);
 
-  // Timer
+  const question = questions[currentIdx] || null;
+  const sessionLanguage = session?.settings?.language || "javascript";
+  const timeLimit = session?.settings?.timeLimitSeconds || 1800;
+  const isCodingPhase = phase === "coding";
+  const remaining = Math.max(0, timeLimit - elapsed);
+  const fmtTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+  // Timer — only counts during the coding phase so behavioral time doesn't eat into it
   useEffect(() => {
-    if (submitted) return;
+    if (submitted || !isCodingPhase) return;
     const t = setInterval(() => setElapsed((e) => e + 1), 1000);
     return () => clearInterval(t);
-  }, [submitted]);
+  }, [submitted, isCodingPhase]);
 
-  // Code push loop
+  // Behavioral phase elapsed timer (informational only, no countdown)
   useEffect(() => {
+    if (submitted || phase !== "behavioral") return;
+    const t = setInterval(() => setBehavioralElapsed((e) => e + 1), 1000);
+    return () => clearInterval(t);
+  }, [submitted, phase]);
+
+  // Code push loop — only active during coding phase
+  useEffect(() => {
+    if (!isCodingPhase) return;
     pushTimerRef.current = setInterval(() => {
       const current = codeRef.current;
       if (current === lastPushedRef.current) return;
@@ -133,13 +176,7 @@ export default function CandidateSession() {
       }).catch(() => {});
     }, PUSH_MS);
     return () => clearInterval(pushTimerRef.current);
-  }, [sessionId, candidateId, currentIdx, questions]);
-
-  const question = questions[currentIdx] || null;
-  const sessionLanguage = session?.settings?.language || "javascript";
-  const timeLimit = session?.settings?.timeLimitSeconds || 1800;
-  const remaining = Math.max(0, timeLimit - elapsed);
-  const fmtTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }, [sessionId, candidateId, currentIdx, questions, isCodingPhase]);
 
   const handleCodeChange = useCallback((val) => {
     setCode(val || "");
@@ -277,9 +314,82 @@ export default function CandidateSession() {
     }, 100);
   }, [code, isRunning, submitted]);
 
+  // ── Behavioral Phase Handlers ──────────────────────────────────────
+  const handleBehavioralInputChange = useCallback((e) => {
+    setBehavioralInput(e.target.value);
+  }, []);
+
+  const handleBehavioralSend = useCallback(async () => {
+    const trimmed = behavioralInput.trim();
+    if (!trimmed || isBehavioralSending) return;
+
+    setBehavioralMessages((prev) => [...prev, { role: "user", content: trimmed }]);
+    setBehavioralInput("");
+    setIsBehavioralSending(true);
+
+    try {
+      const currentQ = behavioralQuestions[behavioralIdx];
+      const contextMessages = [
+        ...behavioralLlmRef.current,
+        { role: "user", content: trimmed },
+      ];
+      behavioralLlmRef.current = contextMessages;
+
+      const data = await sendChat({
+        messages: contextMessages,
+        mode: "chat",
+        practiceMode: false,
+        interruptContext: {
+          interviewPhase: "behavioral",
+          problemTitle: currentQ?.question || "Behavioral Question",
+        },
+      });
+
+      const reply = data.reply || "Thank you for sharing. Let's continue.";
+      setBehavioralMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+      behavioralLlmRef.current = [...behavioralLlmRef.current, { role: "assistant", content: reply }];
+    } catch {
+      setBehavioralMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "I apologize, I'm having some technical difficulties. Please continue." },
+      ]);
+    } finally {
+      setIsBehavioralSending(false);
+    }
+  }, [behavioralInput, isBehavioralSending, behavioralQuestions, behavioralIdx]);
+
+  const handleBehavioralKeyDown = useCallback((e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleBehavioralSend();
+    }
+  }, [handleBehavioralSend]);
+
+  const handleNextBehavioral = useCallback(() => {
+    const nextIdx = behavioralIdx + 1;
+    if (nextIdx < behavioralQuestions.length) {
+      setBehavioralIdx(nextIdx);
+      const nextQ = behavioralQuestions[nextIdx];
+      behavioralLlmRef.current = [];
+      setBehavioralMessages([{
+        role: "assistant",
+        content: `Great, let's move on to the next question.\n\n**${nextQ.question}**\n\nTake your time.`,
+      }]);
+    } else {
+      // All behavioral questions done — transition to coding or complete
+      const fmt = session?.sessionFormat || "coding_only";
+      if (fmt === "both" && questions.length > 0) {
+        setPhase("coding");
+        setBehavioralMessages([]);
+      } else {
+        setSubmitted(true);
+      }
+    }
+  }, [behavioralIdx, behavioralQuestions, session, questions]);
+
   // ── LOCAL PATTERN ANALYSIS (4s debounce) ──────────────────────────
   useEffect(() => {
-    if (submitted || !question) return;
+    if (submitted || !question || !isCodingPhase) return;
     if (!(session?.settings?.aiInterruptionsEnabled !== false)) return;
 
     const timer = setTimeout(() => {
@@ -312,7 +422,7 @@ export default function CandidateSession() {
 
   // ── AI-POWERED HINTS (10s debounce) ───────────────────────────────
   useEffect(() => {
-    if (submitted || !question) return;
+    if (submitted || !question || !isCodingPhase) return;
     if (!(session?.settings?.aiInterruptionsEnabled !== false)) return;
 
     const timer = setTimeout(async () => {
@@ -355,7 +465,7 @@ export default function CandidateSession() {
 
   // ── THROTTLE INTERVAL (every 12s, even during continuous typing) ──
   useEffect(() => {
-    if (submitted || !question) return;
+    if (submitted || !question || !isCodingPhase) return;
     if (!(session?.settings?.aiInterruptionsEnabled !== false)) return;
 
     const interval = setInterval(async () => {
@@ -452,16 +562,16 @@ export default function CandidateSession() {
     }
   };
 
-  // Time's up
+  // Time's up — only enforce during the coding phase
   useEffect(() => {
-    if (remaining <= 0 && !submitted) {
+    if (remaining <= 0 && !submitted && isCodingPhase) {
       pushCode(sessionId, candidateId, {
         code: codeRef.current,
         questionId: question?.id || "_default",
       }).catch(() => {});
       setSubmitted(true);
     }
-  }, [remaining, submitted, sessionId, candidateId, question]);
+  }, [remaining, submitted, sessionId, candidateId, question, isCodingPhase]);
 
   if (submitted) {
     return (
@@ -484,12 +594,96 @@ export default function CandidateSession() {
     );
   }
 
+  // ── Behavioral Interview Phase ──────────────────────────────────
+  if (phase === "behavioral") {
+    const currentBQ = behavioralQuestions[behavioralIdx];
+    return (
+      <div className="cs-session">
+        <header className="cs-session__header">
+          <h2>{session?.title || "Interview Session"}</h2>
+          <div className="cs-session__meta">
+            <span className="cs-phase-badge cs-phase-badge--behavioral">Behavioral Interview</span>
+            <span>
+              Question {behavioralIdx + 1}/{behavioralQuestions.length}
+            </span>
+            <span>
+              Time: {fmtTime(behavioralElapsed)}
+            </span>
+          </div>
+        </header>
+
+        <div className="cs-session__body cs-session__body--behavioral">
+          <aside className="cs-session__problem">
+            {currentBQ && (
+              <>
+                <div className="cs-behavioral-header">
+                  <span className="cs-behavioral-category">{currentBQ.category}</span>
+                  <span className="cs-behavioral-progress">
+                    {behavioralIdx + 1} of {behavioralQuestions.length}
+                  </span>
+                </div>
+                <h3 className="cs-behavioral-question">{currentBQ.question}</h3>
+                {currentBQ.rationale && (
+                  <p className="cs-behavioral-rationale">{currentBQ.rationale}</p>
+                )}
+                <div className="cs-behavioral-tips">
+                  <h4>Tips</h4>
+                  <p>Use the STAR method: describe the <strong>Situation</strong>, your <strong>Task</strong>, the <strong>Action</strong> you took, and the <strong>Result</strong>.</p>
+                </div>
+              </>
+            )}
+          </aside>
+
+          <main className="cs-session__editor cs-session__editor--behavioral">
+            <ChatPanel
+              messages={behavioralMessages}
+              input={behavioralInput}
+              isLocked={false}
+              isPaused={false}
+              isSending={isBehavioralSending}
+              onInputChange={handleBehavioralInputChange}
+              onKeyDown={handleBehavioralKeyDown}
+              onSend={handleBehavioralSend}
+            />
+          </main>
+        </div>
+
+        <footer className="cs-session__footer">
+          <button className="cs-btn cs-btn--primary" onClick={handleNextBehavioral}>
+            {behavioralIdx < behavioralQuestions.length - 1
+              ? "Next Question"
+              : (session?.sessionFormat === "both" && questions.length > 0)
+                ? "Proceed to Coding"
+                : "Complete Interview"
+            }
+          </button>
+        </footer>
+      </div>
+    );
+  }
+
+  // ── Loading Phase ───────────────────────────────────────────────
+  if (phase === "loading") {
+    return (
+      <div className="cs-join">
+        <div className="cs-join__card">
+          <h1>Loading Session...</h1>
+          <p>Please wait while we set up your interview.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Coding Phase (original UI) ─────────────────────────────────
   return (
     <div className="cs-session">
       {/* ── Header ────────────────────────────────────────────── */}
       <header className="cs-session__header">
         <h2>{session?.title || "Interview Session"}</h2>
         <div className="cs-session__meta">
+          {session?.sessionFormat === "both" && (
+            <span className="cs-phase-badge cs-phase-badge--coding">Coding Phase</span>
+          )}
           <span>
             Question {currentIdx + 1}/{questions.length}
           </span>
