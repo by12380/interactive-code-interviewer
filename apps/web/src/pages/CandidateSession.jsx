@@ -1,12 +1,15 @@
 // CandidateSession – focused coding view for a candidate inside a live session.
 // Features: Monaco editor with inline AI hints, AI chat panel, problem panel, timer, code auto-sync.
 // Supports mock AI interview phase (behavioral questions) before coding when session format requires it.
+// Behavioral phase requires camera + mic: candidate speaks answers (STT), session is recorded.
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import EditorPanel from "../components/EditorPanel.jsx";
 import ChatPanel from "../components/ChatPanel.jsx";
-import { getSession, pushCode } from "../services/sessionService.js";
+import CameraGate from "../components/CameraGate.jsx";
+import { useVoice } from "../contexts/VoiceContext.jsx";
+import { getSession, pushCode, uploadRecording } from "../services/sessionService.js";
 import { sendChat, getCodeHints } from "../api.js";
 import { analyzeCode, createAnalyzerState } from "../services/codeAnalyzer.js";
 import { convertStarterCode } from "../services/starterCodeService.js";
@@ -32,7 +35,7 @@ export default function CandidateSession() {
   const [endedByInterviewer, setEndedByInterviewer] = useState(false);
 
   // Mock interview phase state
-  const [phase, setPhase] = useState("loading"); // "loading" | "behavioral" | "coding"
+  const [phase, setPhase] = useState("loading"); // "loading" | "camera_gate" | "behavioral" | "coding"
   const [behavioralQuestions, setBehavioralQuestions] = useState([]);
   const [behavioralIdx, setBehavioralIdx] = useState(0);
   const [behavioralMessages, setBehavioralMessages] = useState([]);
@@ -40,6 +43,23 @@ export default function CandidateSession() {
   const [isBehavioralSending, setIsBehavioralSending] = useState(false);
   const [behavioralElapsed, setBehavioralElapsed] = useState(0);
   const behavioralLlmRef = useRef([]);
+
+  // Camera/recording state for behavioral phase
+  const [mediaStream, setMediaStream] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadDone, setUploadDone] = useState(false);
+  const [sttTranscript, setSttTranscript] = useState("");
+  const [sttInterim, setSttInterim] = useState("");
+  const [isSpeakingVAD, setIsSpeakingVAD] = useState(false);
+  const videoPreviewRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const recordingChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
+  const sttManagerRef = useRef(null);
+
+  const { speak, cancelSpeech, isSupported: voiceSupported } = useVoice();
 
   // Editor refs
   const editorRef = useRef(null);
@@ -110,9 +130,11 @@ export default function CandidateSession() {
           setBehavioralIdx(0);
           setBehavioralMessages([{
             role: "assistant",
-            content: `Welcome to your interview! Before we move to coding, I'd like to ask you a few behavioral questions to get to know you better.\n\nHere's the first question:\n\n**${aiQs[0].question}**\n\nTake your time to think about a specific example from your experience.`,
+            content: `Welcome to your interview! I'd like to ask you a few behavioral questions. Please speak your answers clearly.\n\nHere's the first question:\n\n**${aiQs[0].question}**\n\nTake your time to think about a specific example from your experience.`,
           }]);
-          setPhase("behavioral");
+          // Route through camera gate first if camera is required
+          const cameraRequired = s.settings?.cameraRequired !== false;
+          setPhase(cameraRequired ? "camera_gate" : "behavioral");
         } else {
           setPhase("coding");
         }
@@ -314,12 +336,198 @@ export default function CandidateSession() {
     }, 100);
   }, [code, isRunning, submitted]);
 
-  // ── Behavioral Phase Handlers ──────────────────────────────────────
+  // ── Camera Gate Handler ────────────────────────────────────────────
+  const handleCameraReady = useCallback((stream) => {
+    setMediaStream(stream);
+    setPhase("behavioral");
+  }, []);
+
+  const handleCameraSkip = useCallback(() => {
+    setPhase("behavioral");
+  }, []);
+
+  // ── Recording Helpers ─────────────────────────────────────────────
+  const startRecordingSession = useCallback(() => {
+    if (!mediaStream) return;
+
+    recordingChunksRef.current = [];
+    try {
+      const mimeType = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
+        ? "video/webm;codecs=vp9"
+        : "video/webm";
+
+      const recorder = new MediaRecorder(mediaStream, { mimeType });
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) recordingChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => setIsRecording(false);
+      mediaRecorderRef.current = recorder;
+      recorder.start(1000);
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime((t) => t + 1);
+      }, 1000);
+    } catch (err) {
+      console.error("Recording start error:", err);
+    }
+  }, [mediaStream]);
+
+  const stopRecordingSession = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+  }, []);
+
+  const downloadRecording = useCallback(() => {
+    if (recordingChunksRef.current.length === 0) return;
+    const blob = new Blob(recordingChunksRef.current, { type: "video/webm" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `interview-recording-${new Date().toISOString().slice(0, 10)}.webm`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const handleUploadRecording = useCallback(async () => {
+    if (recordingChunksRef.current.length === 0 || !sessionId || !candidateId) return;
+    setIsUploading(true);
+    try {
+      const blob = new Blob(recordingChunksRef.current, { type: "video/webm" });
+      await uploadRecording(sessionId, candidateId, blob);
+      setUploadDone(true);
+    } catch (err) {
+      console.error("Upload failed:", err);
+    }
+    setIsUploading(false);
+  }, [sessionId, candidateId]);
+
+  // Auto-start recording when entering behavioral phase with a stream
+  useEffect(() => {
+    if (phase === "behavioral" && mediaStream && !isRecording) {
+      startRecordingSession();
+    }
+  }, [phase, mediaStream, isRecording, startRecordingSession]);
+
+  // Attach the stream to the video preview when it changes
+  useEffect(() => {
+    if (videoPreviewRef.current && mediaStream) {
+      videoPreviewRef.current.srcObject = mediaStream;
+    }
+  }, [mediaStream, phase]);
+
+  // ── STT (Speech-to-Text) for behavioral phase ────────────────────
+  useEffect(() => {
+    if (phase !== "behavioral") return;
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event) => {
+      let interim = "";
+      let final = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          final += transcript;
+        } else {
+          interim += transcript;
+        }
+      }
+      if (interim) setSttInterim(interim);
+      if (final) {
+        setSttTranscript((prev) => (prev ? prev + " " + final : final));
+        setSttInterim("");
+      }
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error !== "no-speech" && event.error !== "aborted") {
+        console.error("STT error:", event.error);
+      }
+    };
+
+    recognition.onend = () => {
+      if (phase === "behavioral" && !submitted) {
+        try { recognition.start(); } catch { /* already started */ }
+      }
+    };
+
+    recognition.onspeechstart = () => setIsSpeakingVAD(true);
+    recognition.onspeechend = () => setIsSpeakingVAD(false);
+
+    sttManagerRef.current = recognition;
+    try { recognition.start(); } catch { /* ignore */ }
+
+    return () => {
+      try { recognition.stop(); } catch { /* ignore */ }
+      sttManagerRef.current = null;
+    };
+  }, [phase, submitted]);
+
+  // ── Behavioral Phase Handlers (audio-based) ───────────────────────
   const handleBehavioralInputChange = useCallback((e) => {
     setBehavioralInput(e.target.value);
   }, []);
 
-  const handleBehavioralSend = useCallback(async () => {
+  // Send transcribed speech as the candidate's response
+  const handleBehavioralSendVoice = useCallback(async () => {
+    const text = sttTranscript.trim();
+    if (!text || isBehavioralSending) return;
+
+    setBehavioralMessages((prev) => [...prev, { role: "user", content: text }]);
+    setSttTranscript("");
+    setSttInterim("");
+    setIsBehavioralSending(true);
+
+    try {
+      const currentQ = behavioralQuestions[behavioralIdx];
+      const contextMessages = [
+        ...behavioralLlmRef.current,
+        { role: "user", content: text },
+      ];
+      behavioralLlmRef.current = contextMessages;
+
+      const data = await sendChat({
+        messages: contextMessages,
+        mode: "chat",
+        practiceMode: false,
+        interruptContext: {
+          interviewPhase: "behavioral",
+          problemTitle: currentQ?.question || "Behavioral Question",
+        },
+      });
+
+      const reply = data.reply || "Thank you for sharing. Let's continue.";
+      setBehavioralMessages((prev) => [...prev, { role: "assistant", content: reply }]);
+      behavioralLlmRef.current = [...behavioralLlmRef.current, { role: "assistant", content: reply }];
+
+      if (voiceSupported && speak) {
+        speak(reply, { skipTranscript: true, immediate: true });
+      }
+    } catch {
+      const fallback = "I apologize, I'm having some technical difficulties. Please continue.";
+      setBehavioralMessages((prev) => [...prev, { role: "assistant", content: fallback }]);
+    } finally {
+      setIsBehavioralSending(false);
+    }
+  }, [sttTranscript, isBehavioralSending, behavioralQuestions, behavioralIdx, voiceSupported, speak]);
+
+  // Fallback: send typed text if STT is unavailable
+  const handleBehavioralSendText = useCallback(async () => {
     const trimmed = behavioralInput.trim();
     if (!trimmed || isBehavioralSending) return;
 
@@ -348,6 +556,10 @@ export default function CandidateSession() {
       const reply = data.reply || "Thank you for sharing. Let's continue.";
       setBehavioralMessages((prev) => [...prev, { role: "assistant", content: reply }]);
       behavioralLlmRef.current = [...behavioralLlmRef.current, { role: "assistant", content: reply }];
+
+      if (voiceSupported && speak) {
+        speak(reply, { skipTranscript: true, immediate: true });
+      }
     } catch {
       setBehavioralMessages((prev) => [
         ...prev,
@@ -356,27 +568,66 @@ export default function CandidateSession() {
     } finally {
       setIsBehavioralSending(false);
     }
-  }, [behavioralInput, isBehavioralSending, behavioralQuestions, behavioralIdx]);
+  }, [behavioralInput, isBehavioralSending, behavioralQuestions, behavioralIdx, voiceSupported, speak]);
 
   const handleBehavioralKeyDown = useCallback((e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleBehavioralSend();
+      handleBehavioralSendText();
     }
-  }, [handleBehavioralSend]);
+  }, [handleBehavioralSendText]);
+
+  // Speak the first question via TTS when behavioral phase starts
+  useEffect(() => {
+    if (phase === "behavioral" && behavioralQuestions.length > 0 && voiceSupported && speak) {
+      const q = behavioralQuestions[behavioralIdx];
+      if (q) {
+        const introText = behavioralIdx === 0
+          ? `Welcome to your interview. Here's the first question: ${q.question}`
+          : `Next question: ${q.question}`;
+        setTimeout(() => speak(introText, { skipTranscript: true, immediate: true }), 800);
+      }
+    }
+  }, [phase, behavioralIdx]);
 
   const handleNextBehavioral = useCallback(() => {
+    // Send any pending STT transcript before moving on
+    if (sttTranscript.trim()) {
+      handleBehavioralSendVoice();
+    }
+
     const nextIdx = behavioralIdx + 1;
     if (nextIdx < behavioralQuestions.length) {
       setBehavioralIdx(nextIdx);
       const nextQ = behavioralQuestions[nextIdx];
       behavioralLlmRef.current = [];
+      setSttTranscript("");
+      setSttInterim("");
       setBehavioralMessages([{
         role: "assistant",
         content: `Great, let's move on to the next question.\n\n**${nextQ.question}**\n\nTake your time.`,
       }]);
+
+      if (voiceSupported && speak) {
+        cancelSpeech();
+        setTimeout(() => speak(`Next question: ${nextQ.question}`, { skipTranscript: true, immediate: true }), 500);
+      }
     } else {
-      // All behavioral questions done — transition to coding or complete
+      // All behavioral questions done — stop recording, upload, then transition
+      stopRecordingSession();
+      if (voiceSupported) cancelSpeech();
+
+      // Stop media stream for camera release
+      if (mediaStream) {
+        mediaStream.getTracks().forEach((t) => t.stop());
+        setMediaStream(null);
+      }
+
+      // Upload recording in background
+      if (recordingChunksRef.current.length > 0) {
+        handleUploadRecording();
+      }
+
       const fmt = session?.sessionFormat || "coding_only";
       if (fmt === "both" && questions.length > 0) {
         setPhase("coding");
@@ -385,7 +636,24 @@ export default function CandidateSession() {
         setSubmitted(true);
       }
     }
-  }, [behavioralIdx, behavioralQuestions, session, questions]);
+  }, [behavioralIdx, behavioralQuestions, session, questions, sttTranscript, handleBehavioralSendVoice, stopRecordingSession, handleUploadRecording, mediaStream, voiceSupported, speak, cancelSpeech]);
+
+  // Keep a ref to mediaStream for cleanup
+  const mediaStreamRef = useRef(null);
+  useEffect(() => { mediaStreamRef.current = mediaStream; }, [mediaStream]);
+
+  // Cleanup recording and stream on unmount
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      }
+    };
+  }, []);
 
   // ── LOCAL PATTERN ANALYSIS (4s debounce) ──────────────────────────
   useEffect(() => {
@@ -594,15 +862,34 @@ export default function CandidateSession() {
     );
   }
 
-  // ── Behavioral Interview Phase ──────────────────────────────────
+  // ── Camera Permission Gate ─────────────────────────────────────
+  if (phase === "camera_gate") {
+    return (
+      <CameraGate
+        onReady={handleCameraReady}
+        onSkip={handleCameraSkip}
+        required={session?.settings?.cameraRequired !== false}
+      />
+    );
+  }
+
+  // ── Behavioral Interview Phase (Audio/Video) ──────────────────
   if (phase === "behavioral") {
     const currentBQ = behavioralQuestions[behavioralIdx];
+    const hasSttSupport = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
     return (
-      <div className="cs-session">
+      <div className="cs-session cs-session--behavioral-av">
         <header className="cs-session__header">
           <h2>{session?.title || "Interview Session"}</h2>
           <div className="cs-session__meta">
             <span className="cs-phase-badge cs-phase-badge--behavioral">Behavioral Interview</span>
+            {isRecording && (
+              <span className="cs-rec-badge">
+                <span className="cs-rec-badge__dot" />
+                REC {fmtTime(recordingTime)}
+              </span>
+            )}
             <span>
               Question {behavioralIdx + 1}/{behavioralQuestions.length}
             </span>
@@ -612,8 +899,9 @@ export default function CandidateSession() {
           </div>
         </header>
 
-        <div className="cs-session__body cs-session__body--behavioral">
-          <aside className="cs-session__problem">
+        <div className="cs-session__body cs-session__body--behavioral-av">
+          {/* Left: Question + Tips */}
+          <aside className="cs-session__problem cs-session__problem--av">
             {currentBQ && (
               <>
                 <div className="cs-behavioral-header">
@@ -630,25 +918,135 @@ export default function CandidateSession() {
                   <h4>Tips</h4>
                   <p>Use the STAR method: describe the <strong>Situation</strong>, your <strong>Task</strong>, the <strong>Action</strong> you took, and the <strong>Result</strong>.</p>
                 </div>
+
+                {/* Conversation history */}
+                <div className="cs-behavioral-history">
+                  <h4>Conversation</h4>
+                  <div className="cs-behavioral-history__messages">
+                    {behavioralMessages.map((msg, i) => (
+                      <div key={i} className={`cs-behavioral-msg cs-behavioral-msg--${msg.role}`}>
+                        <span className="cs-behavioral-msg__role">
+                          {msg.role === "assistant" ? "Interviewer" : "You"}
+                        </span>
+                        <p className="cs-behavioral-msg__text">{msg.content}</p>
+                      </div>
+                    ))}
+                    {isBehavioralSending && (
+                      <div className="cs-behavioral-msg cs-behavioral-msg--assistant">
+                        <span className="cs-behavioral-msg__role">Interviewer</span>
+                        <p className="cs-behavioral-msg__text cs-behavioral-msg__text--typing">Thinking...</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </>
             )}
           </aside>
 
-          <main className="cs-session__editor cs-session__editor--behavioral">
-            <ChatPanel
-              messages={behavioralMessages}
-              input={behavioralInput}
-              isLocked={false}
-              isPaused={false}
-              isSending={isBehavioralSending}
-              onInputChange={handleBehavioralInputChange}
-              onKeyDown={handleBehavioralKeyDown}
-              onSend={handleBehavioralSend}
-            />
+          {/* Right: Camera + Transcript */}
+          <main className="cs-session__editor cs-session__editor--av">
+            {/* Camera Preview */}
+            <div className={`cs-camera-preview ${isSpeakingVAD ? "cs-camera-preview--speaking" : ""}`}>
+              {mediaStream ? (
+                <video
+                  ref={videoPreviewRef}
+                  autoPlay
+                  muted
+                  playsInline
+                  className="cs-camera-preview__video"
+                />
+              ) : (
+                <div className="cs-camera-preview__placeholder">
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 7l-7 5 7 5V7z" />
+                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                  </svg>
+                  <span>Camera not available</span>
+                </div>
+              )}
+              {isRecording && (
+                <div className="cs-camera-preview__rec-indicator">
+                  <span className="cs-rec-dot" />
+                  REC
+                </div>
+              )}
+              {isSpeakingVAD && (
+                <div className="cs-camera-preview__vad-ring" />
+              )}
+            </div>
+
+            {/* Live Transcript */}
+            <div className="cs-transcript">
+              <div className="cs-transcript__header">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                  <line x1="12" y1="19" x2="12" y2="23" />
+                  <line x1="8" y1="23" x2="16" y2="23" />
+                </svg>
+                <span>Live Transcript</span>
+                {isSpeakingVAD && <span className="cs-transcript__listening">Listening...</span>}
+              </div>
+              <div className="cs-transcript__body">
+                {sttTranscript && (
+                  <p className="cs-transcript__final">{sttTranscript}</p>
+                )}
+                {sttInterim && (
+                  <p className="cs-transcript__interim">{sttInterim}</p>
+                )}
+                {!sttTranscript && !sttInterim && (
+                  <p className="cs-transcript__placeholder">
+                    {hasSttSupport
+                      ? "Start speaking — your answer will appear here..."
+                      : "Speech recognition is not supported in this browser. Use the text input below."
+                    }
+                  </p>
+                )}
+              </div>
+
+              {/* Submit voice transcript or fallback text input */}
+              <div className="cs-transcript__actions">
+                {hasSttSupport && sttTranscript.trim() && (
+                  <button
+                    className="cs-btn cs-btn--primary cs-btn--sm"
+                    onClick={handleBehavioralSendVoice}
+                    disabled={isBehavioralSending}
+                  >
+                    {isBehavioralSending ? "Sending..." : "Submit Answer"}
+                  </button>
+                )}
+                {!hasSttSupport && (
+                  <div className="cs-transcript__fallback">
+                    <textarea
+                      className="cs-textarea"
+                      placeholder="Type your answer here (speech recognition unavailable)..."
+                      value={behavioralInput}
+                      onChange={handleBehavioralInputChange}
+                      onKeyDown={handleBehavioralKeyDown}
+                      rows={3}
+                    />
+                    <button
+                      className="cs-btn cs-btn--primary cs-btn--sm"
+                      onClick={handleBehavioralSendText}
+                      disabled={isBehavioralSending || !behavioralInput.trim()}
+                    >
+                      {isBehavioralSending ? "Sending..." : "Send"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
           </main>
         </div>
 
         <footer className="cs-session__footer">
+          <div className="cs-session__footer-left">
+            {recordingChunksRef.current.length > 0 && (
+              <button className="cs-btn cs-btn--ghost cs-btn--sm" onClick={downloadRecording}>
+                Save Recording
+              </button>
+            )}
+          </div>
           <button className="cs-btn cs-btn--primary" onClick={handleNextBehavioral}>
             {behavioralIdx < behavioralQuestions.length - 1
               ? "Next Question"

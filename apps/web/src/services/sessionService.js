@@ -223,6 +223,25 @@ export async function analyzeSkills({ ratings, attemptHistory, categorySuccessRa
   );
 }
 
+// ─── Recording Upload ────────────────────────────────────────────
+
+export async function uploadRecording(sessionId, candidateId, blob) {
+  const formData = new FormData();
+  formData.append("recording", blob, `recording-${Date.now()}.webm`);
+  formData.append("candidateId", candidateId);
+
+  const res = await fetch(`${API}/sessions/${sessionId}/recording`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "Upload failed");
+    throw new Error(text);
+  }
+  return res.json();
+}
+
 // ─── Candidate Analysis (AI-powered session recommendation) ─────
 
 export async function analyzeCandidate({ candidateInfo, resumeFile }) {

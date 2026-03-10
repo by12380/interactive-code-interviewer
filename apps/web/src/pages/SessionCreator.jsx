@@ -86,6 +86,7 @@ export default function SessionCreator() {
     aiInterruptionsEnabled: true,
     showTestCases: true,
     timeLimitSeconds: 30 * 60,
+    cameraRequired: true,
   });
 
   // Session format
@@ -843,6 +844,23 @@ export default function SessionCreator() {
                   <span className="sc-toggle__track" />
                 </div>
               </label>
+
+              {(sessionFormat === "mock_interview" || sessionFormat === "both") && (
+                <label className="sc-toggle-card">
+                  <div className="sc-toggle-card__info">
+                    <span className="sc-toggle-card__label">Require Camera & Recording</span>
+                    <span className="sc-toggle-card__desc">Candidate must have camera on and session is recorded for review (anti-cheat)</span>
+                  </div>
+                  <div className={`sc-toggle ${settings.cameraRequired ? "sc-toggle--on" : ""}`}>
+                    <input
+                      type="checkbox"
+                      checked={settings.cameraRequired}
+                      onChange={(e) => setSettings((p) => ({ ...p, cameraRequired: e.target.checked }))}
+                    />
+                    <span className="sc-toggle__track" />
+                  </div>
+                </label>
+              )}
 
               <div className="sc-time-card">
                 <div className="sc-time-card__info">

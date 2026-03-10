@@ -23,6 +23,7 @@ import {
   limit,
   serverTimestamp,
 } from "firebase/firestore";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 
 dotenv.config();
 
@@ -39,6 +40,7 @@ const firebaseConfig = {
 
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
+const storage = getStorage(firebaseApp);
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -48,6 +50,7 @@ app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+const videoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 500 * 1024 * 1024 } });
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
@@ -1525,6 +1528,44 @@ Rules:
   } catch (e) {
     console.error("POST /api/analyze-candidate error:", e);
     res.status(500).send(e.message || "Candidate analysis failed.");
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  INTERVIEW RECORDING UPLOAD
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/sessions/:sid/recording", videoUpload.single("recording"), async (req, res) => {
+  const { sid } = req.params;
+  const { candidateId } = req.body || {};
+
+  if (!req.file) return res.status(400).send("No recording file uploaded.");
+  if (!candidateId) return res.status(400).send("candidateId required.");
+
+  try {
+    const timestamp = Date.now();
+    const filePath = `recordings/${sid}/${candidateId}/${timestamp}.webm`;
+    const fileRef = storageRef(storage, filePath);
+
+    await uploadBytes(fileRef, req.file.buffer, {
+      contentType: req.file.mimetype || "video/webm",
+    });
+
+    const downloadURL = await getDownloadURL(fileRef);
+
+    // Store the recording URL on the candidate's document
+    const candidateRef = doc(db, "sessions", sid, "candidates", candidateId);
+    await withTimeout(updateDoc(candidateRef, {
+      recordingUrl: downloadURL,
+      recordingPath: filePath,
+      recordingUploadedAt: new Date().toISOString(),
+    }));
+
+    console.log(`Recording uploaded for session ${sid}, candidate ${candidateId}`);
+    res.json({ ok: true, recordingUrl: downloadURL });
+  } catch (e) {
+    console.error("POST recording upload error:", e);
+    res.status(500).send(e.message || "Recording upload failed.");
   }
 });
 

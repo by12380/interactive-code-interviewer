@@ -142,8 +142,18 @@ Evaluate: approach, correctness, time/space complexity, code quality. Be concise
                   className={`iv-cand-item ${c.id === selectedCid ? "iv-cand-item--active" : ""}`}
                   onClick={() => setSelectedCid(c.id)}
                 >
-                  <span className="iv-cand-name">{c.displayName || c.id}</span>
-                  <span className={`iv-badge iv-badge--${c.status || "joined"}`}>{c.status || "joined"}</span>
+                  <div className="iv-cand-item__info">
+                    <span className="iv-cand-name">{c.displayName || c.id}</span>
+                    <div className="iv-cand-item__badges">
+                      <span className={`iv-badge iv-badge--${c.status || "joined"}`}>{c.status || "joined"}</span>
+                      {c.recordingUrl && (
+                        <span className="iv-badge iv-badge--recording" title="Session recorded">
+                          <span className="iv-rec-dot" />
+                          Recorded
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </li>
               ))}
             </ul>
@@ -223,6 +233,34 @@ Evaluate: approach, correctness, time/space complexity, code quality. Be concise
               <pre>{aiAnalysis}</pre>
             </div>
           )}
+
+          {/* Recording playback */}
+          {(() => {
+            const selectedCandidate = candidates.find((c) => c.id === selectedCid);
+            if (!selectedCandidate?.recordingUrl) return null;
+            return (
+              <div className="iv-recording-box">
+                <h4>
+                  <span className="iv-rec-dot" />
+                  Interview Recording
+                </h4>
+                <video
+                  src={selectedCandidate.recordingUrl}
+                  controls
+                  className="iv-recording-box__video"
+                />
+                <a
+                  href={selectedCandidate.recordingUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="iv-btn iv-btn--sm"
+                  download
+                >
+                  Download Recording
+                </a>
+              </div>
+            );
+          })()}
 
           {question && (
             <div className="iv-solution-box">
