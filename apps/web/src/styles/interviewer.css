@@ -525,3 +525,76 @@
 .iv-create-hint {
   margin: 0 0 8px; font-size: 0.85rem; color: #f59e0b; font-weight: 500;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Recording Badge & Playback (Interviewer Monitor)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.iv-cand-item__info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.iv-cand-item__badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.iv-badge--recording {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  font-weight: 700;
+}
+
+.iv-rec-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #dc2626;
+  animation: iv-rec-blink 1s ease-in-out infinite;
+}
+
+@keyframes iv-rec-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.iv-recording-box {
+  margin-top: 16px;
+  padding: 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+}
+
+.iv-recording-box h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 0.88rem;
+  color: #dc2626;
+}
+
+.iv-recording-box__video {
+  width: 100%;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  background: #000;
+  max-height: 240px;
+}
+
+.iv-recording-box .iv-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
