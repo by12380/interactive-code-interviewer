@@ -9,7 +9,7 @@ import EditorPanel from "../components/EditorPanel.jsx";
 import ChatPanel from "../components/ChatPanel.jsx";
 import CameraGate from "../components/CameraGate.jsx";
 import { useVoice } from "../contexts/VoiceContext.jsx";
-import { getSession, pushCode, uploadRecording } from "../services/sessionService.js";
+import { getSession, pushCode, uploadRecording, saveBehavioralAnswers, fetchTTSAudio } from "../services/sessionService.js";
 import { sendChat, getCodeHints } from "../api.js";
 import { analyzeCode, createAnalyzerState } from "../services/codeAnalyzer.js";
 import { convertStarterCode } from "../services/starterCodeService.js";
@@ -43,6 +43,12 @@ export default function CandidateSession() {
   const [isBehavioralSending, setIsBehavioralSending] = useState(false);
   const [behavioralElapsed, setBehavioralElapsed] = useState(0);
   const behavioralLlmRef = useRef([]);
+
+  // Audio TTS state for behavioral phase
+  const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  const [aiAudioReady, setAiAudioReady] = useState(false);
+  const aiAudioRef = useRef(null);
+  const behavioralAnswersRef = useRef([]); // collected answers: [{question, answer}]
 
   // Camera/recording state for behavioral phase
   const [mediaStream, setMediaStream] = useState(null);
@@ -577,23 +583,75 @@ export default function CandidateSession() {
     }
   }, [handleBehavioralSendText]);
 
-  // Speak the first question via TTS when behavioral phase starts
+  // Play the question via OpenAI TTS when behavioral phase starts or question changes
   useEffect(() => {
-    if (phase === "behavioral" && behavioralQuestions.length > 0 && voiceSupported && speak) {
-      const q = behavioralQuestions[behavioralIdx];
-      if (q) {
-        const introText = behavioralIdx === 0
-          ? `Welcome to your interview. Here's the first question: ${q.question}`
-          : `Next question: ${q.question}`;
-        setTimeout(() => speak(introText, { skipTranscript: true, immediate: true }), 800);
+    if (phase !== "behavioral" || behavioralQuestions.length === 0) return;
+
+    const q = behavioralQuestions[behavioralIdx];
+    if (!q) return;
+
+    let cancelled = false;
+    setIsAiSpeaking(true);
+    setAiAudioReady(false);
+
+    const introText = behavioralIdx === 0
+      ? `Welcome to your interview. Here's the first question: ${q.question}`
+      : `Next question: ${q.question}`;
+
+    (async () => {
+      try {
+        const audioUrl = await fetchTTSAudio(introText, { voice: "alloy", speed: 1.0 });
+        if (cancelled) return;
+
+        const audio = new Audio(audioUrl);
+        aiAudioRef.current = audio;
+
+        audio.onended = () => {
+          if (!cancelled) {
+            setIsAiSpeaking(false);
+            setAiAudioReady(true);
+          }
+        };
+        audio.onerror = () => {
+          if (!cancelled) {
+            setIsAiSpeaking(false);
+            setAiAudioReady(true);
+          }
+        };
+
+        audio.play().catch(() => {
+          if (!cancelled) {
+            setIsAiSpeaking(false);
+            setAiAudioReady(true);
+          }
+        });
+      } catch {
+        if (!cancelled) {
+          setIsAiSpeaking(false);
+          setAiAudioReady(true);
+        }
       }
-    }
-  }, [phase, behavioralIdx]);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (aiAudioRef.current) {
+        aiAudioRef.current.pause();
+        aiAudioRef.current = null;
+      }
+    };
+  }, [phase, behavioralIdx, behavioralQuestions]);
 
   const handleNextBehavioral = useCallback(() => {
-    // Send any pending STT transcript before moving on
-    if (sttTranscript.trim()) {
-      handleBehavioralSendVoice();
+    // Collect the spoken or typed answer for the current question
+    const currentQ = behavioralQuestions[behavioralIdx];
+    const hasStt = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+    const candidateAnswer = hasStt ? sttTranscript.trim() : behavioralInput.trim();
+    if (currentQ && candidateAnswer) {
+      behavioralAnswersRef.current = [
+        ...behavioralAnswersRef.current,
+        { question: currentQ.question, category: currentQ.category || "", answer: candidateAnswer },
+      ];
     }
 
     const nextIdx = behavioralIdx + 1;
@@ -603,19 +661,34 @@ export default function CandidateSession() {
       behavioralLlmRef.current = [];
       setSttTranscript("");
       setSttInterim("");
+      setBehavioralInput("");
+      setAiAudioReady(false);
       setBehavioralMessages([{
         role: "assistant",
         content: `Great, let's move on to the next question.\n\n**${nextQ.question}**\n\nTake your time.`,
       }]);
 
-      if (voiceSupported && speak) {
-        cancelSpeech();
-        setTimeout(() => speak(`Next question: ${nextQ.question}`, { skipTranscript: true, immediate: true }), 500);
+      // Stop any playing audio
+      if (aiAudioRef.current) {
+        aiAudioRef.current.pause();
+        aiAudioRef.current = null;
       }
     } else {
-      // All behavioral questions done — stop recording, upload, then transition
+      // All behavioral questions done — save answers, stop recording, upload, then transition
       stopRecordingSession();
-      if (voiceSupported) cancelSpeech();
+
+      // Stop any playing audio
+      if (aiAudioRef.current) {
+        aiAudioRef.current.pause();
+        aiAudioRef.current = null;
+      }
+
+      // Save behavioral answers to the server for report generation
+      if (behavioralAnswersRef.current.length > 0 && sessionId && candidateId) {
+        saveBehavioralAnswers(sessionId, candidateId, behavioralAnswersRef.current).catch((err) =>
+          console.error("Failed to save behavioral answers:", err)
+        );
+      }
 
       // Stop media stream for camera release
       if (mediaStream) {
@@ -636,7 +709,7 @@ export default function CandidateSession() {
         setSubmitted(true);
       }
     }
-  }, [behavioralIdx, behavioralQuestions, session, questions, sttTranscript, handleBehavioralSendVoice, stopRecordingSession, handleUploadRecording, mediaStream, voiceSupported, speak, cancelSpeech]);
+  }, [behavioralIdx, behavioralQuestions, session, questions, sttTranscript, behavioralInput, sessionId, candidateId, stopRecordingSession, handleUploadRecording, mediaStream]);
 
   // Keep a ref to mediaStream for cleanup
   const mediaStreamRef = useRef(null);
@@ -873,7 +946,7 @@ export default function CandidateSession() {
     );
   }
 
-  // ── Behavioral Interview Phase (Audio/Video) ──────────────────
+  // ── Behavioral Interview Phase (Audio/Video — Upwork-style) ─────
   if (phase === "behavioral") {
     const currentBQ = behavioralQuestions[behavioralIdx];
     const hasSttSupport = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
@@ -900,7 +973,7 @@ export default function CandidateSession() {
         </header>
 
         <div className="cs-session__body cs-session__body--behavioral-av">
-          {/* Left: Question + Tips */}
+          {/* Left: AI Interviewer Panel */}
           <aside className="cs-session__problem cs-session__problem--av">
             {currentBQ && (
               <>
@@ -910,34 +983,40 @@ export default function CandidateSession() {
                     {behavioralIdx + 1} of {behavioralQuestions.length}
                   </span>
                 </div>
-                <h3 className="cs-behavioral-question">{currentBQ.question}</h3>
-                {currentBQ.rationale && (
-                  <p className="cs-behavioral-rationale">{currentBQ.rationale}</p>
-                )}
+
+                {/* AI Speaking Indicator */}
+                <div className={`cs-ai-speaker ${isAiSpeaking ? "cs-ai-speaker--active" : ""}`}>
+                  <div className="cs-ai-speaker__avatar">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M12 6v6l4 2" />
+                    </svg>
+                  </div>
+                  <div className="cs-ai-speaker__info">
+                    <span className="cs-ai-speaker__label">AI Interviewer</span>
+                    {isAiSpeaking ? (
+                      <div className="cs-ai-speaker__waveform">
+                        <span className="cs-ai-speaker__bar" />
+                        <span className="cs-ai-speaker__bar" />
+                        <span className="cs-ai-speaker__bar" />
+                        <span className="cs-ai-speaker__bar" />
+                        <span className="cs-ai-speaker__bar" />
+                        <span className="cs-ai-speaker__status">Speaking...</span>
+                      </div>
+                    ) : aiAudioReady ? (
+                      <span className="cs-ai-speaker__status cs-ai-speaker__status--done">Listening to your answer</span>
+                    ) : (
+                      <span className="cs-ai-speaker__status">Preparing question...</span>
+                    )}
+                  </div>
+                </div>
+
                 <div className="cs-behavioral-tips">
                   <h4>Tips</h4>
                   <p>Use the STAR method: describe the <strong>Situation</strong>, your <strong>Task</strong>, the <strong>Action</strong> you took, and the <strong>Result</strong>.</p>
-                </div>
-
-                {/* Conversation history */}
-                <div className="cs-behavioral-history">
-                  <h4>Conversation</h4>
-                  <div className="cs-behavioral-history__messages">
-                    {behavioralMessages.map((msg, i) => (
-                      <div key={i} className={`cs-behavioral-msg cs-behavioral-msg--${msg.role}`}>
-                        <span className="cs-behavioral-msg__role">
-                          {msg.role === "assistant" ? "Interviewer" : "You"}
-                        </span>
-                        <p className="cs-behavioral-msg__text">{msg.content}</p>
-                      </div>
-                    ))}
-                    {isBehavioralSending && (
-                      <div className="cs-behavioral-msg cs-behavioral-msg--assistant">
-                        <span className="cs-behavioral-msg__role">Interviewer</span>
-                        <p className="cs-behavioral-msg__text cs-behavioral-msg__text--typing">Thinking...</p>
-                      </div>
-                    )}
-                  </div>
+                  <p className="cs-behavioral-tips__note">
+                    Listen to the question, then speak your answer clearly. Your response is recorded for evaluation.
+                  </p>
                 </div>
               </>
             )}
@@ -975,7 +1054,7 @@ export default function CandidateSession() {
               )}
             </div>
 
-            {/* Live Transcript */}
+            {/* Live Transcript — candidate's own answer */}
             <div className="cs-transcript">
               <div className="cs-transcript__header">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -984,17 +1063,16 @@ export default function CandidateSession() {
                   <line x1="12" y1="19" x2="12" y2="23" />
                   <line x1="8" y1="23" x2="16" y2="23" />
                 </svg>
-                <span>Live Transcript</span>
+                <span>Your Answer</span>
                 {isSpeakingVAD && <span className="cs-transcript__listening">Listening...</span>}
               </div>
               <div className="cs-transcript__body">
-                {sttTranscript && (
-                  <p className="cs-transcript__final">{sttTranscript}</p>
+                {isAiSpeaking && !sttTranscript && !sttInterim && (
+                  <p className="cs-transcript__placeholder cs-transcript__placeholder--wait">
+                    Wait for the AI to finish reading the question before answering...
+                  </p>
                 )}
-                {sttInterim && (
-                  <p className="cs-transcript__interim">{sttInterim}</p>
-                )}
-                {!sttTranscript && !sttInterim && (
+                {!isAiSpeaking && !sttTranscript && !sttInterim && (
                   <p className="cs-transcript__placeholder">
                     {hasSttSupport
                       ? "Start speaking — your answer will appear here..."
@@ -1002,39 +1080,28 @@ export default function CandidateSession() {
                     }
                   </p>
                 )}
+                {sttTranscript && (
+                  <p className="cs-transcript__final">{sttTranscript}</p>
+                )}
+                {sttInterim && (
+                  <p className="cs-transcript__interim">{sttInterim}</p>
+                )}
               </div>
 
-              {/* Submit voice transcript or fallback text input */}
-              <div className="cs-transcript__actions">
-                {hasSttSupport && sttTranscript.trim() && (
-                  <button
-                    className="cs-btn cs-btn--primary cs-btn--sm"
-                    onClick={handleBehavioralSendVoice}
-                    disabled={isBehavioralSending}
-                  >
-                    {isBehavioralSending ? "Sending..." : "Submit Answer"}
-                  </button>
-                )}
-                {!hasSttSupport && (
+              {/* Fallback text input only if STT is not supported */}
+              {!hasSttSupport && (
+                <div className="cs-transcript__actions">
                   <div className="cs-transcript__fallback">
                     <textarea
                       className="cs-textarea"
                       placeholder="Type your answer here (speech recognition unavailable)..."
                       value={behavioralInput}
                       onChange={handleBehavioralInputChange}
-                      onKeyDown={handleBehavioralKeyDown}
                       rows={3}
                     />
-                    <button
-                      className="cs-btn cs-btn--primary cs-btn--sm"
-                      onClick={handleBehavioralSendText}
-                      disabled={isBehavioralSending || !behavioralInput.trim()}
-                    >
-                      {isBehavioralSending ? "Sending..." : "Send"}
-                    </button>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           </main>
         </div>
@@ -1047,7 +1114,11 @@ export default function CandidateSession() {
               </button>
             )}
           </div>
-          <button className="cs-btn cs-btn--primary" onClick={handleNextBehavioral}>
+          <button
+            className="cs-btn cs-btn--primary"
+            onClick={handleNextBehavioral}
+            disabled={isAiSpeaking}
+          >
             {behavioralIdx < behavioralQuestions.length - 1
               ? "Next Question"
               : (session?.sessionFormat === "both" && questions.length > 0)

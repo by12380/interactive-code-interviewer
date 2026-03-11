@@ -3,8 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { useTheme } from "../contexts/ThemeContext.jsx";
 import { joinSession } from "../services/sessionService.js";
-import InterviewLauncher from "../components/InterviewLauncher.jsx";
-import InterviewSimulation from "../components/InterviewSimulation.jsx";
 
 function extractShareCode(input) {
   const trimmed = (input || "").trim();
@@ -25,14 +23,6 @@ export default function HomePage() {
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState("");
   const shareCode = extractShareCode(rawInput);
-
-  // Mock interview launcher state
-  const [isLauncherOpen, setIsLauncherOpen] = useState(false);
-  const [isSimActive, setIsSimActive] = useState(false);
-  const [simConfig, setSimConfig] = useState(null);
-  const [showNamePrompt, setShowNamePrompt] = useState(false);
-  const [guestName, setGuestName] = useState("");
-  const [nameError, setNameError] = useState("");
 
   useEffect(() => {
     if (user?.displayName) setDisplayName(user.displayName);
@@ -89,51 +79,6 @@ export default function HomePage() {
     [handleJoin]
   );
 
-  // --- Mock Interview Handlers ---
-  const handleMockClick = useCallback(() => {
-    if (isAuthenticated) {
-      setIsLauncherOpen(true);
-    } else {
-      setShowNamePrompt(true);
-    }
-  }, [isAuthenticated]);
-
-  const handleGuestContinue = useCallback(() => {
-    if (!guestName.trim()) {
-      setNameError("Please enter your name to continue.");
-      return;
-    }
-    setNameError("");
-    setShowNamePrompt(false);
-    setIsLauncherOpen(true);
-  }, [guestName]);
-
-  const handleGuestKeyDown = useCallback(
-    (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        handleGuestContinue();
-      }
-    },
-    [handleGuestContinue]
-  );
-
-  const handleStartSim = useCallback((config) => {
-    setSimConfig(config);
-    setIsLauncherOpen(false);
-    setIsSimActive(true);
-  }, []);
-
-  const handleExitSim = useCallback(() => {
-    setIsSimActive(false);
-    setSimConfig(null);
-  }, []);
-
-  const handleSimComplete = useCallback(() => {
-    setIsSimActive(false);
-    setSimConfig(null);
-  }, []);
-
   // --- Practice ---
   const handlePracticeClick = useCallback(() => {
     if (isAuthenticated) {
@@ -142,20 +87,6 @@ export default function HomePage() {
       navigate("/login");
     }
   }, [isAuthenticated, navigate]);
-
-  // If mock sim is active, render it full-screen
-  if (isSimActive && simConfig) {
-    return (
-      <InterviewSimulation
-        mode={simConfig.mode}
-        persona={simConfig.persona}
-        enableVideoRecording={simConfig.enableVideo}
-        customConfig={simConfig.customConfig}
-        onComplete={handleSimComplete}
-        onExit={handleExitSim}
-      />
-    );
-  }
 
   return (
     <div className="home-page">
@@ -311,111 +242,37 @@ export default function HomePage() {
               </span>
             </button>
 
-            {/* Mock AI Interview */}
+            {/* Practice Problems */}
             <button
               type="button"
               className="home-page__action-card home-page__action-card--mock"
-              onClick={handleMockClick}
+              onClick={handlePracticeClick}
             >
               <div className="home-page__action-icon">
                 <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M12 6v6l4 2" />
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M9 9l3 3-3 3" />
+                  <line x1="14" y1="15" x2="18" y2="15" />
                 </svg>
               </div>
               <div className="home-page__action-text">
-                <h3 className="home-page__action-title">Mock AI Interview</h3>
+                <h3 className="home-page__action-title">Practice Problems</h3>
                 <p className="home-page__action-desc">
-                  Full structured interview simulation with behavioral questions, timed coding, and scoring.
+                  Solve coding problems at your own pace with AI hints, track XP, and build your skills.
                 </p>
                 <ul className="home-page__action-features">
-                  <li>Choose interviewer persona</li>
-                  <li>Behavioral + coding rounds</li>
-                  <li>Detailed feedback &amp; grading</li>
+                  <li>100+ problems across categories</li>
+                  <li>AI-powered hints &amp; feedback</li>
+                  <li>Track progress &amp; earn achievements</li>
                 </ul>
               </div>
-              <span className="home-page__action-cta">Configure &amp; Start &rarr;</span>
+              <span className="home-page__action-cta">
+                {isAuthenticated ? "Start Practicing \u2192" : "Sign In to Practice \u2192"}
+              </span>
             </button>
           </div>
         </section>
-
-        {/* ====== TERTIARY: Practice ====== */}
-        <section className="home-page__practice-section">
-          <button
-            type="button"
-            className="home-page__practice-card"
-            onClick={handlePracticeClick}
-          >
-            <div className="home-page__practice-icon">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <path d="M9 9l3 3-3 3" />
-                <line x1="14" y1="15" x2="18" y2="15" />
-              </svg>
-            </div>
-            <div className="home-page__practice-text">
-              <h3 className="home-page__practice-title">Practice Problems</h3>
-              <p className="home-page__practice-desc">
-                Solve coding problems at your own pace with AI hints, track XP, and build your skills.
-              </p>
-            </div>
-            <span className="home-page__practice-cta">
-              {isAuthenticated ? "Start Practicing \u2192" : "Sign In to Practice \u2192"}
-            </span>
-          </button>
-        </section>
       </main>
-
-      {/* Guest name prompt for mock interview */}
-      {showNamePrompt && (
-        <div className="home-page__overlay" onClick={() => { setShowNamePrompt(false); setNameError(""); }}>
-          <div className="home-page__name-card" onClick={(e) => e.stopPropagation()}>
-            <h2 className="home-page__name-title">Before we begin</h2>
-            <p className="home-page__name-desc">
-              Enter your name so the AI interviewer can address you. No account needed.
-            </p>
-            <label className="home-page__name-label" htmlFor="guest-name-home">
-              Your Name
-            </label>
-            <input
-              id="guest-name-home"
-              type="text"
-              className="home-page__name-input"
-              value={guestName}
-              onChange={(e) => setGuestName(e.target.value)}
-              onKeyDown={handleGuestKeyDown}
-              placeholder="e.g. Jane Smith"
-              autoFocus
-            />
-            {nameError && <p className="home-page__name-error">{nameError}</p>}
-            <div className="home-page__name-actions">
-              <button
-                type="button"
-                className="home-page__name-btn home-page__name-btn--primary"
-                onClick={handleGuestContinue}
-              >
-                Continue
-              </button>
-              <button
-                type="button"
-                className="home-page__name-btn home-page__name-btn--ghost"
-                onClick={() => { setShowNamePrompt(false); setNameError(""); }}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Mock Interview Launcher */}
-      {isLauncherOpen && (
-        <InterviewLauncher
-          onStart={handleStartSim}
-          onClose={() => setIsLauncherOpen(false)}
-          user={user || { displayName: guestName, username: guestName }}
-        />
-      )}
     </div>
   );
 }
