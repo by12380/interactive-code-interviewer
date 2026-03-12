@@ -240,36 +240,38 @@ export default function HomePage() {
                 {isAuthenticated ? "Create Session \u2192" : "Sign In to Host \u2192"}
               </span>
             </button>
+
+            {/* Practice Problems */}
+            <button
+              type="button"
+              className="home-page__action-card home-page__action-card--mock"
+              onClick={handlePracticeClick}
+            >
+              <div className="home-page__action-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M9 9l3 3-3 3" />
+                  <line x1="14" y1="15" x2="18" y2="15" />
+                </svg>
+              </div>
+              <div className="home-page__action-text">
+                <h3 className="home-page__action-title">Practice Problems</h3>
+                <p className="home-page__action-desc">
+                  Solve coding problems at your own pace with AI hints, track XP, and build your skills.
+                </p>
+                <ul className="home-page__action-features">
+                  <li>100+ problems across categories</li>
+                  <li>AI-powered hints &amp; feedback</li>
+                  <li>Track progress &amp; earn achievements</li>
+                </ul>
+              </div>
+              <span className="home-page__action-cta">
+                {isAuthenticated ? "Start Practicing \u2192" : "Sign In to Practice \u2192"}
+              </span>
+            </button>
           </div>
         </section>
-
-        {/* ====== TERTIARY: Practice ====== */}
-        <section className="home-page__practice-section">
-          <button
-            type="button"
-            className="home-page__practice-card"
-            onClick={handlePracticeClick}
-          >
-            <div className="home-page__practice-icon">
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" />
-                <path d="M9 9l3 3-3 3" />
-                <line x1="14" y1="15" x2="18" y2="15" />
-              </svg>
-            </div>
-            <div className="home-page__practice-text">
-              <h3 className="home-page__practice-title">Practice Problems</h3>
-              <p className="home-page__practice-desc">
-                Solve coding problems at your own pace with AI hints, track XP, and build your skills.
-              </p>
-            </div>
-            <span className="home-page__practice-cta">
-              {isAuthenticated ? "Start Practicing \u2192" : "Sign In to Practice \u2192"}
-            </span>
-          </button>
-        </section>
       </main>
-
     </div>
   );
 }

@@ -255,6 +255,37 @@ export async function uploadRecording(sessionId, candidateId, blob) {
   return res.json();
 }
 
+// ─── Behavioral Answers ─────────────────────────────────────────────
+
+export async function saveBehavioralAnswers(sessionId, candidateId, answers) {
+  return json(
+    await fetch(
+      `${API}/sessions/${sessionId}/candidates/${candidateId}/behavioral-answers`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers }),
+      }
+    )
+  );
+}
+
+// ─── Text-to-Speech ──────────────────────────────────────────────
+
+export async function fetchTTSAudio(text, { voice = "alloy", speed = 1.0 } = {}) {
+  const res = await fetch(`${API}/tts`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, voice, speed }),
+  });
+
+  if (!res.ok) {
+    throw new Error("TTS request failed");
+  }
+
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
 // ─── Candidate Analysis (AI-powered session recommendation) ─────
 
 export async function analyzeCandidate({ candidateInfo, resumeFile }) {

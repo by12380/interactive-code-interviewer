@@ -807,7 +807,34 @@ Return JSON: { "correctness": N, "efficiency": N, "codeQuality": N, "communicati
         evaluations[qid] = { raw: reply, total: 0 };
       }
     }
-    await withTimeout(updateDoc(doc(db, "sessions", sid, "candidates", cdoc.id), { evaluation: evaluations }));
+
+    // Evaluate behavioral answers if present
+    let behavioralEvaluation = null;
+    const behavioralAnswers = data.behavioralAnswers || [];
+    if (behavioralAnswers.length > 0) {
+      const baPrompt = `You are a senior technical interviewer evaluating behavioral interview answers.
+Evaluate each answer on: relevance (0-25), depth (0-25), communication (0-25), examples (0-25).
+Return JSON:
+{
+  "overallScore": N,
+  "perQuestion": [
+    { "question": "...", "answer": "...", "relevance": N, "depth": N, "communication": N, "examples": N, "total": N, "feedback": "..." }
+  ],
+  "summary": "2-3 sentence overall assessment of behavioral performance"
+}`;
+      const baContent = behavioralAnswers.map((a, i) => `Q${i + 1}: ${a.question}\nAnswer: ${a.answer}`).join("\n\n");
+      const baReply = await llm(baPrompt, [{ role: "user", content: baContent }], { maxTokens: 800 });
+      try {
+        behavioralEvaluation = JSON.parse(baReply);
+      } catch {
+        behavioralEvaluation = { raw: baReply, overallScore: 0 };
+      }
+    }
+
+    await withTimeout(updateDoc(doc(db, "sessions", sid, "candidates", cdoc.id), {
+      evaluation: evaluations,
+      ...(behavioralEvaluation ? { behavioralEvaluation } : {}),
+    }));
 
     candidates.push({
       id: cdoc.id,
@@ -816,6 +843,8 @@ Return JSON: { "correctness": N, "efficiency": N, "codeQuality": N, "communicati
       submissions,
       behavioralResponses,
       evaluation: evaluations,
+      behavioralAnswers,
+      behavioralEvaluation,
     });
   }
 
@@ -880,13 +909,10 @@ Sort rankings by overallScore descending. Be thorough and specific in feedback.`
     id: c.id,
     name: c.displayName,
     evaluation: c.evaluation,
-    behavioralResponses: c.behavioralResponses.map((item) => ({
-      questionId: item.questionId,
-      questionIndex: item.questionIndex,
-      category: item.category,
-      question: item.question,
-      answer: (item.answer || "").slice(0, 1600),
-      answeredAt: item.answeredAt || null,
+    behavioralEvaluation: c.behavioralEvaluation || null,
+    behavioralAnswers: (c.behavioralAnswers || []).map((a) => ({
+      question: a.question,
+      answer: (a.answer || "").slice(0, 500),
     })),
     codeSnippets: Object.fromEntries(
       Object.entries(c.submissions).map(([qid, s]) => [qid, (s.code || "").slice(0, 1200)])
@@ -1646,6 +1672,83 @@ app.post("/api/sessions/:sid/recording", videoUpload.single("recording"), async 
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════
+//  TEXT-TO-SPEECH (OpenAI TTS — returns audio for behavioral questions)
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/tts", async (req, res) => {
+  if (!OPENAI_API_KEY) return res.status(500).send("Missing OPENAI_API_KEY on the server.");
+
+  const { text, voice = "alloy", speed = 1.0 } = req.body || {};
+  if (!text || typeof text !== "string") return res.status(400).send("text required.");
+
+  try {
+    const ttsRes = await fetch("https://api.openai.com/v1/audio/speech", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "tts-1",
+        input: text.slice(0, 4096),
+        voice,
+        speed,
+        response_format: "mp3",
+      }),
+    });
+
+    if (!ttsRes.ok) {
+      const errText = await ttsRes.text();
+      console.error("TTS API error:", errText);
+      return res.status(502).send("TTS generation failed.");
+    }
+
+    res.set({
+      "Content-Type": "audio/mpeg",
+      "Cache-Control": "public, max-age=3600",
+    });
+
+    const arrayBuffer = await ttsRes.arrayBuffer();
+    res.send(Buffer.from(arrayBuffer));
+  } catch (e) {
+    console.error("POST /api/tts error:", e);
+    res.status(500).send(e.message || "TTS failed.");
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  BEHAVIORAL ANSWERS STORAGE (persists candidate spoken answers)
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/sessions/:sid/candidates/:cid/behavioral-answers", async (req, res) => {
+  const { sid, cid } = req.params;
+  const { answers } = req.body || {};
+  if (!Array.isArray(answers)) return res.status(400).send("answers must be an array.");
+
+  try {
+    const ref = doc(db, "sessions", sid, "candidates", cid);
+    await withTimeout(updateDoc(ref, { behavioralAnswers: answers, behavioralCompletedAt: new Date().toISOString() }));
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("POST behavioral-answers error:", e);
+    res.status(500).send(e.message);
+  }
+});
+
+app.get("/api/sessions/:sid/candidates/:cid/behavioral-answers", async (req, res) => {
+  const { sid, cid } = req.params;
+  try {
+    const ref = doc(db, "sessions", sid, "candidates", cid);
+    const snap = await withTimeout(getDoc(ref));
+    if (!snap.exists()) return res.json({ answers: [] });
+    const data = snap.data();
+    res.json({ answers: data.behavioralAnswers || [] });
+  } catch (e) {
+    console.error("GET behavioral-answers error:", e);
+    res.status(500).send(e.message);
+  }
+});
 // ─── Start ──────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {
