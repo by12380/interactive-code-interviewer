@@ -544,6 +544,68 @@ app.get("/api/sessions/:id/candidates", async (req, res) => {
   }
 });
 
+app.post("/api/sessions/:sid/candidates/:cid/behavioral-response", async (req, res) => {
+  const { sid, cid } = req.params;
+  const {
+    questionIndex,
+    questionId,
+    question,
+    category,
+    rationale,
+    answer,
+    answerSource,
+    answeredAt,
+  } = req.body || {};
+
+  const normalizedAnswer = typeof answer === "string" ? answer.trim() : "";
+  if (!normalizedAnswer) return res.status(400).send("answer required.");
+
+  const normalizedIndex = Number.isFinite(Number(questionIndex))
+    ? Number(questionIndex)
+    : null;
+  const resolvedQuestionId = questionId || (
+    normalizedIndex !== null ? `behavioral-${normalizedIndex + 1}` : `behavioral-${Date.now()}`
+  );
+
+  try {
+    const candidateRef = doc(db, "sessions", sid, "candidates", cid);
+    const candidateSnap = await withTimeout(getDoc(candidateRef));
+    const existingResponses = candidateSnap.exists() && Array.isArray(candidateSnap.data().behavioralResponses)
+      ? candidateSnap.data().behavioralResponses
+      : [];
+
+    const responseRecord = {
+      questionIndex: normalizedIndex,
+      questionId: resolvedQuestionId,
+      question: question || "",
+      category: category || null,
+      rationale: rationale || null,
+      answer: normalizedAnswer,
+      answerSource: answerSource || "speech",
+      answeredAt: answeredAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const nextResponses = existingResponses.filter((item) => {
+      if (normalizedIndex !== null && item.questionIndex === normalizedIndex) return false;
+      return item.questionId !== resolvedQuestionId;
+    });
+    nextResponses.push(responseRecord);
+    nextResponses.sort((a, b) => (a.questionIndex ?? 999) - (b.questionIndex ?? 999));
+
+    await withTimeout(setDoc(candidateRef, {
+      behavioralResponses: nextResponses,
+      lastBehavioralAnsweredAt: new Date().toISOString(),
+      status: "interviewing",
+    }, { merge: true }));
+
+    res.json({ ok: true, behavioralResponses: nextResponses });
+  } catch (e) {
+    console.error("POST behavioral-response error:", e);
+    res.status(500).send(e.message);
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════
 //  CODE SYNC
 // ═══════════════════════════════════════════════════════════════════
@@ -726,6 +788,9 @@ async function generateFullReport(sid) {
     const subSnap = await withTimeout(getDocs(collection(db, "sessions", sid, "candidates", cdoc.id, "submissions")));
     const submissions = {};
     subSnap.forEach((s) => { submissions[s.id] = s.data(); });
+    const behavioralResponses = Array.isArray(data.behavioralResponses)
+      ? data.behavioralResponses
+      : [];
 
     // Evaluate each candidate individually
     const evaluations = {};
@@ -749,6 +814,7 @@ Return JSON: { "correctness": N, "efficiency": N, "codeQuality": N, "communicati
       displayName: data.displayName,
       joinedAt: data.joinedAt,
       submissions,
+      behavioralResponses,
       evaluation: evaluations,
     });
   }
@@ -758,14 +824,17 @@ Return JSON: { "correctness": N, "efficiency": N, "codeQuality": N, "communicati
 
 Session: "${session.title}"
 Programming Language: ${reportLangLabel}
+Session Format: ${session.sessionFormat || "coding_only"}
 Number of candidates: ${candidates.length}
 Questions: ${(session.questionIds || []).map((qid) => {
     const q = questionBank.find((x) => x.id === qid);
     return q?.title || qid;
   }).join(", ")}
 
-For each candidate you have their ${reportLangLabel} code submissions and per-question evaluation scores.
-Evaluate their use of ${reportLangLabel}-specific features, idioms, and best practices.
+For each candidate you have their ${reportLangLabel} code submissions, per-question evaluation scores, and possibly behavioral interview responses captured during the live interview.
+Use behavioral responses, when present, to assess communication, ownership, clarity, and examples from past experience.
+If this session is behavioral-only or a candidate has no code submissions, evaluate them from the behavioral evidence that is available rather than treating missing code as a failure.
+Evaluate their use of ${reportLangLabel}-specific features, idioms, and best practices when code exists.
 
 Generate a DETAILED JSON report with this exact structure:
 {
@@ -811,6 +880,14 @@ Sort rankings by overallScore descending. Be thorough and specific in feedback.`
     id: c.id,
     name: c.displayName,
     evaluation: c.evaluation,
+    behavioralResponses: c.behavioralResponses.map((item) => ({
+      questionId: item.questionId,
+      questionIndex: item.questionIndex,
+      category: item.category,
+      question: item.question,
+      answer: (item.answer || "").slice(0, 1600),
+      answeredAt: item.answeredAt || null,
+    })),
     codeSnippets: Object.fromEntries(
       Object.entries(c.submissions).map(([qid, s]) => [qid, (s.code || "").slice(0, 1200)])
     ),
