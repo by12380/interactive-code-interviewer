@@ -946,197 +946,156 @@ export default function CandidateSession() {
     );
   }
 
-  // ── Behavioral Interview Phase (Audio/Video — Upwork-style) ─────
+  // ── Behavioral Interview Phase (Upwork-style immersive) ──────────
   if (phase === "behavioral") {
     const currentBQ = behavioralQuestions[behavioralIdx];
     const hasSttSupport = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 
+    // Build the subtitle text from the latest AI message
+    const latestAiMsg = [...behavioralMessages].reverse().find((m) => m.role === "assistant");
+    const subtitleText = latestAiMsg?.content?.replace(/\*\*/g, "") || "";
+
     return (
-      <div className="cs-session cs-session--behavioral-av">
-        <header className="cs-session__header">
-          <h2>{session?.title || "Interview Session"}</h2>
-          <div className="cs-session__meta">
-            <span className="cs-phase-badge cs-phase-badge--behavioral">Behavioral Interview</span>
-            {isRecording && (
-              <span className="cs-rec-badge">
-                <span className="cs-rec-badge__dot" />
-                REC {fmtTime(recordingTime)}
-              </span>
-            )}
-            <span>
-              Question {behavioralIdx + 1}/{behavioralQuestions.length}
-            </span>
-            <span>
-              Time: {fmtTime(behavioralElapsed)}
-            </span>
+      <div className="cs-interview">
+        {/* ── Top bar ──────────────────────────────────────────── */}
+        <div className="cs-interview__topbar">
+          <div className="cs-interview__topbar-left">
+            {isRecording && <span className="cs-interview__rec-dot" />}
           </div>
-        </header>
-
-        <div className="cs-session__body cs-session__body--behavioral-av">
-          {/* Left: AI Interviewer Panel */}
-          <aside className="cs-session__problem cs-session__problem--av">
-            {currentBQ && (
-              <>
-                <div className="cs-behavioral-header">
-                  <span className="cs-behavioral-category">{currentBQ.category}</span>
-                  <span className="cs-behavioral-progress">
-                    {behavioralIdx + 1} of {behavioralQuestions.length}
-                  </span>
-                </div>
-
-                {/* AI Speaking Indicator */}
-                <div className={`cs-ai-speaker ${isAiSpeaking ? "cs-ai-speaker--active" : ""}`}>
-                  <div className="cs-ai-speaker__avatar">
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="10" />
-                      <path d="M12 6v6l4 2" />
-                    </svg>
-                  </div>
-                  <div className="cs-ai-speaker__info">
-                    <span className="cs-ai-speaker__label">AI Interviewer</span>
-                    {isAiSpeaking ? (
-                      <div className="cs-ai-speaker__waveform">
-                        <span className="cs-ai-speaker__bar" />
-                        <span className="cs-ai-speaker__bar" />
-                        <span className="cs-ai-speaker__bar" />
-                        <span className="cs-ai-speaker__bar" />
-                        <span className="cs-ai-speaker__bar" />
-                        <span className="cs-ai-speaker__status">Speaking...</span>
-                      </div>
-                    ) : aiAudioReady ? (
-                      <span className="cs-ai-speaker__status cs-ai-speaker__status--done">Listening to your answer</span>
-                    ) : (
-                      <span className="cs-ai-speaker__status">Preparing question...</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="cs-behavioral-tips">
-                  <h4>Tips</h4>
-                  <p>Use the STAR method: describe the <strong>Situation</strong>, your <strong>Task</strong>, the <strong>Action</strong> you took, and the <strong>Result</strong>.</p>
-                  <p className="cs-behavioral-tips__note">
-                    Listen to the question, then speak your answer clearly. Your response is recorded for evaluation.
-                  </p>
-                </div>
-
-                {/* Conversation history */}
-                <div className="cs-behavioral-history">
-                  <h4>Conversation</h4>
-                  <div className="cs-behavioral-history__messages">
-                    {behavioralMessages.map((msg, i) => (
-                      <div key={i} className={`cs-behavioral-msg cs-behavioral-msg--${msg.role}`}>
-                        <span className="cs-behavioral-msg__role">
-                          {msg.role === "assistant" ? "Interviewer" : "You"}
-                        </span>
-                        <p className="cs-behavioral-msg__text">{msg.content}</p>
-                      </div>
-                    ))}
-                    {isBehavioralSending && (
-                      <div className="cs-behavioral-msg cs-behavioral-msg--assistant">
-                        <span className="cs-behavioral-msg__role">Interviewer</span>
-                        <p className="cs-behavioral-msg__text cs-behavioral-msg__text--typing">Thinking...</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </>
-            )}
-          </aside>
-
-          {/* Right: Camera + Transcript */}
-          <main className="cs-session__editor cs-session__editor--av">
-            {/* Camera Preview */}
-            <div className={`cs-camera-preview ${isSpeakingVAD ? "cs-camera-preview--speaking" : ""}`}>
-              {mediaStream ? (
-                <video
-                  ref={videoPreviewRef}
-                  autoPlay
-                  muted
-                  playsInline
-                  className="cs-camera-preview__video"
-                />
-              ) : (
-                <div className="cs-camera-preview__placeholder">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M23 7l-7 5 7 5V7z" />
-                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-                  </svg>
-                  <span>Camera not available</span>
-                </div>
-              )}
-              {isRecording && (
-                <div className="cs-camera-preview__rec-indicator">
-                  <span className="cs-rec-dot" />
-                  REC
-                </div>
-              )}
-              {isSpeakingVAD && (
-                <div className="cs-camera-preview__vad-ring" />
-              )}
-            </div>
-
-            {/* Live Transcript — candidate's own answer */}
-            <div className="cs-transcript">
-              <div className="cs-transcript__header">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                  <line x1="12" y1="19" x2="12" y2="23" />
-                  <line x1="8" y1="23" x2="16" y2="23" />
-                </svg>
-                <span>Your Answer</span>
-                {isSpeakingVAD && <span className="cs-transcript__listening">Listening...</span>}
-              </div>
-              <div className="cs-transcript__body">
-                {isAiSpeaking && !sttTranscript && !sttInterim && (
-                  <p className="cs-transcript__placeholder cs-transcript__placeholder--wait">
-                    Wait for the AI to finish reading the question before answering...
-                  </p>
-                )}
-                {!isAiSpeaking && !sttTranscript && !sttInterim && (
-                  <p className="cs-transcript__placeholder">
-                    {hasSttSupport
-                      ? "Start speaking — your answer will appear here..."
-                      : "Speech recognition is not supported in this browser. Use the text input below."
-                    }
-                  </p>
-                )}
-                {sttTranscript && (
-                  <p className="cs-transcript__final">{sttTranscript}</p>
-                )}
-                {sttInterim && (
-                  <p className="cs-transcript__interim">{sttInterim}</p>
-                )}
-              </div>
-
-              {/* Fallback text input only if STT is not supported */}
-              {!hasSttSupport && (
-                <div className="cs-transcript__actions">
-                  <div className="cs-transcript__fallback">
-                    <textarea
-                      className="cs-textarea"
-                      placeholder="Type your answer here (speech recognition unavailable)..."
-                      value={behavioralInput}
-                      onChange={handleBehavioralInputChange}
-                      rows={3}
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          </main>
+          <div className="cs-interview__topbar-center">
+            Interview: {session?.title || "Session"} &middot; Q{behavioralIdx + 1}/{behavioralQuestions.length}
+          </div>
+          <div className="cs-interview__topbar-right">
+            <button className="cs-interview__settings-btn" title="Settings">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
+          </div>
         </div>
 
-        <footer className="cs-session__footer">
-          <div className="cs-session__footer-left">
-            {recordingChunksRef.current.length > 0 && (
-              <button className="cs-btn cs-btn--ghost cs-btn--sm" onClick={downloadRecording}>
-                Save Recording
-              </button>
+        {/* ── Center stage: spirograph + subtitles ─────────────── */}
+        <div className="cs-interview__stage">
+          <div className={`cs-spirograph ${isAiSpeaking ? "cs-spirograph--active" : ""}`}>
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+          </div>
+
+          <div className="cs-subtitles">
+            {isAiSpeaking && subtitleText && (
+              <p className="cs-subtitles__text">{subtitleText}</p>
+            )}
+            {!isAiSpeaking && aiAudioReady && (
+              <p className="cs-subtitles__status">
+                Listening to your answer{isSpeakingVAD ? "" : " — speak when ready"}
+              </p>
+            )}
+            {!isAiSpeaking && !aiAudioReady && (
+              <p className="cs-subtitles__status">
+                Preparing question
+                <span className="cs-subtitles__dots">
+                  <span /><span /><span />
+                </span>
+              </p>
             )}
           </div>
+        </div>
+
+        {/* ── Candidate camera PIP (bottom-left) ─────────────── */}
+        <div className={`cs-interview__camera-pip ${isSpeakingVAD ? "cs-interview__camera-pip--speaking" : ""}`}>
+          {mediaStream ? (
+            <video
+              ref={videoPreviewRef}
+              autoPlay
+              muted
+              playsInline
+            />
+          ) : (
+            <div className="cs-interview__camera-pip-placeholder">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 7l-7 5 7 5V7z" />
+                <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+              </svg>
+            </div>
+          )}
+          <div className="cs-interview__camera-pip-name">
+            {isRecording && <span className="cs-rec-dot" />}
+            {candidateId || "You"}
+          </div>
+        </div>
+
+        {/* ── Your spoken answer overlay (bottom-right) ──────── */}
+        {(sttTranscript || sttInterim) && (
+          <div className="cs-interview__transcript-overlay">
+            <p className="cs-interview__transcript-label">
+              {isSpeakingVAD && <span className="cs-listening-dot" />}
+              Your Answer
+            </p>
+            {sttTranscript && (
+              <p className="cs-interview__transcript-text">{sttTranscript}</p>
+            )}
+            {sttInterim && (
+              <p className="cs-interview__transcript-interim">{sttInterim}</p>
+            )}
+          </div>
+        )}
+
+        {/* ── Fallback text input (no STT) ───────────────────── */}
+        {!hasSttSupport && (
+          <div className="cs-interview__fallback-input">
+            <textarea
+              placeholder="Type your answer here (speech recognition unavailable)..."
+              value={behavioralInput}
+              onChange={handleBehavioralInputChange}
+              onKeyDown={handleBehavioralKeyDown}
+              rows={2}
+            />
+          </div>
+        )}
+
+        {/* ── Bottom toolbar ─────────────────────────────────── */}
+        <div className="cs-interview__toolbar">
+          <div className="cs-interview__toolbar-info">
+            {fmtTime(behavioralElapsed)}
+          </div>
+
+          {/* Mic */}
+          <button className="cs-toolbar-btn cs-toolbar-btn--active" title="Microphone on">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+              <line x1="12" y1="19" x2="12" y2="23" />
+              <line x1="8" y1="23" x2="16" y2="23" />
+            </svg>
+          </button>
+
+          {/* Camera */}
+          <button className={`cs-toolbar-btn ${mediaStream ? "cs-toolbar-btn--active" : ""}`} title="Camera">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 7l-7 5 7 5V7z" />
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+            </svg>
+          </button>
+
+          {/* Screen share placeholder */}
+          <button className="cs-toolbar-btn" title="Share screen">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+              <line x1="8" y1="21" x2="16" y2="21" />
+              <line x1="12" y1="17" x2="12" y2="21" />
+            </svg>
+          </button>
+
+          {/* Leave / Next */}
           <button
-            className="cs-btn cs-btn--primary"
+            className="cs-toolbar-btn cs-toolbar-btn--leave"
             onClick={handleNextBehavioral}
             disabled={isAiSpeaking}
           >
@@ -1147,7 +1106,7 @@ export default function CandidateSession() {
                 : "Complete Interview"
             }
           </button>
-        </footer>
+        </div>
       </div>
     );
   }
