@@ -93,9 +93,14 @@ export default function InterviewerDashboard() {
                     </button>
                   )}
                   {s.status === "completed" && (
-                    <button className="iv-btn iv-btn--sm" onClick={() => navigate(`/interviewer/results/${s.id}`)}>
-                      Results
-                    </button>
+                    <>
+                      <button className="iv-btn iv-btn--sm iv-btn--primary" onClick={() => navigate(`/interviewer/results/${s.id}`)}>
+                        View Report
+                      </button>
+                      <button className="iv-btn iv-btn--sm" onClick={() => navigate(`/interviewer/results/${s.id}`)}>
+                        Results
+                      </button>
+                    </>
                   )}
                   <button className="iv-btn iv-btn--sm iv-btn--danger" onClick={() => handleDelete(s.id)}>
                     Delete
