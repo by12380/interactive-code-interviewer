@@ -9,8 +9,8 @@ import {
   getReport,
   generateReport,
   sendReport,
-  getEvaluation,
 } from "../services/sessionService.js";
+import { useAuth } from "../contexts/AuthContext.jsx";
 import { QUESTION_BANK } from "../data/questionBank.js";
 import "../styles/interviewer.css";
 
@@ -48,16 +48,49 @@ function RankBadge({ rank }) {
   );
 }
 
+function asList(value, emptyLabel) {
+  if (Array.isArray(value)) {
+    const items = value
+      .map((item) => (item == null ? "" : String(item).trim()))
+      .filter(Boolean);
+    return items.length > 0 ? items : [emptyLabel];
+  }
+  if (typeof value === "string" && value.trim()) return [value.trim()];
+  return [emptyLabel];
+}
+
+function normalizeRankings(rankings, candidates) {
+  const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  return (Array.isArray(rankings) ? rankings : []).map((ranking, index) => {
+    const fallbackCandidate = candidateById.get(ranking?.candidateId);
+    return {
+      rank: Number.isFinite(Number(ranking?.rank)) ? Number(ranking.rank) : index + 1,
+      candidateId: ranking?.candidateId || fallbackCandidate?.id || `candidate-${index + 1}`,
+      displayName: ranking?.displayName || fallbackCandidate?.displayName || ranking?.candidateId || `Candidate ${index + 1}`,
+      overallScore: Number.isFinite(Number(ranking?.overallScore)) ? Number(ranking.overallScore) : 0,
+      recommendation: ranking?.recommendation || "Lean No Hire",
+      leaderboardReason: ranking?.leaderboardReason || ranking?.rankingReason || "",
+      strengths: asList(ranking?.strengths, "No notable strengths were captured."),
+      weaknesses: asList(ranking?.weaknesses, "No major concerns were captured."),
+      perQuestion: Array.isArray(ranking?.perQuestion) ? ranking.perQuestion : [],
+      behavioralSummary: ranking?.behavioralSummary || fallbackCandidate?.behavioralEvaluation?.summary || "",
+    };
+  });
+}
+
 export default function SessionResults() {
   const { id: sessionId } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const [session, setSession] = useState(null);
   const [candidates, setCandidates] = useState([]);
   const [report, setReport] = useState(null);
+  const [reportMeta, setReportMeta] = useState(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [selectedCid, setSelectedCid] = useState(null);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   // Email state
   const [emailTo, setEmailTo] = useState("");
@@ -65,41 +98,65 @@ export default function SessionResults() {
   const [sendResult, setSendResult] = useState(null);
 
   useEffect(() => {
+    let cancelled = false;
+    let poller = null;
+
     Promise.all([
       getSession(sessionId),
       getCandidates(sessionId),
       getReport(sessionId),
     ])
       .then(([s, c, r]) => {
+        if (cancelled) return;
+        if (user?.uid && s?.createdBy && s.createdBy !== user.uid) {
+          setAccessDenied(true);
+          return;
+        }
+
         setSession(s);
         setCandidates(c);
+        setReportMeta(r || null);
         setReport(r?.report || null);
         if (s?.interviewerEmail) setEmailTo(s.interviewerEmail);
 
         // If session is completed but no report yet, poll for it
         if (s?.status === "completed" && !r?.report) {
-          const poller = setInterval(async () => {
+          poller = setInterval(async () => {
             try {
               const fresh = await getReport(sessionId);
-              if (fresh?.report) {
+              if (fresh?.report && !cancelled) {
+                setReportMeta(fresh);
                 setReport(fresh.report);
                 const freshCandidates = await getCandidates(sessionId);
-                setCandidates(freshCandidates);
+                if (!cancelled) setCandidates(freshCandidates);
                 clearInterval(poller);
               }
             } catch { /* ignore */ }
           }, 5000);
-          return () => clearInterval(poller);
         }
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [sessionId]);
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      if (poller) clearInterval(poller);
+    };
+  }, [sessionId, user?.uid]);
+
+  useEffect(() => {
+    if (!selectedCid && report?.rankings?.length) {
+      setSelectedCid(report.rankings[0].candidateId || null);
+    }
+  }, [report, selectedCid]);
 
   const handleGenerate = async () => {
     setGenerating(true);
     try {
       const data = await generateReport(sessionId);
+      setReportMeta((prev) => ({ ...prev, report: data.report, updatedAt: new Date().toISOString() }));
       setReport(data.report);
       // Refresh candidates to get updated evaluations
       const c = await getCandidates(sessionId);
@@ -150,10 +207,23 @@ export default function SessionResults() {
   };
 
   if (loading) return <div className="iv-dashboard"><p className="iv-muted">Loading results...</p></div>;
+  if (accessDenied) {
+    return (
+      <div className="iv-dashboard">
+        <div className="iv-email-box">
+          <h2 style={{ margin: "0 0 8px" }}>Report access restricted</h2>
+          <p className="iv-muted" style={{ margin: 0 }}>
+            This report is only available to the interviewer who created the session.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
-  const rankings = report?.rankings || [];
-  const selectedRanking = rankings.find((r) => r.candidateId === selectedCid);
-  const selectedCandidate = candidates.find((c) => c.id === selectedCid);
+  const rankings = normalizeRankings(report?.rankings, candidates);
+  const activeCid = selectedCid || rankings[0]?.candidateId || null;
+  const selectedRanking = rankings.find((r) => r.candidateId === activeCid);
+  const selectedCandidate = candidates.find((c) => c.id === activeCid);
 
   return (
     <div className="iv-dashboard">
@@ -203,6 +273,22 @@ export default function SessionResults() {
       )}
 
       {/* Email Section */}
+      {report && (
+        <section className="iv-section">
+          <div className="iv-web-report-box">
+            <h3 style={{ margin: "0 0 8px", fontSize: "0.95rem" }}>Web Report Ready</h3>
+            <p className="iv-web-report-box__text">
+              This completed interview report is stored in the app for the session owner, so email delivery is optional.
+            </p>
+            {reportMeta?.lastSentAt && (
+              <p className="iv-web-report-box__meta">
+                Last emailed to {reportMeta.lastSentTo || emailTo || "the interviewer"} on {new Date(reportMeta.lastSentAt).toLocaleString()}.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
       {report && (
         <section className="iv-section">
           <div className="iv-email-box">
@@ -258,16 +344,22 @@ export default function SessionResults() {
       {/* Rankings */}
       {rankings.length > 0 && (
         <section className="iv-section">
-          <h2>Candidate Rankings</h2>
+          <h2>{rankings.length > 1 ? "AI Leaderboard" : "Candidate Summary"}</h2>
+          {report?.leaderboardSummary && (
+            <div className="iv-leaderboard-summary">
+              <h3>{rankings.length > 1 ? "Why the AI ranked candidates this way" : "AI assessment summary"}</h3>
+              <p>{report.leaderboardSummary}</p>
+            </div>
+          )}
           <div className="iv-rankings-grid">
             {rankings.map((r) => {
               const recColor = REC_COLORS[r.recommendation] || "#64748b";
-              const isSelected = r.candidateId === selectedCid;
+              const isSelected = r.candidateId === activeCid;
               return (
                 <div
                   key={r.candidateId || r.rank}
                   className={`iv-ranking-card ${isSelected ? "iv-ranking-card--selected" : ""}`}
-                  onClick={() => setSelectedCid(r.candidateId)}
+                  onClick={() => setSelectedCid(isSelected ? null : r.candidateId)}
                 >
                   <div className="iv-ranking-card__header">
                     <RankBadge rank={r.rank} />
@@ -283,11 +375,17 @@ export default function SessionResults() {
                     </div>
                   </div>
 
+                  {r.leaderboardReason && (
+                    <div className="iv-ranking-card__reason">
+                      <strong>AI rationale:</strong> {r.leaderboardReason}
+                    </div>
+                  )}
+
                   <div className="iv-ranking-card__body">
                     <div className="iv-ranking-card__col">
                       <h4 className="iv-strengths-title">Strengths</h4>
                       <ul className="iv-trait-list iv-trait-list--green">
-                        {(Array.isArray(r.strengths) ? r.strengths : [r.strengths]).map((s, i) => (
+                        {r.strengths.map((s, i) => (
                           <li key={i}>{s}</li>
                         ))}
                       </ul>
@@ -295,7 +393,7 @@ export default function SessionResults() {
                     <div className="iv-ranking-card__col">
                       <h4 className="iv-weaknesses-title">Areas to Improve</h4>
                       <ul className="iv-trait-list iv-trait-list--red">
-                        {(Array.isArray(r.weaknesses) ? r.weaknesses : [r.weaknesses]).map((w, i) => (
+                        {r.weaknesses.map((w, i) => (
                           <li key={i}>{w}</li>
                         ))}
                       </ul>
@@ -316,6 +414,12 @@ export default function SessionResults() {
       {selectedRanking && (
         <section className="iv-section">
           <h2>Detailed Breakdown: {selectedRanking.displayName || selectedCid}</h2>
+          {selectedRanking.behavioralSummary && (
+            <div className="iv-behavioral-summary">
+              <h3>Behavioral Summary</h3>
+              <p>{selectedRanking.behavioralSummary}</p>
+            </div>
+          )}
           <div className="iv-detail-grid">
             {(selectedRanking.perQuestion || []).map((pq) => (
               <div key={pq.questionId} className="iv-detail-card">

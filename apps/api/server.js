@@ -882,6 +882,7 @@ Generate a DETAILED JSON report with this exact structure:
       "displayName": "...",
       "overallScore": N,
       "recommendation": "Strong Hire|Hire|Lean Hire|Lean No Hire|No Hire",
+      "leaderboardReason": "1-2 sentences explaining why this candidate earned this rank relative to the others.",
       "strengths": ["strength1", "strength2"],
       "weaknesses": ["weakness1", "weakness2"],
       "perQuestion": [
@@ -898,6 +899,7 @@ Generate a DETAILED JSON report with this exact structure:
       ]
     }
   ],
+  "leaderboardSummary": "If there are multiple candidates, explain how the leaderboard order was decided and what separated the top performers. If there is only one candidate, summarize their standing in 2-4 sentences.",
   "comparativeAnalysis": "A 3-5 sentence paragraph comparing all candidates, highlighting who performed best and why.",
   "bestApproach": "Which candidate(s) had the most elegant solution and why.",
   "hiringRecommendation": "A clear 2-3 sentence final recommendation for the interviewer about which candidates to advance."
@@ -931,6 +933,71 @@ Sort rankings by overallScore descending. Be thorough and specific in feedback.`
     report = { raw: reportReply, generatedAt: new Date().toISOString() };
   }
 
+  const asList = (value) => {
+    if (Array.isArray(value)) {
+      return value
+        .map((item) => (item == null ? "" : String(item).trim()))
+        .filter(Boolean);
+    }
+    if (typeof value === "string" && value.trim()) return [value.trim()];
+    return [];
+  };
+  const toScore = (value) => {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return 0;
+    return Math.max(0, Math.min(100, Math.round(num)));
+  };
+  const candidateLookup = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  const candidateNameLookup = new Map(candidates.map((candidate) => [candidate.id, candidate.displayName || candidate.id]));
+  const rawRankings = Array.isArray(report.rankings) ? report.rankings : [];
+  const sortedRankings = [...rawRankings].sort((a, b) => toScore(b?.overallScore) - toScore(a?.overallScore));
+
+  report.rankings = sortedRankings.map((ranking, index) => {
+    const candidateId = ranking?.candidateId || candidates[index]?.id || `candidate-${index + 1}`;
+    const candidate = candidateLookup.get(candidateId);
+    const strengths = asList(ranking?.strengths);
+    const weaknesses = asList(ranking?.weaknesses);
+    const fallbackReasonParts = [];
+    if (strengths.length > 0) fallbackReasonParts.push(`Strengths: ${strengths.slice(0, 2).join("; ")}`);
+    if (weaknesses.length > 0) fallbackReasonParts.push(`Risks: ${weaknesses.slice(0, 2).join("; ")}`);
+
+    return {
+      rank: index + 1,
+      candidateId,
+      displayName: ranking?.displayName || candidateNameLookup.get(candidateId) || candidateId,
+      overallScore: toScore(ranking?.overallScore),
+      recommendation: ranking?.recommendation || "Lean No Hire",
+      leaderboardReason: (
+        ranking?.leaderboardReason ||
+        ranking?.rankingReason ||
+        ranking?.whyThisRank ||
+        fallbackReasonParts.join(". ")
+      ) || "This ranking was inferred from the overall interview evidence available.",
+      strengths,
+      weaknesses,
+      perQuestion: Array.isArray(ranking?.perQuestion)
+        ? ranking.perQuestion.map((item, itemIndex) => ({
+          questionId: item?.questionId || `question-${itemIndex + 1}`,
+          questionTitle: item?.questionTitle || item?.question || item?.questionId || `Question ${itemIndex + 1}`,
+          correctness: Math.max(0, Math.min(40, Math.round(Number(item?.correctness) || 0))),
+          efficiency: Math.max(0, Math.min(25, Math.round(Number(item?.efficiency) || 0))),
+          codeQuality: Math.max(0, Math.min(20, Math.round(Number(item?.codeQuality) || 0))),
+          communication: Math.max(0, Math.min(15, Math.round(Number(item?.communication) || 0))),
+          total: toScore(item?.total),
+          feedback: item?.feedback || "",
+        }))
+        : [],
+      behavioralSummary: ranking?.behavioralSummary || candidate?.behavioralEvaluation?.summary || "",
+    };
+  });
+
+  report.leaderboardSummary = report.leaderboardSummary
+    || report.comparativeAnalysis
+    || (
+      report.rankings.length > 1
+        ? `The leaderboard was determined by overall interview performance across coding quality, communication, and behavioral evidence. ${report.rankings[0]?.displayName || "The top candidate"} placed first based on the strongest combination of strengths and recommendation.`
+        : `Only one candidate completed this session. ${report.rankings[0]?.displayName || "The candidate"} was assessed from the available coding and behavioral evidence.`
+    );
   report.generatedAt = report.generatedAt || new Date().toISOString();
 
   // Store report in Firestore
@@ -995,6 +1062,10 @@ function buildReportHTML(report, sessionTitle) {
         <span style="margin-left:auto;font-size:24px;font-weight:700;color:#1e293b;">${r.overallScore}/100</span>
       </div>
       <span style="display:inline-block;padding:3px 12px;border-radius:999px;font-size:12px;font-weight:700;color:#fff;background:${color};">${r.recommendation}</span>
+      ${r.leaderboardReason ? `
+      <p style="margin:12px 0 0;font-size:13px;line-height:1.6;color:#334155;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;">
+        ${r.leaderboardReason}
+      </p>` : ""}
       <div style="display:flex;gap:24px;margin-top:16px;">
         <div style="flex:1;">
           <h4 style="margin:0 0 6px;font-size:13px;color:#059669;text-transform:uppercase;">Strengths</h4>
@@ -1041,7 +1112,12 @@ function buildReportHTML(report, sessionTitle) {
       </p>
     </div>
 
-    <h2 style="font-size:18px;color:#1e293b;margin-bottom:12px;">Candidate Rankings</h2>
+    <h2 style="font-size:18px;color:#1e293b;margin-bottom:12px;">${rankings.length > 1 ? "AI Leaderboard" : "Candidate Summary"}</h2>
+    ${report.leaderboardSummary ? `
+    <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:16px;margin-bottom:16px;">
+      <h2 style="margin:0 0 8px;font-size:16px;color:#9a3412;">Leaderboard Decision</h2>
+      <p style="margin:0;font-size:14px;color:#7c2d12;line-height:1.6;">${report.leaderboardSummary}</p>
+    </div>` : ""}
     ${candidateRows}
 
     <div style="background:#f1f5f9;border-radius:12px;padding:16px;margin-bottom:16px;">
