@@ -1229,6 +1229,124 @@ app.post("/api/sessions/:sid/report/send", async (req, res) => {
   }
 });
 
+// Leaderboard — AI-ranked candidates with reasoning (for multi-candidate sessions)
+
+
+// Generate leaderboard with AI reasoning (for multi-candidate sessions)
+app.post("/api/sessions/:sid/leaderboard/generate", async (req, res) => {
+  const { sid } = req.params;
+  try {
+    const sessionSnap = await withTimeout(getDoc(doc(db, "sessions", sid)));
+    if (!sessionSnap.exists()) return res.status(404).send("Session not found.");
+    const session = sessionSnap.data();
+
+    const lbLang = session.settings?.language || "javascript";
+    const lbLangNames = { javascript: "JavaScript", python: "Python", java: "Java", cpp: "C++" };
+    const lbLangLabel = lbLangNames[lbLang] || "JavaScript";
+
+    const candSnap = await withTimeout(getDocs(collection(db, "sessions", sid, "candidates")));
+    if (candSnap.size < 2) {
+      return res.status(400).json({ error: "Leaderboard requires at least 2 candidates." });
+    }
+
+    const candidates = [];
+    for (const cdoc of candSnap.docs) {
+      const data = cdoc.data();
+      const subSnap = await withTimeout(getDocs(collection(db, "sessions", sid, "candidates", cdoc.id, "submissions")));
+      const submissions = {};
+      subSnap.forEach((s) => { submissions[s.id] = s.data(); });
+      candidates.push({
+        id: cdoc.id,
+        displayName: data.displayName,
+        evaluation: data.evaluation || null,
+        behavioralEvaluation: data.behavioralEvaluation || null,
+        submissions,
+      });
+    }
+
+    const leaderboardPrompt = `You are a senior technical interviewer creating a detailed leaderboard for a ${lbLangLabel} coding interview session.
+
+Session: "${session.title}"
+Number of candidates: ${candidates.length}
+Questions: ${(session.questionIds || []).map((qid) => {
+      const q = questionBank.find((x) => x.id === qid);
+      return q?.title || qid;
+    }).join(", ")}
+
+For each candidate, provide a DETAILED ranking with clear reasoning for their position.
+The leaderboard must explain WHY each candidate is ranked where they are — be specific about code quality, approach, efficiency, and problem-solving skills.
+
+Return a JSON object with this EXACT structure (no markdown, no code fences):
+{
+  "leaderboard": [
+    {
+      "rank": 1,
+      "candidateId": "...",
+      "displayName": "...",
+      "overallScore": N,
+      "recommendation": "Strong Hire|Hire|Lean Hire|Lean No Hire|No Hire",
+      "rankReason": "2-3 sentence specific explanation of why this candidate is ranked at this position, referencing their actual code and approach",
+      "strengths": ["strength1", "strength2"],
+      "weaknesses": ["weakness1", "weakness2"],
+      "codeHighlights": "Brief note about their most impressive code decision or biggest code issue",
+      "perQuestion": [
+        {
+          "questionId": "...",
+          "questionTitle": "...",
+          "correctness": N,
+          "efficiency": N,
+          "codeQuality": N,
+          "communication": N,
+          "total": N,
+          "feedback": "..."
+        }
+      ]
+    }
+  ],
+  "rankingRationale": "A detailed 3-5 sentence paragraph explaining the overall ranking methodology and key differentiators between candidates. Be specific about what separated the top performers from the rest.",
+  "comparativeAnalysis": "A 3-5 sentence paragraph comparing all candidates head-to-head.",
+  "bestApproach": "Which candidate had the most elegant solution and why.",
+  "hiringRecommendation": "Clear 2-3 sentence final recommendation."
+}
+
+Sort by overallScore descending. Be thorough, fair, and specific in your reasoning.`;
+
+    const candidateData = candidates.map((c) => ({
+      id: c.id,
+      name: c.displayName,
+      evaluation: c.evaluation,
+      behavioralEvaluation: c.behavioralEvaluation,
+      codeSnippets: Object.fromEntries(
+        Object.entries(c.submissions).map(([qid, s]) => [qid, (s.code || "").slice(0, 1200)])
+      ),
+    }));
+
+    const reply = await llm(leaderboardPrompt, [{ role: "user", content: JSON.stringify(candidateData) }], {
+      maxTokens: 3000,
+      temperature: 0.2,
+    });
+
+    let leaderboardData;
+    try {
+      leaderboardData = JSON.parse(reply);
+    } catch {
+      leaderboardData = { raw: reply };
+    }
+
+    leaderboardData.generatedAt = new Date().toISOString();
+    leaderboardData.sessionId = sid;
+    leaderboardData.sessionTitle = session.title;
+
+    // Persist leaderboard
+    await withTimeout(setDoc(doc(db, "leaderboards", sid), leaderboardData));
+
+    res.json(leaderboardData);
+  } catch (e) {
+    console.error("POST leaderboard/generate error:", e);
+    res.status(500).send(e.message);
+  }
+});
+
 // End session and auto-generate report
 app.post("/api/sessions/:sid/end", async (req, res) => {
   const { sid } = req.params;
@@ -1237,8 +1355,71 @@ app.post("/api/sessions/:sid/end", async (req, res) => {
 
     // Auto-generate report and optionally email it
     generateFullReport(sid)
-      .then(async ({ report, session }) => {
+      .then(async ({ report, session, candidates }) => {
         console.log(`Report auto-generated for session ${sid}`);
+
+        // Auto-generate leaderboard if multiple candidates
+        if (candidates.length >= 2) {
+          try {
+            const lbLang = session.settings?.language || "javascript";
+            const lbLangNames = { javascript: "JavaScript", python: "Python", java: "Java", cpp: "C++" };
+            const lbLangLabel = lbLangNames[lbLang] || "JavaScript";
+
+            const leaderboardPrompt = `You are a senior technical interviewer creating a detailed leaderboard for a ${lbLangLabel} coding interview session.
+
+Session: "${session.title}"
+Number of candidates: ${candidates.length}
+
+For each candidate, provide a DETAILED ranking with clear reasoning for their position.
+Return a JSON object:
+{
+  "leaderboard": [
+    {
+      "rank": N,
+      "candidateId": "...",
+      "displayName": "...",
+      "overallScore": N,
+      "recommendation": "Strong Hire|Hire|Lean Hire|Lean No Hire|No Hire",
+      "rankReason": "2-3 sentence specific explanation of why this candidate is ranked at this position",
+      "strengths": ["..."],
+      "weaknesses": ["..."],
+      "codeHighlights": "Brief note about their most impressive code decision or biggest code issue"
+    }
+  ],
+  "rankingRationale": "3-5 sentence paragraph explaining the ranking methodology and key differentiators.",
+  "comparativeAnalysis": "3-5 sentence head-to-head comparison.",
+  "bestApproach": "Which candidate had the most elegant solution and why.",
+  "hiringRecommendation": "Clear 2-3 sentence final recommendation."
+}
+Sort by overallScore descending.`;
+
+            const candidateData = candidates.map((c) => ({
+              id: c.id,
+              name: c.displayName,
+              evaluation: c.evaluation,
+              codeSnippets: Object.fromEntries(
+                Object.entries(c.submissions).map(([qid, s]) => [qid, (s.code || "").slice(0, 1200)])
+              ),
+            }));
+
+            const lbReply = await llm(leaderboardPrompt, [{ role: "user", content: JSON.stringify(candidateData) }], {
+              maxTokens: 3000,
+              temperature: 0.2,
+            });
+
+            let leaderboardData;
+            try { leaderboardData = JSON.parse(lbReply); } catch { leaderboardData = { raw: lbReply }; }
+            leaderboardData.generatedAt = new Date().toISOString();
+            leaderboardData.sessionId = sid;
+            leaderboardData.sessionTitle = session.title;
+
+            await setDoc(doc(db, "leaderboards", sid), leaderboardData).catch(() => {});
+            console.log(`Leaderboard auto-generated for session ${sid} with ${candidates.length} candidates`);
+          } catch (lbErr) {
+            console.error(`Auto-leaderboard failed for ${sid}:`, lbErr.message);
+          }
+        }
+
         const email = session.interviewerEmail;
         const smtpUser = process.env.SMTP_USER;
         const smtpPass = process.env.SMTP_PASS;

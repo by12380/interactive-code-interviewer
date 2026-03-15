@@ -214,6 +214,21 @@ export async function endSession(sessionId) {
   );
 }
 
+// ─── Leaderboard ──────────────────────────────────────────────────────
+
+export async function getLeaderboard(sessionId) {
+  return json(await fetch(`${API}/sessions/${sessionId}/leaderboard`));
+}
+
+export async function generateLeaderboard(sessionId) {
+  return json(
+    await fetch(`${API}/sessions/${sessionId}/leaderboard/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    })
+  );
+}
+
 // ─── Adaptive Learning ─────────────────────────────────────────────
 
 export async function generateQuestion({ skillId, targetDifficulty, userRating, completedProblemTitles, language }) {
