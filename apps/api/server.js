@@ -592,9 +592,15 @@ app.post("/api/sessions/:sid/candidates/:cid/behavioral-response", async (req, r
     });
     nextResponses.push(responseRecord);
     nextResponses.sort((a, b) => (a.questionIndex ?? 999) - (b.questionIndex ?? 999));
+    const behavioralAnswers = nextResponses.map((item) => ({
+      question: item.question || "",
+      category: item.category || "",
+      answer: item.answer || "",
+    }));
 
     await withTimeout(setDoc(candidateRef, {
       behavioralResponses: nextResponses,
+      behavioralAnswers,
       lastBehavioralAnsweredAt: new Date().toISOString(),
       status: "interviewing",
     }, { merge: true }));
@@ -602,6 +608,53 @@ app.post("/api/sessions/:sid/candidates/:cid/behavioral-response", async (req, r
     res.json({ ok: true, behavioralResponses: nextResponses });
   } catch (e) {
     console.error("POST behavioral-response error:", e);
+    res.status(500).send(e.message);
+  }
+});
+
+app.post("/api/sessions/:sid/candidates/:cid/behavioral-state", async (req, res) => {
+  const { sid, cid } = req.params;
+  const {
+    phase,
+    behavioralQuestionIndex,
+    behavioralQuestionText,
+    behavioralTotalQuestions,
+    behavioralCompletedCount,
+    codingQuestionId,
+    codingQuestionTitle,
+    statusLabel,
+  } = req.body || {};
+
+  try {
+    const candidateRef = doc(db, "sessions", sid, "candidates", cid);
+    const liveInterviewState = {
+      phase: phase || "behavioral",
+      behavioralQuestionIndex: Number.isFinite(Number(behavioralQuestionIndex))
+        ? Number(behavioralQuestionIndex)
+        : null,
+      behavioralQuestionText: typeof behavioralQuestionText === "string" ? behavioralQuestionText : null,
+      behavioralTotalQuestions: Number.isFinite(Number(behavioralTotalQuestions))
+        ? Number(behavioralTotalQuestions)
+        : null,
+      behavioralCompletedCount: Number.isFinite(Number(behavioralCompletedCount))
+        ? Number(behavioralCompletedCount)
+        : null,
+      codingQuestionId: typeof codingQuestionId === "string" ? codingQuestionId : null,
+      codingQuestionTitle: typeof codingQuestionTitle === "string" ? codingQuestionTitle : null,
+      statusLabel: statusLabel || (phase === "coding" ? "coding" : "answering"),
+      updatedAt: new Date().toISOString(),
+    };
+
+    await withTimeout(setDoc(candidateRef, {
+      liveInterviewState,
+      status: liveInterviewState.statusLabel === "completed"
+        ? "submitted"
+        : (phase === "coding" ? "coding" : "interviewing"),
+    }, { merge: true }));
+
+    res.json({ ok: true, liveInterviewState });
+  } catch (e) {
+    console.error("POST behavioral-state error:", e);
     res.status(500).send(e.message);
   }
 });
@@ -791,6 +844,13 @@ async function generateFullReport(sid) {
     const behavioralResponses = Array.isArray(data.behavioralResponses)
       ? data.behavioralResponses
       : [];
+    const behavioralAnswers = behavioralResponses.length > 0
+      ? behavioralResponses.map((item) => ({
+        question: item.question || "",
+        category: item.category || "",
+        answer: item.answer || "",
+      }))
+      : (Array.isArray(data.behavioralAnswers) ? data.behavioralAnswers : []);
 
     // Evaluate each candidate individually
     const evaluations = {};
@@ -810,7 +870,6 @@ Return JSON: { "correctness": N, "efficiency": N, "codeQuality": N, "communicati
 
     // Evaluate behavioral answers if present
     let behavioralEvaluation = null;
-    const behavioralAnswers = data.behavioralAnswers || [];
     if (behavioralAnswers.length > 0) {
       const baPrompt = `You are a senior technical interviewer evaluating behavioral interview answers.
 Evaluate each answer on: relevance (0-25), depth (0-25), communication (0-25), examples (0-25).
@@ -833,6 +892,7 @@ Return JSON:
 
     await withTimeout(updateDoc(doc(db, "sessions", sid, "candidates", cdoc.id), {
       evaluation: evaluations,
+      behavioralAnswers,
       ...(behavioralEvaluation ? { behavioralEvaluation } : {}),
     }));
 
@@ -912,8 +972,10 @@ Sort rankings by overallScore descending. Be thorough and specific in feedback.`
     name: c.displayName,
     evaluation: c.evaluation,
     behavioralEvaluation: c.behavioralEvaluation || null,
-    behavioralAnswers: (c.behavioralAnswers || []).map((a) => ({
+    behavioralResponses: (c.behavioralResponses || []).map((a, index) => ({
+      questionIndex: a.questionIndex ?? index,
       question: a.question,
+      category: a.category || "",
       answer: (a.answer || "").slice(0, 500),
     })),
     codeSnippets: Object.fromEntries(

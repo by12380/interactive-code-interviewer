@@ -104,6 +104,19 @@ export async function saveBehavioralResponse(sessionId, candidateId, payload) {
   );
 }
 
+export async function saveBehavioralState(sessionId, candidateId, payload) {
+  return json(
+    await fetch(
+      `${API}/sessions/${sessionId}/candidates/${candidateId}/behavioral-state`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    )
+  );
+}
+
 export async function pullCode(sessionId, candidateId, questionId) {
   const params = questionId
     ? `?questionId=${encodeURIComponent(questionId)}`

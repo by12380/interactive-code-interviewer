@@ -9,7 +9,15 @@ import EditorPanel from "../components/EditorPanel.jsx";
 import ChatPanel from "../components/ChatPanel.jsx";
 import CameraGate from "../components/CameraGate.jsx";
 import { useVoice } from "../contexts/VoiceContext.jsx";
-import { getSession, pushCode, uploadRecording, saveBehavioralAnswers, fetchTTSAudio } from "../services/sessionService.js";
+import {
+  getSession,
+  pushCode,
+  uploadRecording,
+  saveBehavioralAnswers,
+  saveBehavioralResponse,
+  saveBehavioralState,
+  fetchTTSAudio,
+} from "../services/sessionService.js";
 import { sendChat, getCodeHints } from "../api.js";
 import { analyzeCode, createAnalyzerState } from "../services/codeAnalyzer.js";
 import { convertStarterCode } from "../services/starterCodeService.js";
@@ -175,6 +183,21 @@ export default function CandidateSession() {
   const isCodingPhase = phase === "coding";
   const remaining = Math.max(0, timeLimit - elapsed);
   const fmtTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  const currentBehavioralQuestion = behavioralQuestions[behavioralIdx] || null;
+
+  const publishLiveInterviewState = useCallback((payload) => {
+    if (!sessionId || !candidateId) return;
+    saveBehavioralState(sessionId, candidateId, payload).catch((err) => {
+      console.error("Failed to save live interview state:", err);
+    });
+  }, [sessionId, candidateId]);
+
+  const persistBehavioralAnswer = useCallback((payload) => {
+    if (!sessionId || !candidateId) return;
+    saveBehavioralResponse(sessionId, candidateId, payload).catch((err) => {
+      console.error("Failed to save behavioral response:", err);
+    });
+  }, [sessionId, candidateId]);
 
   // Timer — only counts during the coding phase so behavioral time doesn't eat into it
   useEffect(() => {
@@ -189,6 +212,63 @@ export default function CandidateSession() {
     const t = setInterval(() => setBehavioralElapsed((e) => e + 1), 1000);
     return () => clearInterval(t);
   }, [submitted, phase]);
+
+  useEffect(() => {
+    if (phase !== "behavioral" || !currentBehavioralQuestion) return;
+    publishLiveInterviewState({
+      phase: "behavioral",
+      behavioralQuestionIndex: behavioralIdx,
+      behavioralQuestionText: currentBehavioralQuestion.question || "",
+      behavioralTotalQuestions: behavioralQuestions.length,
+      behavioralCompletedCount: behavioralAnswersRef.current.length,
+      codingQuestionId: null,
+      codingQuestionTitle: null,
+      statusLabel: isAiSpeaking ? "asking" : "answering",
+    });
+  }, [
+    phase,
+    behavioralIdx,
+    behavioralQuestions,
+    currentBehavioralQuestion,
+    isAiSpeaking,
+    publishLiveInterviewState,
+  ]);
+
+  useEffect(() => {
+    if (phase !== "coding" || !question) return;
+    publishLiveInterviewState({
+      phase: "coding",
+      behavioralQuestionIndex: null,
+      behavioralQuestionText: null,
+      behavioralTotalQuestions: behavioralQuestions.length || null,
+      behavioralCompletedCount: behavioralAnswersRef.current.length,
+      codingQuestionId: question.id || "_default",
+      codingQuestionTitle: question.title || question.id || "Coding Question",
+      statusLabel: submitted ? "completed" : "coding",
+    });
+  }, [phase, question, behavioralQuestions.length, submitted, publishLiveInterviewState]);
+
+  useEffect(() => {
+    if (!submitted) return;
+    publishLiveInterviewState({
+      phase: phase === "behavioral" ? "behavioral" : "coding",
+      behavioralQuestionIndex: phase === "behavioral" ? behavioralIdx : null,
+      behavioralQuestionText: phase === "behavioral" ? (currentBehavioralQuestion?.question || null) : null,
+      behavioralTotalQuestions: behavioralQuestions.length || null,
+      behavioralCompletedCount: behavioralAnswersRef.current.length,
+      codingQuestionId: phase === "coding" ? (question?.id || "_default") : null,
+      codingQuestionTitle: phase === "coding" ? (question?.title || question?.id || "Coding Question") : null,
+      statusLabel: "completed",
+    });
+  }, [
+    submitted,
+    phase,
+    behavioralIdx,
+    behavioralQuestions.length,
+    currentBehavioralQuestion,
+    question,
+    publishLiveInterviewState,
+  ]);
 
   // Code push loop — only active during coding phase
   useEffect(() => {
@@ -648,10 +728,21 @@ export default function CandidateSession() {
     const hasStt = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
     const candidateAnswer = hasStt ? sttTranscript.trim() : behavioralInput.trim();
     if (currentQ && candidateAnswer) {
+      const answerRecord = {
+        questionIndex: behavioralIdx,
+        questionId: currentQ.id || `behavioral-${behavioralIdx + 1}`,
+        question: currentQ.question,
+        category: currentQ.category || "",
+        rationale: currentQ.rationale || null,
+        answer: candidateAnswer,
+        answerSource: hasStt ? "speech" : "text",
+        answeredAt: new Date().toISOString(),
+      };
       behavioralAnswersRef.current = [
         ...behavioralAnswersRef.current,
         { question: currentQ.question, category: currentQ.category || "", answer: candidateAnswer },
       ];
+      persistBehavioralAnswer(answerRecord);
     }
 
     const nextIdx = behavioralIdx + 1;
@@ -709,7 +800,20 @@ export default function CandidateSession() {
         setSubmitted(true);
       }
     }
-  }, [behavioralIdx, behavioralQuestions, session, questions, sttTranscript, behavioralInput, sessionId, candidateId, stopRecordingSession, handleUploadRecording, mediaStream]);
+  }, [
+    behavioralIdx,
+    behavioralQuestions,
+    session,
+    questions,
+    sttTranscript,
+    behavioralInput,
+    sessionId,
+    candidateId,
+    stopRecordingSession,
+    handleUploadRecording,
+    mediaStream,
+    persistBehavioralAnswer,
+  ]);
 
   // Keep a ref to mediaStream for cleanup
   const mediaStreamRef = useRef(null);
