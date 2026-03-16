@@ -636,10 +636,17 @@ export default function SessionCreator() {
             )}
 
             {/* AI-Generated Behavioral Questions */}
-            {aiQuestions.length > 0 && (sessionFormat === "mock_interview" || sessionFormat === "both") && (
+            {aiQuestions.length > 0 && (
               <div className="sc-ai-questions">
                 <h3 className="sc-ai-questions__title">AI-Generated Behavioral Questions</h3>
-                <p className="sc-ai-questions__desc">These questions are tailored to the candidate's background.</p>
+                <p className="sc-ai-questions__desc">
+                  These questions are tailored to the candidate's background.
+                  {sessionFormat === "coding_only" && (
+                    <span className="sc-ai-questions__format-hint">
+                      {" "}Switch to "Mock AI Interview" or "Both" format to include these in the session.
+                    </span>
+                  )}
+                </p>
                 <div className="sc-ai-questions__list">
                   {aiQuestions.map((q) => (
                     <label key={q._id} className={`sc-ai-q ${aiQuestionSelection[q._id] ? "sc-ai-q--selected" : ""}`}>

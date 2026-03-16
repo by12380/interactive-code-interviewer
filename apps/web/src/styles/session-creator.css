@@ -672,6 +672,11 @@
   margin: 0;
 }
 
+.sc-ai-questions__format-hint {
+  color: #f59e0b;
+  font-weight: 500;
+}
+
 .sc-ai-questions__list {
   display: flex;
   flex-direction: column;
