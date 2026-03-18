@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./contexts/AuthContext.jsx";
 import App from "./App.jsx";
 import LoginPage from "./pages/LoginPage.jsx";
+import LandingPage from "./pages/LandingPage.jsx";
 import HomePage from "./pages/HomePage.jsx";
 import PracticeDashboard from "./pages/PracticeDashboard.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
@@ -20,15 +21,18 @@ export default function AppRouter() {
       <Route
         path="/login"
         element={
-          loading ? null : isAuthenticated ? <Navigate to="/" replace /> : <LoginPage />
+          loading ? null : isAuthenticated ? <Navigate to="/home" replace /> : <LoginPage />
         }
       />
 
-      {/* Home — interview-first hub with quick join, create, mock, and practice */}
-      <Route path="/" element={<HomePage />} />
+      {/* Landing page — public marketing page */}
+      <Route path="/" element={<LandingPage />} />
 
-      {/* Legacy /interview route redirects to home (all actions live there now) */}
-      <Route path="/interview" element={<Navigate to="/" replace />} />
+      {/* Home — interview-first hub with quick join, create, mock, and practice */}
+      <Route path="/home" element={<HomePage />} />
+
+      {/* Legacy /interview route redirects to home hub (all actions live there now) */}
+      <Route path="/interview" element={<Navigate to="/home" replace />} />
 
       {/* Practice hub — personalized dashboard with onboarding & roadmap */}
       <Route
@@ -89,7 +93,7 @@ export default function AppRouter() {
       <Route path="/join/:code" element={<JoinSession />} />
       <Route path="/session/:sessionId/:candidateId" element={<CandidateSession />} />
 
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/home" replace />} />
     </Routes>
   );
 }

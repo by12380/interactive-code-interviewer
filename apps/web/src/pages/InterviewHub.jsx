@@ -62,7 +62,7 @@ export default function InterviewHub() {
 
   const handleLogout = useCallback(async () => {
     await logOut();
-    navigate("/", { replace: true });
+    navigate("/home", { replace: true });
   }, [logOut, navigate]);
 
   if (isSimActive && simConfig) {
@@ -88,7 +88,7 @@ export default function InterviewHub() {
           <button
             type="button"
             className="interview-hub__back-btn"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/home")}
             aria-label="Back to home"
           >
             <span>&larr;</span>
