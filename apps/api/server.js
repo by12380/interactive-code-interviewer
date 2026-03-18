@@ -12,7 +12,7 @@ import { adminDb } from "./firebase.js";
 
 dotenv.config();
 
-// ─── Firebase Client SDK init ───────────────────────────────────────
+// ─── Firebase ───────────────────────────────────────────────────────
 
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY || "AIzaSyC6-DxTHKbdLzo70CwX3ieKn_dF6Mpyd_4",
@@ -23,9 +23,14 @@ const firebaseConfig = {
   appId: "1:487765501995:web:2739ffc99144bcc2f5e26e",
 };
 
-const firebaseApp = initializeApp(firebaseConfig);
+const firebaseApp = initializeApp(firebaseConfig, "api-storage");
 const db = adminDb;
 const storage = getStorage(firebaseApp);
+
+// ─── Firestore compatibility helpers ────────────────────────────────
+// These map the Firebase Client SDK call-style used throughout this
+// file to the underlying db object (which may be Admin SDK or a
+// Client SDK wrapper — both expose .collection() / .doc() / etc.).
 
 function collection(_db, ...segments) {
   return db.collection(segments.join("/"));
