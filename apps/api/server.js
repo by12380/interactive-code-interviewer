@@ -7,23 +7,8 @@ import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const pdfParse = require("pdf-parse");
 import { initializeApp } from "firebase/app";
-import {
-  getFirestore,
-  collection,
-  doc,
-  addDoc,
-  getDoc,
-  getDocs,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  where,
-  orderBy,
-  limit,
-  serverTimestamp,
-} from "firebase/firestore";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { adminDb } from "./firebase.js";
 
 dotenv.config();
 
@@ -39,8 +24,59 @@ const firebaseConfig = {
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
+const db = adminDb;
 const storage = getStorage(firebaseApp);
+
+function collection(_db, ...segments) {
+  return db.collection(segments.join("/"));
+}
+
+function doc(_db, ...segments) {
+  return db.doc(segments.join("/"));
+}
+
+async function addDoc(collectionRef, data) {
+  return collectionRef.add(data);
+}
+
+async function getDoc(ref) {
+  return ref.get();
+}
+
+async function getDocs(ref) {
+  return ref.get();
+}
+
+async function setDoc(ref, data, options) {
+  return ref.set(data, options);
+}
+
+async function updateDoc(ref, data) {
+  return ref.update(data);
+}
+
+async function deleteDoc(ref) {
+  return ref.delete();
+}
+
+function where(...args) {
+  return { type: "where", args };
+}
+
+function orderBy(...args) {
+  return { type: "orderBy", args };
+}
+
+function limit(...args) {
+  return { type: "limit", args };
+}
+
+function query(baseRef, ...constraints) {
+  return constraints.reduce((acc, constraint) => {
+    if (!constraint || typeof acc?.[constraint.type] !== "function") return acc;
+    return acc[constraint.type](...constraint.args);
+  }, baseRef);
+}
 
 const app = express();
 const PORT = process.env.PORT || 3002;
