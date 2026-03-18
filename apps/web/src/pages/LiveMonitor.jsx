@@ -66,6 +66,11 @@ function getStatusInfo(candidate, sessionFormat) {
   return { label: "Joined", color: "slate", icon: "user" };
 }
 
+function isCandidateComplete(candidate) {
+  const liveStatus = candidate?.liveInterviewState?.statusLabel;
+  return liveStatus === "completed" || candidate?.status === "submitted";
+}
+
 function getInitials(name) {
   if (!name) return "?";
   return name.split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
@@ -94,8 +99,11 @@ export default function LiveMonitor() {
   const [viewMode, setViewMode] = useState("detail"); // "grid" | "detail"
   const [showEndModal, setShowEndModal] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [autoEnding, setAutoEnding] = useState(false);
+  const [autoEndError, setAutoEndError] = useState("");
   const pollerRef = useRef(null);
   const candidatePollerRef = useRef(null);
+  const autoEndTriggeredRef = useRef(false);
 
   const selectedCandidate = candidates.find((c) => c.id === selectedCid) || null;
   const selectedLiveState = selectedCandidate?.liveInterviewState || null;
@@ -176,21 +184,44 @@ export default function LiveMonitor() {
   }, [code, question]);
 
   const handleEndSession = async () => {
+    setAutoEndError("");
     await endSession(sessionId).catch(() => {});
     navigate(`/interviewer/results/${sessionId}`);
   };
 
-  const activeCandidates = candidates.filter(c => {
-    const s = c.liveInterviewState?.statusLabel || c.status;
-    return s !== "completed" && s !== "submitted";
-  });
-  const completedCandidates = candidates.filter(c => {
-    const s = c.liveInterviewState?.statusLabel || c.status;
-    return s === "completed" || s === "submitted";
-  });
+  const activeCandidates = candidates.filter((candidate) => !isCandidateComplete(candidate));
+  const completedCandidates = candidates.filter((candidate) => isCandidateComplete(candidate));
+
+  useEffect(() => {
+    if (!sessionId || !session) return;
+    if (session.status === "completed") return;
+    if (candidates.length === 0 || activeCandidates.length > 0) return;
+    if (autoEndTriggeredRef.current) return;
+
+    autoEndTriggeredRef.current = true;
+    setAutoEnding(true);
+    setAutoEndError("");
+
+    endSession(sessionId)
+      .then(() => {
+        navigate(`/interviewer/results/${sessionId}`);
+      })
+      .catch((error) => {
+        autoEndTriggeredRef.current = false;
+        setAutoEnding(false);
+        setAutoEndError(error?.message || "Failed to end the session automatically.");
+      });
+  }, [sessionId, session, candidates.length, activeCandidates.length, navigate]);
 
   return (
     <div className="lm">
+      {(autoEnding || autoEndError) && (
+        <div className="lm-auto-end-banner">
+          {autoEnding
+            ? "All candidates have submitted. Finalizing the session and generating the report..."
+            : autoEndError}
+        </div>
+      )}
       {/* ── Top Command Bar ──────────────────────────────────── */}
       <header className="lm-topbar">
         <div className="lm-topbar__left">
@@ -254,8 +285,8 @@ export default function LiveMonitor() {
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
             </button>
           </div>
-          <button className="lm-btn lm-btn--end" onClick={() => setShowEndModal(true)}>
-            End Session
+          <button className="lm-btn lm-btn--end" onClick={() => setShowEndModal(true)} disabled={autoEnding}>
+            {autoEnding ? "Ending..." : "End Session"}
           </button>
         </div>
       </header>
