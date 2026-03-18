@@ -45,7 +45,7 @@ export default function LoginPage() {
         } else {
           await logIn({ email, password });
         }
-        navigate("/", { replace: true });
+        navigate("/home", { replace: true });
       } catch (err) {
         const msg = err?.message || "Something went wrong.";
         if (msg.includes("auth/email-already-in-use")) {
@@ -234,7 +234,7 @@ export default function LoginPage() {
           <button
             type="button"
             className="login-page__switch"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/home")}
           >
             Go to Home &rarr;
           </button>

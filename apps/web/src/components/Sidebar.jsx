@@ -55,7 +55,7 @@ function Sidebar({
     >
       {/* Logo/Brand */}
       <div className="sidebar__brand">
-        <div className="sidebar__logo" onClick={() => navigate("/")} role="button" tabIndex={0}>
+        <div className="sidebar__logo" onClick={() => navigate("/home")} role="button" tabIndex={0}>
           <span className="sidebar__logo-icon">&#x1F4BB;</span>
           {!isCollapsed && <span className="sidebar__logo-text">CodePractice</span>}
         </div>
@@ -182,7 +182,7 @@ function Sidebar({
           <button
             type="button"
             className="sidebar__nav-item"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/home")}
             aria-label="Back to home"
           >
             <span className="sidebar__nav-icon">&#x1F3E0;</span>
@@ -203,7 +203,7 @@ function Sidebar({
           <button
             type="button"
             className="sidebar__nav-item"
-            onClick={() => navigate("/")}
+            onClick={() => navigate("/home")}
             aria-label="Go to home"
           >
             <span className="sidebar__nav-icon">&#x1F3AF;</span>

@@ -384,7 +384,7 @@ export default function PracticeDashboard() {
         <div className="practice-dash__blob practice-dash__blob--1" />
         <div className="practice-dash__blob practice-dash__blob--2" />
         <header className="practice-dash__header">
-          <div className="practice-dash__brand" onClick={() => navigate("/")} role="button" tabIndex={0}>
+          <div className="practice-dash__brand" onClick={() => navigate("/home")} role="button" tabIndex={0}>
             <span className="practice-dash__logo-icon">&#x1F4BB;</span>
             <span className="practice-dash__logo-text">CodePractice</span>
           </div>
@@ -453,7 +453,7 @@ export default function PracticeDashboard() {
         <div className="practice-dash__blob practice-dash__blob--1" />
         <div className="practice-dash__blob practice-dash__blob--2" />
         <header className="practice-dash__header">
-          <div className="practice-dash__brand" onClick={() => navigate("/")} role="button" tabIndex={0}>
+          <div className="practice-dash__brand" onClick={() => navigate("/home")} role="button" tabIndex={0}>
             <span className="practice-dash__logo-icon">&#x1F4BB;</span>
             <span className="practice-dash__logo-text">CodePractice</span>
           </div>
@@ -523,7 +523,7 @@ export default function PracticeDashboard() {
 
       {/* Header */}
       <header className="practice-dash__header">
-        <div className="practice-dash__brand" onClick={() => navigate("/")} role="button" tabIndex={0}>
+        <div className="practice-dash__brand" onClick={() => navigate("/home")} role="button" tabIndex={0}>
           <span className="practice-dash__logo-icon">&#x1F4BB;</span>
           <span className="practice-dash__logo-text">CodePractice</span>
         </div>

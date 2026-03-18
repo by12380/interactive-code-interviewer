@@ -1031,7 +1031,7 @@ export default function CandidateSession() {
           ) : (
             <p>Your code has been submitted. The interviewer will review your solutions.</p>
           )}
-          <button className="cs-btn cs-btn--primary" onClick={() => navigate("/")}>
+          <button className="cs-btn cs-btn--primary" onClick={() => navigate("/home")}>
             Back to Home
           </button>
         </div>
