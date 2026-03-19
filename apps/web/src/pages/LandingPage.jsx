@@ -132,7 +132,7 @@ const MODULES = [
   {
     title: "Mock AI Interview",
     desc: "Full structured interview simulation with behavioral questions, timed coding, and detailed scoring.",
-    route: "/",
+    route: "/mock-interview",
     color: "#8b5cf6",
     icon: (
       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">

@@ -12,6 +12,7 @@ import LiveMonitor from "./pages/LiveMonitor.jsx";
 import JoinSession from "./pages/JoinSession.jsx";
 import CandidateSession from "./pages/CandidateSession.jsx";
 import SessionResults from "./pages/SessionResults.jsx";
+import MockInterviewSetup from "./pages/MockInterviewSetup.jsx";
 
 export default function AppRouter() {
   const { isAuthenticated, loading } = useAuth();
@@ -30,6 +31,9 @@ export default function AppRouter() {
 
       {/* Home — interview-first hub with quick join, create, mock, and practice */}
       <Route path="/home" element={<HomePage />} />
+
+      {/* Mock AI Interview — personalized interview from CV / details */}
+      <Route path="/mock-interview" element={<MockInterviewSetup />} />
 
       {/* Legacy /interview route redirects to home hub (all actions live there now) */}
       <Route path="/interview" element={<Navigate to="/home" replace />} />
