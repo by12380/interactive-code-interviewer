@@ -92,18 +92,26 @@ export default function InterviewSimulation({
   enableVoice = true,
   customConfig = null
 }) {
-  // Interview configuration - use custom config if provided
-  const config = customConfig ? {
-    name: "Custom Interview",
-    description: "Your personalized interview",
-    totalTime: customConfig.timeLimit || 60 * 60,
-    codingProblems: customConfig.codingProblems || 2,
-    behavioralQuestions: customConfig.behavioralQuestions || 2,
-    systemDesign: customConfig.systemDesign || false,
-    difficultyProgression: false
-  } : INTERVIEW_CONFIG.modes[mode] || INTERVIEW_CONFIG.modes.standard;
-  
-  const interviewer = INTERVIEWER_PERSONAS.find(p => p.id === persona) || INTERVIEWER_PERSONAS[1];
+  // Stable config — must be memoized so schedule doesn't regenerate every render
+  const config = useMemo(() => {
+    if (customConfig) {
+      return {
+        name: "Custom Interview",
+        description: "Your personalized interview",
+        totalTime: customConfig.timeLimit || 60 * 60,
+        codingProblems: customConfig.codingProblems || 2,
+        behavioralQuestions: customConfig.behavioralQuestions || 2,
+        systemDesign: customConfig.systemDesign || false,
+        difficultyProgression: false
+      };
+    }
+    return INTERVIEW_CONFIG.modes[mode] || INTERVIEW_CONFIG.modes.standard;
+  }, [customConfig, mode]);
+
+  const interviewer = useMemo(
+    () => INTERVIEWER_PERSONAS.find(p => p.id === persona) || INTERVIEWER_PERSONAS[1],
+    [persona]
+  );
   
   // Voice features
   const {
@@ -322,6 +330,10 @@ export default function InterviewSimulation({
     }
   }, [currentPhase, interviewer, config]);
 
+  // Keep a stable ref to handlePhaseComplete so the timer interval
+  // doesn't need to be torn down / recreated when callbacks change.
+  const handlePhaseCompleteRef = useRef(null);
+
   // Timer effect
   useEffect(() => {
     if (isPaused || currentPhase === PHASES.FEEDBACK) return;
@@ -336,12 +348,12 @@ export default function InterviewSimulation({
 
       // Check if phase time is up
       if (currentItem && phase >= currentItem.duration) {
-        handlePhaseComplete();
+        handlePhaseCompleteRef.current?.();
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isPaused, currentPhase, phaseIndex, currentItem]);
+  }, [isPaused, currentPhase, currentItem]);
 
   // Select coding problems based on difficulty progression
   function selectCodingProblems(count, useProgression) {
@@ -425,6 +437,11 @@ export default function InterviewSimulation({
       setCurrentPhase(PHASES.FEEDBACK);
     }
   }, [currentItem, currentProblem, currentBehavioral, code, phaseElapsed, phaseIndex, schedule]);
+
+  // Keep the ref in sync so the timer can always call the latest version
+  useEffect(() => {
+    handlePhaseCompleteRef.current = handlePhaseComplete;
+  }, [handlePhaseComplete]);
 
   // Handle manual phase skip
   const handleSkipPhase = useCallback(() => {

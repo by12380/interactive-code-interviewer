@@ -241,10 +241,38 @@ export default function HomePage() {
               </span>
             </button>
 
-            {/* Practice Problems */}
+            {/* Mock AI Interview */}
             <button
               type="button"
               className="home-page__action-card home-page__action-card--mock"
+              onClick={() => navigate("/mock-interview")}
+            >
+              <div className="home-page__action-icon">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 6v6l4 2" />
+                </svg>
+              </div>
+              <div className="home-page__action-text">
+                <h3 className="home-page__action-title">Mock AI Interview</h3>
+                <p className="home-page__action-desc">
+                  Upload your CV or enter details and AI generates a personalized interview with behavioral &amp; coding rounds.
+                </p>
+                <ul className="home-page__action-features">
+                  <li>Upload CV or enter details manually</li>
+                  <li>AI-tailored behavioral &amp; coding questions</li>
+                  <li>Timed simulation with scoring</li>
+                </ul>
+              </div>
+              <span className="home-page__action-cta">
+                Start Mock Interview &#8594;
+              </span>
+            </button>
+
+            {/* Practice Problems */}
+            <button
+              type="button"
+              className="home-page__action-card home-page__action-card--practice"
               onClick={handlePracticeClick}
             >
               <div className="home-page__action-icon">

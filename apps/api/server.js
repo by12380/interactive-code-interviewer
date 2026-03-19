@@ -2109,6 +2109,116 @@ app.get("/api/sessions/:sid/candidates/:cid/behavioral-answers", async (req, res
     res.status(500).send(e.message);
   }
 });
+// ═══════════════════════════════════════════════════════════════════
+//  GENERATE MOCK INTERVIEW — AI-powered interview from CV / details
+// ═══════════════════════════════════════════════════════════════════
+
+app.post("/api/generate-mock-interview", upload.single("resume"), async (req, res) => {
+  if (!OPENAI_API_KEY) return res.status(500).send("Missing OPENAI_API_KEY on the server.");
+
+  let candidateInfo = req.body.candidateInfo || "";
+  let targetRole = req.body.targetRole || "";
+  let experienceLevel = req.body.experienceLevel || "";
+  let focusAreas = req.body.focusAreas || "";
+  let resumeText = "";
+
+  if (req.file) {
+    try {
+      const pdfData = await pdfParse(req.file.buffer);
+      resumeText = pdfData.text || "";
+    } catch (e) {
+      console.error("PDF parse error:", e.message);
+      return res.status(400).json({ error: "Could not parse the uploaded PDF. Please try pasting your info instead." });
+    }
+  }
+
+  const profileText = [candidateInfo, resumeText].filter(Boolean).join("\n\n");
+  if (!profileText.trim() && !targetRole.trim()) {
+    return res.status(400).send("Provide some information about yourself — paste details, upload a resume, or at least specify a target role.");
+  }
+
+  const systemPrompt = `You are a senior technical interviewer who creates personalized mock interview plans. Based on the candidate's profile, generate a complete mock interview configuration.
+
+Candidate context:
+- Target role: ${targetRole || "Software Engineer (general)"}
+- Experience level: ${experienceLevel || "Not specified"}
+- Focus areas: ${focusAreas || "General"}
+
+Generate a tailored mock interview plan. Return a JSON object with this EXACT structure (no markdown, no code fences):
+{
+  "candidateSummary": {
+    "name": "<extracted or 'Candidate'>",
+    "experienceLevel": "junior" | "mid" | "senior" | "staff",
+    "primaryTechStack": ["<tech1>", "<tech2>"],
+    "targetRole": "<role title>"
+  },
+  "interviewPlan": {
+    "title": "<descriptive interview title, e.g. 'Senior Frontend Engineer Mock Interview'>",
+    "totalTimeMinutes": <30-90>,
+    "difficulty": "Easy" | "Medium" | "Hard",
+    "behavioralQuestions": [
+      {
+        "id": "custom-bq-<n>",
+        "category": "Introduction" | "Problem Solving" | "Teamwork" | "Leadership" | "Growth" | "Work Style" | "Career",
+        "question": "<tailored behavioral question>",
+        "followUps": ["<follow-up 1>", "<follow-up 2>"],
+        "tips": "<advice for answering>"
+      }
+    ],
+    "codingConfig": {
+      "problemCount": <1-3>,
+      "difficulty": "Easy" | "Medium" | "Hard",
+      "categories": ["<relevant category>"],
+      "focusAreas": ["<specific skill to test>"]
+    },
+    "includeSystemDesign": <true if senior/staff, false otherwise>,
+    "interviewerPersona": "friendly" | "neutral" | "strict"
+  },
+  "reasoning": "<2-3 sentences explaining why this plan was chosen>"
+}
+
+Rules:
+- Generate 3-5 behavioral questions tailored to the candidate's background
+- Behavioral questions should probe areas relevant to the target role
+- Coding difficulty should match experience level
+- Include system design only for senior+ candidates
+- If profile is sparse, create a balanced general interview
+- Return ONLY valid JSON`;
+
+  try {
+    const reply = await llm(
+      systemPrompt,
+      [{ role: "user", content: `Candidate Profile:\n${profileText || "(No detailed profile provided)"}\n\nTarget Role: ${targetRole}\nExperience Level: ${experienceLevel}\nFocus Areas: ${focusAreas}` }],
+      { maxTokens: 1500, temperature: 0.5 }
+    );
+
+    let parsed;
+    try {
+      const cleaned = reply.replace(/```json\s*/g, "").replace(/```\s*/g, "").trim();
+      parsed = JSON.parse(cleaned);
+    } catch {
+      return res.status(500).json({ error: "Failed to parse AI response", raw: reply });
+    }
+
+    if (!parsed.interviewPlan) {
+      parsed.interviewPlan = {
+        title: "General Mock Interview",
+        totalTimeMinutes: 60,
+        difficulty: "Medium",
+        behavioralQuestions: [],
+        codingConfig: { problemCount: 2, difficulty: "Medium", categories: [], focusAreas: [] },
+        includeSystemDesign: false,
+        interviewerPersona: "neutral"
+      };
+    }
+
+    res.json(parsed);
+  } catch (e) {
+    console.error("POST /api/generate-mock-interview error:", e);
+    res.status(500).send(e.message || "Failed to generate mock interview.");
+  }
+});
+
 // ─── Start ──────────────────────────────────────────────────────────
 
 app.listen(PORT, () => {

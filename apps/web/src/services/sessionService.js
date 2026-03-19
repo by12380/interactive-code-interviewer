@@ -314,6 +314,28 @@ export async function fetchTTSAudio(text, { voice = "alloy", speed = 1.0 } = {})
   const blob = await res.blob();
   return URL.createObjectURL(blob);
 }
+// ─── Mock Interview Generation (AI-powered from CV / details) ────
+
+export async function generateMockInterview({ candidateInfo, resumeFile, targetRole, experienceLevel, focusAreas }) {
+  const formData = new FormData();
+  if (candidateInfo) formData.append("candidateInfo", candidateInfo);
+  if (resumeFile) formData.append("resume", resumeFile);
+  if (targetRole) formData.append("targetRole", targetRole);
+  if (experienceLevel) formData.append("experienceLevel", experienceLevel);
+  if (focusAreas) formData.append("focusAreas", focusAreas);
+
+  const res = await fetch(`${API}/generate-mock-interview`, {
+    method: "POST",
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "Request failed");
+    throw new Error(text);
+  }
+  return res.json();
+}
+
 // ─── Candidate Analysis (AI-powered session recommendation) ─────
 
 export async function analyzeCandidate({ candidateInfo, resumeFile }) {
