@@ -11,7 +11,13 @@ import "../styles/candidate.css";
 const AI_DEBOUNCE_MS = 10000;
 const MAX_AI_HINTS = 6;
 
-export default function MockCandidateSession({ interviewPlan, onExit }) {
+export default function MockCandidateSession({
+  interviewPlan,
+  initialProgress = null,
+  onExit,
+  onProgressChange,
+  onComplete,
+}) {
   const navigate = useNavigate();
   const { speak, cancelSpeech, isSupported: voiceSupported } = useVoice();
 
@@ -20,9 +26,19 @@ export default function MockCandidateSession({ interviewPlan, onExit }) {
   const candidateName = interviewPlan?.candidateSummary?.name || "Candidate";
 
   // Build questions and behavioral Qs once
+  const restoredCodingQuestions = initialProgress?.codingQuestions;
   const { codingQuestions, behavioralQs, hasBehavioral, hasCoding } = useMemo(() => {
     const bqCount = plan?.behavioralQuestions?.length || 0;
     const bqs = plan?.behavioralQuestions || [];
+
+    if (Array.isArray(restoredCodingQuestions) && restoredCodingQuestions.length > 0) {
+      return {
+        codingQuestions: restoredCodingQuestions,
+        behavioralQs: bqs,
+        hasBehavioral: bqCount > 0,
+        hasCoding: restoredCodingQuestions.length > 0,
+      };
+    }
 
     const codingCfg = plan?.codingConfig || {};
     const count = codingCfg.problemCount || 2;
@@ -46,35 +62,35 @@ export default function MockCandidateSession({ interviewPlan, onExit }) {
       hasBehavioral: bqCount > 0,
       hasCoding: selected.length > 0,
     };
-  }, [plan]);
+  }, [plan, restoredCodingQuestions]);
 
   const totalTimeSeconds = (plan?.totalTimeMinutes || 60) * 60;
 
   // Phase: "behavioral" | "coding" | "completed"
-  const [phase, setPhase] = useState(hasBehavioral ? "behavioral" : "coding");
+  const [phase, setPhase] = useState(initialProgress?.phase || (hasBehavioral ? "behavioral" : "coding"));
 
   // Behavioral state
-  const [behavioralIdx, setBehavioralIdx] = useState(0);
+  const [behavioralIdx, setBehavioralIdx] = useState(initialProgress?.behavioralIdx || 0);
   const [behavioralMessages, setBehavioralMessages] = useState([]);
-  const [behavioralInput, setBehavioralInput] = useState("");
+  const [behavioralInput, setBehavioralInput] = useState(initialProgress?.currentBehavioralDraft || "");
   const [isBehavioralSending, setIsBehavioralSending] = useState(false);
-  const [behavioralElapsed, setBehavioralElapsed] = useState(0);
+  const [behavioralElapsed, setBehavioralElapsed] = useState(initialProgress?.behavioralElapsed || 0);
   const behavioralLlmRef = useRef([]);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const [aiAudioReady, setAiAudioReady] = useState(false);
   const aiAudioRef = useRef(null);
-  const [sttTranscript, setSttTranscript] = useState("");
+  const [sttTranscript, setSttTranscript] = useState(initialProgress?.currentBehavioralDraft || "");
   const [sttInterim, setSttInterim] = useState("");
   const [isSpeakingVAD, setIsSpeakingVAD] = useState(false);
   const sttManagerRef = useRef(null);
-  const behavioralAnswersRef = useRef([]);
+  const behavioralAnswersRef = useRef(initialProgress?.behavioralAnswers || []);
 
   // Coding state
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [code, setCode] = useState("");
-  const [codingElapsed, setCodingElapsed] = useState(0);
-  const [submitted, setSubmitted] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
+  const [currentIdx, setCurrentIdx] = useState(initialProgress?.currentIdx || 0);
+  const [code, setCode] = useState(initialProgress?.code || "");
+  const [codingElapsed, setCodingElapsed] = useState(initialProgress?.codingElapsed || 0);
+  const [submitted, setSubmitted] = useState(Boolean(initialProgress?.submitted));
+  const [isPaused, setIsPaused] = useState(Boolean(initialProgress?.isPaused));
 
   // Editor refs
   const editorRef = useRef(null);
@@ -106,7 +122,9 @@ export default function MockCandidateSession({ interviewPlan, onExit }) {
   const [isConsoleOpen, setIsConsoleOpen] = useState(false);
 
   // Results tracking
-  const [problemResults, setProblemResults] = useState([]);
+  const [problemResults, setProblemResults] = useState(initialProgress?.problemResults || []);
+  const hasRestoredCodeRef = useRef(false);
+  const completionNotifiedRef = useRef(false);
 
   const question = codingQuestions[currentIdx] || null;
   const currentBQ = behavioralQs[behavioralIdx] || null;
@@ -114,16 +132,55 @@ export default function MockCandidateSession({ interviewPlan, onExit }) {
   const remaining = Math.max(0, codingTimeLimit - codingElapsed);
   const fmtTime = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
+  const buildProgressSnapshot = useCallback(() => ({
+    phase,
+    behavioralIdx,
+    behavioralElapsed,
+    behavioralAnswers: behavioralAnswersRef.current,
+    currentBehavioralDraft: behavioralInput.trim() || sttTranscript.trim(),
+    currentIdx,
+    codingElapsed,
+    codingQuestions,
+    code,
+    submitted,
+    isPaused,
+    problemResults,
+  }), [
+    phase,
+    behavioralIdx,
+    behavioralElapsed,
+    behavioralInput,
+    sttTranscript,
+    currentIdx,
+    codingElapsed,
+    codingQuestions,
+    code,
+    submitted,
+    isPaused,
+    problemResults,
+  ]);
+
   // Initialize code when question changes
   useEffect(() => {
     if (question && phase === "coding") {
-      setCode(question.starterCode || "");
+      const shouldRestoreCode =
+        !hasRestoredCodeRef.current &&
+        initialProgress?.phase === "coding" &&
+        initialProgress?.currentIdx === currentIdx &&
+        typeof initialProgress?.code === "string";
+
+      if (shouldRestoreCode) {
+        setCode(initialProgress.code);
+        hasRestoredCodeRef.current = true;
+      } else {
+        setCode(question.starterCode || "");
+      }
       setConsoleLogs([]);
       setEditorHint(null);
       aiHintCountRef.current = 0;
       lastAiCodeRef.current = "";
     }
-  }, [question, phase]);
+  }, [question, phase, currentIdx, initialProgress]);
 
   // Initialize behavioral messages
   useEffect(() => {
@@ -160,6 +217,25 @@ export default function MockCandidateSession({ interviewPlan, onExit }) {
       setSubmitted(true);
     }
   }, [remaining, submitted, phase]);
+
+  useEffect(() => {
+    if (!onProgressChange || !plan) return;
+
+    const timer = setTimeout(() => {
+      onProgressChange(buildProgressSnapshot());
+    }, 800);
+
+    return () => clearTimeout(timer);
+  }, [onProgressChange, plan, buildProgressSnapshot]);
+
+  useEffect(() => {
+    if ((!submitted && phase !== "completed") || !onComplete || completionNotifiedRef.current) {
+      return;
+    }
+
+    completionNotifiedRef.current = true;
+    onComplete(buildProgressSnapshot());
+  }, [submitted, phase, onComplete, buildProgressSnapshot]);
 
   // STT for behavioral phase
   useEffect(() => {
@@ -548,7 +624,11 @@ export default function MockCandidateSession({ interviewPlan, onExit }) {
             <button className="cs-btn cs-btn--primary" onClick={() => navigate("/home")} style={{ flex: 1 }}>
               Back to Home
             </button>
-            <button className="cs-btn" onClick={onExit} style={{ flex: 1, background: "#f1f5f9", color: "#475569" }}>
+            <button
+              className="cs-btn"
+              onClick={() => onExit?.(buildProgressSnapshot())}
+              style={{ flex: 1, background: "#f1f5f9", color: "#475569" }}
+            >
               Try Again
             </button>
           </div>
@@ -577,7 +657,7 @@ export default function MockCandidateSession({ interviewPlan, onExit }) {
           <div className="cs-interview__topbar-right">
             <button
               className="cs-toolbar-btn"
-              onClick={onExit}
+              onClick={() => onExit?.(buildProgressSnapshot())}
               title="Exit interview"
               style={{ fontSize: "0.8rem", padding: "4px 12px" }}
             >
@@ -713,7 +793,7 @@ export default function MockCandidateSession({ interviewPlan, onExit }) {
           <button
             type="button"
             className="cs-btn"
-            onClick={onExit}
+            onClick={() => onExit?.(buildProgressSnapshot())}
             style={{ padding: "4px 14px", fontSize: "0.82rem", background: "#fee2e2", color: "#dc2626" }}
           >
             Exit

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { useTheme } from "../contexts/ThemeContext.jsx";
 import "../styles/landing-page.css";
@@ -255,6 +255,7 @@ const PRICING_PLANS = [
 
 export default function LandingPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isAuthenticated } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -308,6 +309,14 @@ export default function LandingPage() {
       navigate("/login");
     }
   }, [isAuthenticated, navigate]);
+
+  const handleModuleNavigate = useCallback((route) => {
+    if (route === "/mock-interview") {
+      navigate(route, { state: { from: location } });
+      return;
+    }
+    navigate(route);
+  }, [location, navigate]);
 
   return (
     <div className="lp" data-theme={theme}>
@@ -555,7 +564,7 @@ export default function LandingPage() {
                 type="button"
                 className="lp-module-card"
                 style={{ animationDelay: `${i * 0.12}s`, "--module-color": m.color }}
-                onClick={() => navigate(m.route)}
+                onClick={() => handleModuleNavigate(m.route)}
               >
                 <div className="lp-module-card__icon">{m.icon}</div>
                 <h3 className="lp-module-card__title">{m.title}</h3>

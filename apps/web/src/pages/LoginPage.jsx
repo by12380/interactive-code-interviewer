@@ -1,10 +1,11 @@
 import { useState, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext.jsx";
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { signUp, logIn, loading: authLoading } = useAuth();
+  const location = useLocation();
+  const { signUp, logIn, loading: authLoading, isAuthenticated } = useAuth();
 
   const [mode, setMode] = useState("login"); // "login" | "signup"
   const [displayName, setDisplayName] = useState("");
@@ -13,6 +14,10 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const redirectLocation = location.state?.from;
+  const redirectTarget = redirectLocation?.pathname
+    ? `${redirectLocation.pathname}${redirectLocation.search || ""}${redirectLocation.hash || ""}`
+    : "/home";
 
   const handleSubmit = useCallback(
     async (e) => {
@@ -45,7 +50,10 @@ export default function LoginPage() {
         } else {
           await logIn({ email, password });
         }
-        navigate("/home", { replace: true });
+        navigate(redirectTarget, {
+          replace: true,
+          state: redirectLocation?.state,
+        });
       } catch (err) {
         const msg = err?.message || "Something went wrong.";
         if (msg.includes("auth/email-already-in-use")) {
@@ -65,7 +73,7 @@ export default function LoginPage() {
         setBusy(false);
       }
     },
-    [mode, email, password, confirmPassword, displayName, signUp, logIn, navigate]
+    [mode, email, password, confirmPassword, displayName, signUp, logIn, navigate, redirectTarget, redirectLocation]
   );
 
   const switchMode = useCallback(() => {
@@ -84,6 +92,10 @@ export default function LoginPage() {
         </div>
       </div>
     );
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to={redirectTarget} replace state={redirectLocation?.state} />;
   }
 
   return (

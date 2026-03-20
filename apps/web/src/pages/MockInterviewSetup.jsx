@@ -1,8 +1,12 @@
-import { useState, useCallback, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { useTheme } from "../contexts/ThemeContext.jsx";
 import { generateMockInterview } from "../services/sessionService.js";
+import {
+  loadMockInterviewProgress,
+  saveMockInterviewProgress,
+} from "../services/mockInterviewProgressService.js";
 import MockCandidateSession from "../components/MockCandidateSession.jsx";
 import "../styles/mock-interview-setup.css";
 
@@ -21,7 +25,8 @@ const FOCUS_AREAS = [
 
 export default function MockInterviewSetup() {
   const navigate = useNavigate();
-  const { user, isAuthenticated } = useAuth();
+  const location = useLocation();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const fileInputRef = useRef(null);
 
@@ -35,9 +40,6 @@ export default function MockInterviewSetup() {
   const [resumeFile, setResumeFile] = useState(null);
   const [resumeFileName, setResumeFileName] = useState("");
 
-  // Guest name (for non-authenticated users)
-  const [guestName, setGuestName] = useState("");
-
   // AI generation state
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState("");
@@ -45,12 +47,106 @@ export default function MockInterviewSetup() {
 
   // Interview active state
   const [interviewActive, setInterviewActive] = useState(false);
+  const [sessionProgress, setSessionProgress] = useState(null);
+  const [restoringProgress, setRestoringProgress] = useState(true);
+  const [resumeError, setResumeError] = useState("");
+
+  const backTarget = location.state?.from?.pathname
+    ? `${location.state.from.pathname}${location.state.from.search || ""}${location.state.from.hash || ""}`
+    : "/home";
+
+  const persistMockProgress = useCallback(async (overrides = {}) => {
+    if (!user?.uid) return;
+
+    await saveMockInterviewProgress(user.uid, {
+      status: overrides.status || "draft",
+      step: overrides.step || step,
+      inputMode,
+      targetRole: targetRole.trim(),
+      experienceLevel,
+      selectedFocusAreas,
+      candidateInfo: candidateInfo.trim(),
+      resumeFileName,
+      interviewPlan: overrides.interviewPlan !== undefined ? overrides.interviewPlan : interviewPlan,
+      sessionProgress: overrides.sessionProgress !== undefined ? overrides.sessionProgress : sessionProgress,
+    });
+  }, [
+    user?.uid,
+    step,
+    inputMode,
+    targetRole,
+    experienceLevel,
+    selectedFocusAreas,
+    candidateInfo,
+    resumeFileName,
+    interviewPlan,
+    sessionProgress,
+  ]);
 
   const toggleFocusArea = useCallback((area) => {
     setSelectedFocusAreas((prev) =>
       prev.includes(area) ? prev.filter((a) => a !== area) : [...prev, area]
     );
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (authLoading) return undefined;
+    if (!user?.uid) {
+      setRestoringProgress(false);
+      return undefined;
+    }
+
+    setRestoringProgress(true);
+    setResumeError("");
+
+    loadMockInterviewProgress(user.uid)
+      .then((saved) => {
+        if (cancelled || !saved) return;
+
+        setInputMode(saved.inputMode || "details");
+        setTargetRole(saved.targetRole || "");
+        setExperienceLevel(saved.experienceLevel || "");
+        setSelectedFocusAreas(saved.selectedFocusAreas || []);
+        setCandidateInfo(saved.candidateInfo || "");
+        setResumeFileName(saved.resumeFileName || "");
+        setInterviewPlan(saved.interviewPlan || null);
+        setSessionProgress(saved.sessionProgress || null);
+
+        const nextStep = saved.step || (saved.sessionProgress ? "interview" : saved.interviewPlan ? "review" : "input");
+        setStep(nextStep);
+        setInterviewActive(nextStep === "interview");
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setResumeError(e.message || "Couldn't restore your last mock interview.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setRestoringProgress(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, user?.uid]);
+
+  useEffect(() => {
+    if (!user?.uid || !interviewPlan || !sessionProgress || step !== "interview") return;
+
+    const timer = setTimeout(() => {
+      persistMockProgress({
+        status: sessionProgress.phase === "completed" || sessionProgress.submitted ? "completed" : "in_progress",
+        step: "interview",
+        sessionProgress,
+      }).catch(() => {});
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [user?.uid, interviewPlan, sessionProgress, step, persistMockProgress]);
 
   const handleFileChange = useCallback((e) => {
     const file = e.target.files?.[0];
@@ -99,34 +195,121 @@ export default function MockInterviewSetup() {
       });
 
       setInterviewPlan(result);
+      setSessionProgress(null);
+      setInterviewActive(false);
       setStep("review");
+      await saveMockInterviewProgress(user.uid, {
+        status: "draft",
+        step: "review",
+        inputMode,
+        targetRole: targetRole.trim(),
+        experienceLevel,
+        selectedFocusAreas,
+        candidateInfo: candidateInfo.trim(),
+        resumeFileName,
+        interviewPlan: result,
+        sessionProgress: null,
+      });
     } catch (e) {
       setGenError(e.message || "Failed to generate interview. Please try again.");
       setStep("input");
     } finally {
       setGenerating(false);
     }
-  }, [targetRole, candidateInfo, experienceLevel, selectedFocusAreas, resumeFile]);
+  }, [
+    user?.uid,
+    inputMode,
+    targetRole,
+    candidateInfo,
+    experienceLevel,
+    selectedFocusAreas,
+    resumeFile,
+    resumeFileName,
+  ]);
 
   const handleStartInterview = useCallback(() => {
     if (!interviewPlan?.interviewPlan) return;
+    const nextSessionProgress =
+      sessionProgress?.phase === "completed" || sessionProgress?.submitted
+        ? null
+        : sessionProgress;
+
+    setSessionProgress(nextSessionProgress);
     setInterviewActive(true);
     setStep("interview");
-  }, [interviewPlan]);
+    persistMockProgress({
+      status: "in_progress",
+      step: "interview",
+      sessionProgress: nextSessionProgress,
+    }).catch(() => {});
+  }, [interviewPlan, sessionProgress, persistMockProgress]);
 
-  const handleExitInterview = useCallback(() => {
+  const handleExitInterview = useCallback((latestProgress = null) => {
+    if (latestProgress) {
+      setSessionProgress(latestProgress);
+    }
     setInterviewActive(false);
     setStep("review");
+    persistMockProgress({
+      status: "draft",
+      step: "review",
+      sessionProgress: latestProgress || sessionProgress,
+    }).catch(() => {});
+  }, [persistMockProgress, sessionProgress]);
+
+  const handleInterviewProgressChange = useCallback((nextProgress) => {
+    setSessionProgress(nextProgress);
   }, []);
 
-  const displayName = user?.displayName || guestName || "Candidate";
+  const handleInterviewComplete = useCallback((completedProgress) => {
+    setSessionProgress(completedProgress);
+    persistMockProgress({
+      status: "completed",
+      step: "interview",
+      sessionProgress: completedProgress,
+    }).catch(() => {});
+  }, [persistMockProgress]);
+
+  const handleModifyDetails = useCallback(() => {
+    setStep("input");
+    setInterviewPlan(null);
+    setInterviewActive(false);
+    setSessionProgress(null);
+    persistMockProgress({
+      status: "draft",
+      step: "input",
+      interviewPlan: null,
+      sessionProgress: null,
+    }).catch(() => {});
+  }, [persistMockProgress]);
+
+  const displayName = user?.displayName || "Candidate";
+
+  if (authLoading || restoringProgress) {
+    return (
+      <div className="mock-setup">
+        <div className="mock-setup__blob mock-setup__blob--1" />
+        <div className="mock-setup__blob mock-setup__blob--2" />
+        <main className="mock-setup__main">
+          <div className="mock-setup__generating">
+            <div className="mock-setup__generating-spinner" />
+            <h2>Loading your mock interview...</h2>
+            <p>Checking for any saved progress.</p>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   // Full-screen interview — uses the same UI as CandidateSession
   if (step === "interview" && interviewActive && interviewPlan) {
     return (
       <MockCandidateSession
         interviewPlan={interviewPlan}
+        initialProgress={sessionProgress}
         onExit={handleExitInterview}
+        onProgressChange={handleInterviewProgressChange}
+        onComplete={handleInterviewComplete}
       />
     );
   }
@@ -142,13 +325,13 @@ export default function MockInterviewSetup() {
           <button
             type="button"
             className="mock-setup__back-btn"
-            onClick={() => navigate("/home")}
+            onClick={() => navigate(backTarget)}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="19" y1="12" x2="5" y2="12" />
               <polyline points="12 19 5 12 12 5" />
             </svg>
-            Home
+            Back
           </button>
         </div>
         <div className="mock-setup__header-center">
@@ -167,15 +350,7 @@ export default function MockInterviewSetup() {
             <span className="mock-setup__user-badge">
               {(user.displayName || user.email || "U").charAt(0).toUpperCase()}
             </span>
-          ) : (
-            <button
-              type="button"
-              className="mock-setup__signin-btn"
-              onClick={() => navigate("/login")}
-            >
-              Sign In
-            </button>
-          )}
+          ) : null}
         </div>
       </header>
 
@@ -198,20 +373,6 @@ export default function MockInterviewSetup() {
                 with behavioral questions and coding challenges matched to your profile.
               </p>
             </div>
-
-            {/* Guest name prompt */}
-            {!isAuthenticated && (
-              <div className="mock-setup__guest-name">
-                <label htmlFor="guest-name">Your Name</label>
-                <input
-                  id="guest-name"
-                  type="text"
-                  value={guestName}
-                  onChange={(e) => setGuestName(e.target.value)}
-                  placeholder="Enter your name"
-                />
-              </div>
-            )}
 
             {/* Input mode tabs */}
             <div className="mock-setup__tabs">
@@ -394,7 +555,7 @@ export default function MockInterviewSetup() {
               </div>
             )}
 
-            {genError && <p className="mock-setup__error">{genError}</p>}
+            {(genError || resumeError) && <p className="mock-setup__error">{genError || resumeError}</p>}
 
             <button
               type="button"
@@ -592,7 +753,7 @@ export default function MockInterviewSetup() {
               <button
                 type="button"
                 className="mock-setup__review-btn mock-setup__review-btn--secondary"
-                onClick={() => { setStep("input"); setInterviewPlan(null); }}
+                onClick={handleModifyDetails}
               >
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="19" y1="12" x2="5" y2="12" />
