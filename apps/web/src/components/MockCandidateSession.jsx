@@ -66,8 +66,10 @@ export default function MockCandidateSession({
 
   const totalTimeSeconds = (plan?.totalTimeMinutes || 60) * 60;
 
-  // Phase: "behavioral" | "coding" | "completed"
-  const [phase, setPhase] = useState(initialProgress?.phase || (hasBehavioral ? "behavioral" : "coding"));
+  // Phase: "greeting" | "behavioral" | "coding" | "completed"
+  const [phase, setPhase] = useState(
+    initialProgress?.phase || (hasBehavioral ? "greeting" : "coding")
+  );
 
   // Behavioral state
   const [behavioralIdx, setBehavioralIdx] = useState(initialProgress?.behavioralIdx || 0);
@@ -182,24 +184,61 @@ export default function MockCandidateSession({
     }
   }, [question, phase, currentIdx, initialProgress]);
 
+  // Greeting phase — introduce the interviewer before jumping into questions
+  const greetingTimerRef = useRef(null);
+  useEffect(() => {
+    if (phase !== "greeting") return;
+
+    setBehavioralMessages([
+      {
+        role: "assistant",
+        content: `Hi ${candidateName}! Welcome to your mock interview.
+         I'll be your AI interviewer today.\n\nWe have ${behavioralQs.length} behavioral 
+         question${behavioralQs.length !== 1 ? "s" : ""}
+         ${hasCoding ? " followed by some coding challenges" : ""}
+          lined up for you. 
+          There's no rush — take your time with each answer, 
+          and feel free to ask me to repeat or clarify anything.\n\nWhenever you're ready, 
+          we'll get started!`,
+      },
+    ]);
+
+    greetingTimerRef.current = setTimeout(() => {
+      setPhase("behavioral");
+    }, 6000);
+
+    return () => { if (greetingTimerRef.current) clearTimeout(greetingTimerRef.current); };
+  }, [phase, candidateName, behavioralQs.length, hasCoding]);
+
+  const handleSkipGreeting = useCallback(() => {
+    if (greetingTimerRef.current) clearTimeout(greetingTimerRef.current);
+    setPhase("behavioral");
+  }, []);
+
   // Initialize behavioral messages
   useEffect(() => {
     if (phase === "behavioral" && currentBQ) {
       const isFirst = behavioralIdx === 0;
-      setBehavioralMessages([
-        {
-          role: "assistant",
-          content: isFirst
-            ? `Welcome to your mock interview, ${candidateName}! Let's start with some behavioral questions.\n\nHere's the first question:\n\n**${currentBQ.question}**\n\nTake your time to think about a specific example from your experience.`
-            : `Great, let's move on to the next question.\n\n**${currentBQ.question}**\n\nTake your time.`,
-        },
-      ]);
+      setBehavioralMessages((prev) => {
+        const greeting = isFirst && prev.length > 0 && prev[0].role === "assistant"
+          ? [prev[0]]
+          : [];
+        return [
+          ...greeting,
+          {
+            role: "assistant",
+            content: isFirst
+              ? `Alright, let's begin!\n\nHere's your first question:\n\n**${currentBQ.question}**\n\nTake your time to think about a specific example from your experience.`
+              : `Great, let's move on to the next question.\n\n**${currentBQ.question}**\n\nTake your time.`,
+          },
+        ];
+      });
     }
-  }, [phase, behavioralIdx, currentBQ, candidateName]);
+  }, [phase, behavioralIdx, currentBQ]);
 
-  // Behavioral timer
+  // Behavioral timer (runs during both greeting and behavioral phases)
   useEffect(() => {
-    if (phase !== "behavioral" || submitted) return;
+    if ((phase !== "behavioral" && phase !== "greeting") || submitted) return;
     const t = setInterval(() => setBehavioralElapsed((e) => e + 1), 1000);
     return () => clearInterval(t);
   }, [phase, submitted]);
@@ -280,6 +319,35 @@ export default function MockCandidateSession({
     };
   }, [phase, submitted]);
 
+  // TTS for greeting phase
+  useEffect(() => {
+    if (phase !== "greeting") return;
+    let cancelled = false;
+    setIsAiSpeaking(true);
+    setAiAudioReady(false);
+
+    const greetingText = `Hi ${candidateName}! Welcome to your mock interview. I'll be your AI interviewer today. Whenever you're ready, we'll get started!`;
+
+    (async () => {
+      try {
+        const audioUrl = await fetchTTSAudio(greetingText, { voice: "alloy", speed: 1.0 });
+        if (cancelled) return;
+        const audio = new Audio(audioUrl);
+        aiAudioRef.current = audio;
+        audio.onended = () => { if (!cancelled) { setIsAiSpeaking(false); setAiAudioReady(true); } };
+        audio.onerror = () => { if (!cancelled) { setIsAiSpeaking(false); setAiAudioReady(true); } };
+        audio.play().catch(() => { if (!cancelled) { setIsAiSpeaking(false); setAiAudioReady(true); } });
+      } catch {
+        if (!cancelled) { setIsAiSpeaking(false); setAiAudioReady(true); }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (aiAudioRef.current) { aiAudioRef.current.pause(); aiAudioRef.current = null; }
+    };
+  }, [phase, candidateName]);
+
   // TTS for behavioral questions
   useEffect(() => {
     if (phase !== "behavioral" || !currentBQ) return;
@@ -287,14 +355,14 @@ export default function MockCandidateSession({
     setIsAiSpeaking(true);
     setAiAudioReady(false);
 
-    const introText =
+    const questionText =
       behavioralIdx === 0
-        ? `Welcome to your interview. Here's the first question: ${currentBQ.question}`
-        : `Next question: ${currentBQ.question}`;
+        ? `Alright, let's begin! Here's your first question: ${currentBQ.question}. Take your time to think about a specific example from your experience.`
+        : `Next question: ${currentBQ.question}. Take your time.`;
 
     (async () => {
       try {
-        const audioUrl = await fetchTTSAudio(introText, { voice: "alloy", speed: 1.0 });
+        const audioUrl = await fetchTTSAudio(questionText, { voice: "alloy", speed: 1.0 });
         if (cancelled) return;
         const audio = new Audio(audioUrl);
         aiAudioRef.current = audio;
@@ -632,6 +700,67 @@ export default function MockCandidateSession({
               Try Again
             </button>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Greeting phase — warm intro before behavioral questions
+  if (phase === "greeting") {
+    const greetingMsg = behavioralMessages[0]?.content?.replace(/\*\*/g, "") || "";
+
+    return (
+      <div className="cs-interview">
+        <div className="cs-interview__topbar">
+          <div className="cs-interview__topbar-left">
+            <span className="cs-phase-badge" style={{ background: "rgba(139,92,246,0.15)", color: "#7c3aed", fontSize: "0.75rem", padding: "3px 10px", borderRadius: 6 }}>
+              Mock Interview
+            </span>
+          </div>
+          <div className="cs-interview__topbar-center">
+            {plan?.title || "Mock Interview"}
+          </div>
+          <div className="cs-interview__topbar-right">
+            <button
+              className="cs-toolbar-btn"
+              onClick={() => onExit?.(buildProgressSnapshot())}
+              title="Exit interview"
+              style={{ fontSize: "0.8rem", padding: "4px 12px" }}
+            >
+              Exit
+            </button>
+          </div>
+        </div>
+
+        <div className="cs-interview__stage">
+          <div className={`cs-spirograph ${isAiSpeaking ? "cs-spirograph--active" : ""}`}>
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+          </div>
+
+          <div className="cs-subtitles">
+            {isAiSpeaking && greetingMsg && <p className="cs-subtitles__text">{greetingMsg}</p>}
+            {!isAiSpeaking && (
+              <p className="cs-subtitles__status">Ready when you are</p>
+            )}
+          </div>
+        </div>
+
+        <div className="cs-interview__toolbar">
+          <div className="cs-interview__toolbar-info">{fmtTime(behavioralElapsed)}</div>
+          <button
+            className="cs-toolbar-btn cs-toolbar-btn--leave"
+            onClick={handleSkipGreeting}
+            style={{ padding: "8px 24px", fontSize: "0.9rem" }}
+          >
+            Let's Begin
+          </button>
         </div>
       </div>
     );

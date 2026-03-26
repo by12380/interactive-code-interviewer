@@ -43,7 +43,7 @@ export default function CandidateSession() {
   const [endedByInterviewer, setEndedByInterviewer] = useState(false);
 
   // Mock interview phase state
-  const [phase, setPhase] = useState("loading"); // "loading" | "camera_gate" | "behavioral" | "coding"
+  const [phase, setPhase] = useState("loading"); // "loading" | "camera_gate" | "greeting" | "behavioral" | "coding"
   const [behavioralQuestions, setBehavioralQuestions] = useState([]);
   const [behavioralIdx, setBehavioralIdx] = useState(0);
   const [behavioralMessages, setBehavioralMessages] = useState([]);
@@ -142,13 +142,8 @@ export default function CandidateSession() {
         if (hasBehavioral && aiQs.length > 0) {
           setBehavioralQuestions(aiQs);
           setBehavioralIdx(0);
-          setBehavioralMessages([{
-            role: "assistant",
-            content: `Welcome to your interview! I'd like to ask you a few behavioral questions. Please speak your answers clearly.\n\nHere's the first question:\n\n**${aiQs[0].question}**\n\nTake your time to think about a specific example from your experience.`,
-          }]);
-          // Route through camera gate first if camera is required
           const cameraRequired = s.settings?.cameraRequired !== false;
-          setPhase(cameraRequired ? "camera_gate" : "behavioral");
+          setPhase(cameraRequired ? "camera_gate" : "greeting");
         } else {
           setPhase("coding");
         }
@@ -206,9 +201,9 @@ export default function CandidateSession() {
     return () => clearInterval(t);
   }, [submitted, isCodingPhase]);
 
-  // Behavioral phase elapsed timer (informational only, no countdown)
+  // Behavioral phase elapsed timer (runs during both greeting and behavioral phases)
   useEffect(() => {
-    if (submitted || phase !== "behavioral") return;
+    if (submitted || (phase !== "behavioral" && phase !== "greeting")) return;
     const t = setInterval(() => setBehavioralElapsed((e) => e + 1), 1000);
     return () => clearInterval(t);
   }, [submitted, phase]);
@@ -425,11 +420,11 @@ export default function CandidateSession() {
   // ── Camera Gate Handler ────────────────────────────────────────────
   const handleCameraReady = useCallback((stream) => {
     setMediaStream(stream);
-    setPhase("behavioral");
+    setPhase("greeting");
   }, []);
 
   const handleCameraSkip = useCallback(() => {
-    setPhase("behavioral");
+    setPhase("greeting");
   }, []);
 
   // ── Recording Helpers ─────────────────────────────────────────────
@@ -663,6 +658,79 @@ export default function CandidateSession() {
     }
   }, [handleBehavioralSendText]);
 
+  // Greeting phase — introduce the interviewer before jumping into questions
+  const greetingTimerRef = useRef(null);
+  useEffect(() => {
+    if (phase !== "greeting" || behavioralQuestions.length === 0) return;
+
+    setBehavioralMessages([{
+      role: "assistant",
+      content: `Hi there! Welcome to your interview. I'll be guiding you through ${behavioralQuestions.length} behavioral question${behavioralQuestions.length !== 1 ? "s" : ""} today. Please speak your answers clearly — there's no rush.\n\nWhenever you're ready, we'll get started!`,
+    }]);
+
+    greetingTimerRef.current = setTimeout(() => {
+      setPhase("behavioral");
+    }, 6000);
+
+    return () => { if (greetingTimerRef.current) clearTimeout(greetingTimerRef.current); };
+  }, [phase, behavioralQuestions.length]);
+
+  const handleSkipGreeting = useCallback(() => {
+    if (greetingTimerRef.current) clearTimeout(greetingTimerRef.current);
+    setPhase("behavioral");
+  }, []);
+
+  // TTS for greeting phase
+  useEffect(() => {
+    if (phase !== "greeting" || behavioralQuestions.length === 0) return;
+    let cancelled = false;
+    setIsAiSpeaking(true);
+    setAiAudioReady(false);
+
+    const greetingText = "Hi there! Welcome to your interview. I'll be guiding you through some behavioral questions today. Whenever you're ready, we'll get started!";
+
+    (async () => {
+      try {
+        const audioUrl = await fetchTTSAudio(greetingText, { voice: "alloy", speed: 1.0 });
+        if (cancelled) return;
+        const audio = new Audio(audioUrl);
+        aiAudioRef.current = audio;
+        audio.onended = () => { if (!cancelled) { setIsAiSpeaking(false); setAiAudioReady(true); } };
+        audio.onerror = () => { if (!cancelled) { setIsAiSpeaking(false); setAiAudioReady(true); } };
+        audio.play().catch(() => { if (!cancelled) { setIsAiSpeaking(false); setAiAudioReady(true); } });
+      } catch {
+        if (!cancelled) { setIsAiSpeaking(false); setAiAudioReady(true); }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (aiAudioRef.current) { aiAudioRef.current.pause(); aiAudioRef.current = null; }
+    };
+  }, [phase, behavioralQuestions.length]);
+
+  // Initialize behavioral messages when entering behavioral phase
+  useEffect(() => {
+    if (phase !== "behavioral" || behavioralQuestions.length === 0) return;
+    const q = behavioralQuestions[behavioralIdx];
+    if (!q) return;
+
+    setBehavioralMessages((prev) => {
+      const greeting = behavioralIdx === 0 && prev.length > 0 && prev[0].role === "assistant"
+        ? [prev[0]]
+        : [];
+      return [
+        ...greeting,
+        {
+          role: "assistant",
+          content: behavioralIdx === 0
+            ? `Alright, let's begin!\n\nHere's your first question:\n\n**${q.question}**\n\nTake your time to think about a specific example from your experience.`
+            : `Great, let's move on to the next question.\n\n**${q.question}**\n\nTake your time.`,
+        },
+      ];
+    });
+  }, [phase, behavioralIdx, behavioralQuestions]);
+
   // Play the question via OpenAI TTS when behavioral phase starts or question changes
   useEffect(() => {
     if (phase !== "behavioral" || behavioralQuestions.length === 0) return;
@@ -674,13 +742,13 @@ export default function CandidateSession() {
     setIsAiSpeaking(true);
     setAiAudioReady(false);
 
-    const introText = behavioralIdx === 0
-      ? `Welcome to your interview. Here's the first question: ${q.question}`
-      : `Next question: ${q.question}`;
+    const questionText = behavioralIdx === 0
+      ? `Alright, let's begin! Here's your first question: ${q.question}. Take your time to think about a specific example from your experience.`
+      : `Next question: ${q.question}. Take your time.`;
 
     (async () => {
       try {
-        const audioUrl = await fetchTTSAudio(introText, { voice: "alloy", speed: 1.0 });
+        const audioUrl = await fetchTTSAudio(questionText, { voice: "alloy", speed: 1.0 });
         if (cancelled) return;
 
         const audio = new Audio(audioUrl);
@@ -754,10 +822,7 @@ export default function CandidateSession() {
       setSttInterim("");
       setBehavioralInput("");
       setAiAudioReady(false);
-      setBehavioralMessages([{
-        role: "assistant",
-        content: `Great, let's move on to the next question.\n\n**${nextQ.question}**\n\nTake your time.`,
-      }]);
+      setBehavioralMessages([]);
 
       // Stop any playing audio
       if (aiAudioRef.current) {
@@ -1047,6 +1112,72 @@ export default function CandidateSession() {
         onSkip={handleCameraSkip}
         required={session?.settings?.cameraRequired !== false}
       />
+    );
+  }
+
+  // ── Greeting Phase — warm intro before questions ────────────────
+  if (phase === "greeting") {
+    const greetingMsg = behavioralMessages[0]?.content?.replace(/\*\*/g, "") || "";
+
+    return (
+      <div className="cs-interview">
+        <div className="cs-interview__topbar">
+          <div className="cs-interview__topbar-left">
+            {isRecording && <span className="cs-interview__rec-dot" />}
+          </div>
+          <div className="cs-interview__topbar-center">
+            Interview: {session?.title || "Session"}
+          </div>
+          <div className="cs-interview__topbar-right">
+            <button className="cs-interview__settings-btn" title="Settings">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="cs-interview__stage">
+          <div className={`cs-spirograph ${isAiSpeaking ? "cs-spirograph--active" : ""}`}>
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+            <div className="cs-spirograph__ring" />
+          </div>
+
+          <div className="cs-subtitles">
+            {isAiSpeaking && greetingMsg && <p className="cs-subtitles__text">{greetingMsg}</p>}
+            {!isAiSpeaking && (
+              <p className="cs-subtitles__status">Ready when you are</p>
+            )}
+          </div>
+        </div>
+
+        {mediaStream && (
+          <div className="cs-interview__camera-pip">
+            <video ref={videoPreviewRef} autoPlay muted playsInline />
+            <div className="cs-interview__camera-pip-name">
+              {candidateId || "You"}
+            </div>
+          </div>
+        )}
+
+        <div className="cs-interview__toolbar">
+          <div className="cs-interview__toolbar-info">{fmtTime(behavioralElapsed)}</div>
+          <button
+            className="cs-toolbar-btn cs-toolbar-btn--leave"
+            onClick={handleSkipGreeting}
+            style={{ padding: "8px 24px", fontSize: "0.9rem" }}
+          >
+            Let's Begin
+          </button>
+        </div>
+      </div>
     );
   }
 
