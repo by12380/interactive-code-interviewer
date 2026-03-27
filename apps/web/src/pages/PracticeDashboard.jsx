@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { useTheme } from "../contexts/ThemeContext.jsx";
+import ModeSwitcher from "../components/ModeSwitcher.jsx";
 import {
   SKILL_CATEGORIES,
   ASSESSMENT_QUESTIONS,
@@ -529,6 +530,7 @@ export default function PracticeDashboard() {
         </div>
 
         <div className="practice-dash__header-actions">
+          <ModeSwitcher />
           <button
             type="button"
             className="practice-dash__theme-btn"

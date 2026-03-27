@@ -5,7 +5,7 @@ import { useAuth } from "../contexts/AuthContext.jsx";
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { signUp, logIn, loading: authLoading, isAuthenticated } = useAuth();
+  const { signUp, logIn, loading: authLoading, isAuthenticated, activeMode } = useAuth();
 
   const [mode, setMode] = useState("login"); // "login" | "signup"
   const [displayName, setDisplayName] = useState("");
@@ -15,9 +15,14 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const redirectLocation = location.state?.from;
-  const redirectTarget = redirectLocation?.pathname
-    ? `${redirectLocation.pathname}${redirectLocation.search || ""}${redirectLocation.hash || ""}`
-    : "/home";
+
+  const getRedirectTarget = () => {
+    if (redirectLocation?.pathname) {
+      return `${redirectLocation.pathname}${redirectLocation.search || ""}${redirectLocation.hash || ""}`;
+    }
+    if (!activeMode) return "/select-role";
+    return activeMode === "practice" ? "/practice" : "/interviewer";
+  };
 
   const handleSubmit = useCallback(
     async (e) => {
@@ -50,7 +55,7 @@ export default function LoginPage() {
         } else {
           await logIn({ email, password });
         }
-        navigate(redirectTarget, {
+        navigate(getRedirectTarget(), {
           replace: true,
           state: redirectLocation?.state,
         });
@@ -73,7 +78,7 @@ export default function LoginPage() {
         setBusy(false);
       }
     },
-    [mode, email, password, confirmPassword, displayName, signUp, logIn, navigate, redirectTarget, redirectLocation]
+    [mode, email, password, confirmPassword, displayName, signUp, logIn, navigate, activeMode, redirectLocation]
   );
 
   const switchMode = useCallback(() => {
@@ -95,7 +100,7 @@ export default function LoginPage() {
   }
 
   if (isAuthenticated) {
-    return <Navigate to={redirectTarget} replace state={redirectLocation?.state} />;
+    return <Navigate to={getRedirectTarget()} replace state={redirectLocation?.state} />;
   }
 
   return (

@@ -14,7 +14,7 @@ function extractShareCode(input) {
 
 export default function HomePage() {
   const navigate = useNavigate();
-  const { user, isAuthenticated, logOut } = useAuth();
+  const { user, isAuthenticated, logOut, activeMode, setActiveMode } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const quickJoinRef = useRef(null);
   const modulesRef = useRef(null);
@@ -118,10 +118,16 @@ export default function HomePage() {
     }
   }, [isAuthenticated, navigate]);
 
-  const moduleCards = [
+  const handleSwitchMode = useCallback(() => {
+    setActiveMode(null);
+    navigate("/select-role", { replace: true });
+  }, [setActiveMode, navigate]);
+
+  const allModuleCards = [
     {
       key: "practice",
       tone: "practice",
+      modes: ["practice"],
       eyebrow: "For candidates",
       title: "Practice Mode",
       description: "Sharpen core problem-solving with guided coding, AI feedback, and progress tracking.",
@@ -144,6 +150,7 @@ export default function HomePage() {
     {
       key: "mock",
       tone: "mock",
+      modes: ["practice"],
       eyebrow: "AI simulation",
       title: "Mock AI Interview",
       description: "Run a structured interview experience with tailored behavioral and coding rounds.",
@@ -165,6 +172,7 @@ export default function HomePage() {
     {
       key: "hosting",
       tone: "hosting",
+      modes: ["interviewer"],
       eyebrow: "For interviewers",
       title: "Live Interview Hosting",
       description: "Create a live coding session, share an invite, and watch candidates solve in real time.",
@@ -188,6 +196,7 @@ export default function HomePage() {
     {
       key: "join",
       tone: "join",
+      modes: ["practice", "interviewer"],
       eyebrow: "Instant entry",
       title: "Join a Session",
       description: "Paste a session link or code and jump into a live interview without a heavy setup flow.",
@@ -209,6 +218,10 @@ export default function HomePage() {
     },
   ];
 
+  const moduleCards = activeMode
+    ? allModuleCards.filter((c) => c.modes.includes(activeMode))
+    : allModuleCards;
+
   return (
     <div className="home-page">
       <div className="home-page__blob home-page__blob--1" />
@@ -221,6 +234,20 @@ export default function HomePage() {
           <span className="home-page__logo-text">CodeInterview</span>
         </div>
         <div className="home-page__header-right">
+          {isAuthenticated && activeMode && (
+            <button
+              type="button"
+              className="home-page__mode-badge"
+              onClick={handleSwitchMode}
+              title="Switch mode"
+            >
+              <span className={`home-page__mode-dot home-page__mode-dot--${activeMode}`} />
+              {activeMode === "practice" ? "Practice Mode" : "Interviewer Mode"}
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+          )}
           <button
             type="button"
             className="home-page__theme-btn"
@@ -252,13 +279,22 @@ export default function HomePage() {
       <main className="home-page__main">
         <div className="home-page__hero">
           <div className="home-page__hero-copy">
-            <span className="home-page__eyebrow">Platform dashboard</span>
+            <span className="home-page__eyebrow">
+              {activeMode === "practice"
+                ? "Practice dashboard"
+                : activeMode === "interviewer"
+                ? "Interviewer dashboard"
+                : "Platform dashboard"}
+            </span>
             <h1 className="home-page__title">
               {isAuthenticated ? `Welcome back, ${firstName}.` : "Choose the interview flow you need right now."}
             </h1>
             <p className="home-page__subtitle">
-              The dashboard now mirrors the modules from the landing page, so candidates and interviewers can move straight into practice,
-              mock interviews, live hosting, or quick join without hunting through mismatched sections.
+              {activeMode === "practice"
+                ? "Sharpen your skills with AI-guided practice, mock interviews, and personalized progress tracking."
+                : activeMode === "interviewer"
+                ? "Create live coding sessions, monitor candidates in real time, and review results."
+                : "Practice coding, run mock interviews, host live sessions, or jump into a scheduled interview."}
             </p>
             <div className="home-page__hero-actions">
               <button type="button" className="home-page__hero-btn home-page__hero-btn--primary" onClick={scrollToModules}>

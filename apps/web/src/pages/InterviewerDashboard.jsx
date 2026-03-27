@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { getSessions, deleteSession, updateSession } from "../services/sessionService.js";
+import ModeSwitcher from "../components/ModeSwitcher.jsx";
 import "../styles/interviewer.css";
 
 export default function InterviewerDashboard() {
@@ -45,6 +46,7 @@ export default function InterviewerDashboard() {
       <header className="iv-header">
         <h1>My Sessions</h1>
         <div className="iv-header__actions">
+          <ModeSwitcher />
           <button className="iv-btn iv-btn--primary" onClick={() => navigate("/interviewer/create")}>
             + New Session
           </button>

@@ -6,6 +6,7 @@ import LandingPage from "./pages/LandingPage.jsx";
 import HomePage from "./pages/HomePage.jsx";
 import PracticeDashboard from "./pages/PracticeDashboard.jsx";
 import ProtectedRoute from "./components/ProtectedRoute.jsx";
+import ModeRoute from "./components/ModeRoute.jsx";
 import InterviewerDashboard from "./pages/InterviewerDashboard.jsx";
 import SessionCreator from "./pages/SessionCreator.jsx";
 import LiveMonitor from "./pages/LiveMonitor.jsx";
@@ -13,64 +14,80 @@ import JoinSession from "./pages/JoinSession.jsx";
 import CandidateSession from "./pages/CandidateSession.jsx";
 import SessionResults from "./pages/SessionResults.jsx";
 import MockInterviewSetup from "./pages/MockInterviewSetup.jsx";
+import RoleSelector from "./pages/RoleSelector.jsx";
 
 export default function AppRouter() {
-  const { loading } = useAuth();
+  const { loading, isAuthenticated, activeMode } = useAuth();
+
+  const defaultHome = !isAuthenticated
+    ? "/home"
+    : !activeMode
+    ? "/select-role"
+    : activeMode === "practice"
+    ? "/practice"
+    : "/interviewer";
 
   return (
     <Routes>
       <Route
         path="/login"
+        element={loading ? null : <LoginPage />}
+      />
+
+      <Route path="/" element={<LandingPage />} />
+
+      <Route
+        path="/select-role"
         element={
-          loading ? null : <LoginPage />
+          <ProtectedRoute>
+            <RoleSelector />
+          </ProtectedRoute>
         }
       />
 
-      {/* Landing page — public marketing page */}
-      <Route path="/" element={<LandingPage />} />
+      <Route path="/home" element={<HomePage />} />
+      <Route path="/interview" element={<Navigate to="/home" replace />} />
 
-      {/* Mock AI Interview — personalized interview from CV / details */}
+      {/* Practice routes — require auth + practice mode */}
       <Route
         path="/mock-interview"
         element={
           <ProtectedRoute>
-            <MockInterviewSetup />
+            <ModeRoute allowedMode="practice">
+              <MockInterviewSetup />
+            </ModeRoute>
           </ProtectedRoute>
         }
       />
-
-      {/* Home — interview-first hub with quick join, create, mock, and practice */}
-      <Route path="/home" element={<HomePage />} />
-
-      {/* Legacy /interview route redirects to home hub (all actions live there now) */}
-      <Route path="/interview" element={<Navigate to="/home" replace />} />
-
-      {/* Practice hub — personalized dashboard with onboarding & roadmap */}
       <Route
         path="/practice"
         element={
           <ProtectedRoute>
-            <PracticeDashboard />
+            <ModeRoute allowedMode="practice">
+              <PracticeDashboard />
+            </ModeRoute>
           </ProtectedRoute>
         }
       />
-
-      {/* Practice IDE — full-screen coding workspace */}
       <Route
         path="/practice/solve/:problemId"
         element={
           <ProtectedRoute>
-            <App mode="practice" />
+            <ModeRoute allowedMode="practice">
+              <App mode="practice" />
+            </ModeRoute>
           </ProtectedRoute>
         }
       />
 
-      {/* Interviewer routes — require auth (any user can host sessions) */}
+      {/* Interviewer routes — require auth + interviewer mode */}
       <Route
         path="/interviewer"
         element={
           <ProtectedRoute>
-            <InterviewerDashboard />
+            <ModeRoute allowedMode="interviewer">
+              <InterviewerDashboard />
+            </ModeRoute>
           </ProtectedRoute>
         }
       />
@@ -78,7 +95,9 @@ export default function AppRouter() {
         path="/interviewer/create"
         element={
           <ProtectedRoute>
-            <SessionCreator />
+            <ModeRoute allowedMode="interviewer">
+              <SessionCreator />
+            </ModeRoute>
           </ProtectedRoute>
         }
       />
@@ -86,7 +105,9 @@ export default function AppRouter() {
         path="/interviewer/session/:id"
         element={
           <ProtectedRoute>
-            <LiveMonitor />
+            <ModeRoute allowedMode="interviewer">
+              <LiveMonitor />
+            </ModeRoute>
           </ProtectedRoute>
         }
       />
@@ -94,17 +115,19 @@ export default function AppRouter() {
         path="/interviewer/results/:id"
         element={
           <ProtectedRoute>
-            <SessionResults />
+            <ModeRoute allowedMode="interviewer">
+              <SessionResults />
+            </ModeRoute>
           </ProtectedRoute>
         }
       />
 
-      {/* Candidate live session routes — public, guests enter name + code */}
+      {/* Candidate live session — fully public, no login required */}
       <Route path="/join" element={<JoinSession />} />
       <Route path="/join/:code" element={<JoinSession />} />
       <Route path="/session/:sessionId/:candidateId" element={<CandidateSession />} />
 
-      <Route path="*" element={<Navigate to="/home" replace />} />
+      <Route path="*" element={<Navigate to={defaultHome} replace />} />
     </Routes>
   );
 }

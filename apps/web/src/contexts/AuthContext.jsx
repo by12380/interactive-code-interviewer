@@ -6,12 +6,28 @@ import {
   onAuthChange,
 } from "../services/firebaseAuthService.js";
 
+const ACTIVE_MODE_KEY = "code_interviewer_active_mode";
+
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);        // { uid, email, displayName, role }
-  const [loading, setLoading] = useState(true);   // true while checking initial auth state
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // "practice" | "interviewer" | null (null = not yet chosen)
+  const [activeMode, setActiveModeState] = useState(() => {
+    return localStorage.getItem(ACTIVE_MODE_KEY) || null;
+  });
+
+  const setActiveMode = useCallback((mode) => {
+    setActiveModeState(mode);
+    if (mode) {
+      localStorage.setItem(ACTIVE_MODE_KEY, mode);
+    } else {
+      localStorage.removeItem(ACTIVE_MODE_KEY);
+    }
+  }, []);
 
   useEffect(() => {
     const unsub = onAuthChange((u) => {
@@ -48,8 +64,6 @@ export function AuthProvider({ children }) {
   const logOut = useCallback(async () => {
     setError(null);
     try {
-      // Only clear the active session — keep the users store and leaderboard
-      // so data (onboarding, roadmap, gamification) persists across logins.
       localStorage.removeItem("code_interviewer_current_user");
       localStorage.removeItem("onboardingComplete");
       localStorage.removeItem("onboardingNeverShow");
@@ -70,6 +84,8 @@ export function AuthProvider({ children }) {
         signUp,
         logIn,
         logOut,
+        activeMode,
+        setActiveMode,
         isInterviewer: user?.role === "interviewer",
         isCandidate: user?.role === "candidate",
         isAuthenticated: Boolean(user),

@@ -256,7 +256,7 @@ const PRICING_PLANS = [
 export default function LandingPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, activeMode } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -302,13 +302,18 @@ export default function LandingPage() {
     setTimeout(() => setContactStatus(""), 4000);
   }, [contactForm]);
 
+  const getDashboardRoute = useCallback(() => {
+    if (!activeMode) return "/select-role";
+    return activeMode === "practice" ? "/practice" : "/interviewer";
+  }, [activeMode]);
+
   const handleGetStarted = useCallback(() => {
     if (isAuthenticated) {
-      navigate("/home");
+      navigate(getDashboardRoute());
     } else {
       navigate("/login");
     }
-  }, [isAuthenticated, navigate]);
+  }, [isAuthenticated, navigate, getDashboardRoute]);
 
   const handleModuleNavigate = useCallback((route) => {
     if (route === "/mock-interview") {
@@ -349,7 +354,7 @@ export default function LandingPage() {
                 {theme === "light" ? "\u{1F319}" : "\u2600\uFE0F"}
               </button>
               {isAuthenticated ? (
-                <button type="button" className="lp-nav__cta" onClick={() => navigate("/home")}>
+                <button type="button" className="lp-nav__cta" onClick={() => navigate(getDashboardRoute())}>
                   Dashboard
                 </button>
               ) : (
